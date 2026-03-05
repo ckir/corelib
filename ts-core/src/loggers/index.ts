@@ -4,9 +4,18 @@
 // NEW FIXES (2026-03-05):
 //   • Removed explicit 'any' type for impl to let TS infer
 //   • Replaced (globalThis as any) with extended type for logger
+// NEW: Used declaration merging to augment global types for Window and NodeJS.Global,
+//      allowing safe assignment to globalThis.logger without type assertions.
+// FIXED: Changed to 'var logger' in declare global, as only 'var' declarations add properties to the global object (globalThis),
+//        allowing type-safe access and assignment to globalThis.logger. 'const' or 'let' do not add to globalThis.
 // =============================================
 
 import { detectRuntime } from "../common/runtime";
+import type { Logger } from "pino";
+
+declare global {
+  var logger: Logger | undefined;
+}
 
 const runtime = detectRuntime();
 
@@ -23,9 +32,7 @@ async function loadLoggers() {
 			impl = await import("./implementations/node.js");
 	}
 	const { Loggers } = impl;
-	(
-		globalThis as typeof globalThis & { logger?: typeof Loggers.logger }
-	).logger = Loggers.logger;
+	globalThis.logger = Loggers.logger;
 	return Loggers;
 }
 

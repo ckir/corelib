@@ -8,10 +8,19 @@
 //       pino's testing utilities or mocking transports.
 // NEW FIXES (2026-03-05):
 //   • Replaced (globalThis as any) with extended type for logger
+// NEW: Removed type assertion in globalThis.logger check, as declaration merging
+//      in index.ts now provides the type globally.
+// FIXED: Added declare global { var logger: Logger | undefined; } for test visibility,
+//        ensuring type-safe access to globalThis.logger in tests.
 // =============================================
 
 import { describe, expect, it } from "vitest";
 import { Loggers } from ".";
+import type { Logger } from "pino";
+
+declare global {
+  var logger: Logger | undefined;
+}
 
 describe("Loggers - Unit Tests", () => {
 	it("loads pino logger successfully", () => {
@@ -27,10 +36,7 @@ describe("Loggers - Unit Tests", () => {
 	});
 
 	it("sets global logger", () => {
-		expect(
-			(globalThis as typeof globalThis & { logger?: typeof Loggers.logger })
-				.logger,
-		).toBe(Loggers.logger);
+		expect(globalThis.logger).toBe(Loggers.logger);
 	});
 });
 

@@ -1,4 +1,16 @@
+// =============================================
+// FILE: ts-core/src/loggers/common/index.ts
+// PURPOSE: Common logger setup using pino with transports
+// FIXED: Augmented global types here as well for consistency, but since the declaration is global,
+//        it can be in any file; included here to ensure visibility in common module.
+// =============================================
+
 import pino from "pino";
+import type { Logger } from "pino";
+
+declare global {
+  var logger: Logger | undefined;
+}
 
 const transport = pino.transport({
 	targets: [
@@ -23,5 +35,4 @@ export const Loggers = {
 	logger: pino(transport),
 };
 
-(globalThis as typeof globalThis & { logger?: typeof Loggers.logger }).logger =
-	Loggers.logger;
+globalThis.logger = Loggers.logger;
