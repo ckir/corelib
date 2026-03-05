@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "strict": true,
+    "moduleResolution": "bundler",
+    "skipLibCheck": true,
+    "paths": {
+      "@ckir/corelib": ["./ts-core/src/index.ts"],
+      "@ckir/corelib-markets": ["./ts-markets/src/index.ts"],
+      "@ckir/corelib-cloud": ["./ts-cloud/src/index.ts"]
+    }
+  }
+}

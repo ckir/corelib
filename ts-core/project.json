@@ -1,0 +1,5 @@
+{
+	"name": "ts-core",
+	"projectType": "library",
+	"sourceRoot": "ts-core/src"
+}

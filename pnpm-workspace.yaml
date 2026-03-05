@@ -1,0 +1,8 @@
+packages:
+  - ts-core
+  - ts-markets
+  - ts-cloud
+
+onlyBuiltDependencies:
+  - esbuild
+  - protobufjs
