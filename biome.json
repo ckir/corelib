@@ -1,24 +1,20 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.5/schema.json",
-  "files": {
-    "includes": [
-      "**/*.ts",
-      "!ts-core/docs",
-      "!rust"
-    ]
-  },
-  "vcs": {
-    "enabled": true,
-    "clientKind": "git",
-    "useIgnoreFile": true
-  },
-  "linter": {
-    "enabled": true,
-    "rules": {
-      "recommended": true
-    }
-  },
-  "formatter": {
-    "enabled": true
-  }
+	"$schema": "https://biomejs.dev/schemas/2.4.5/schema.json",
+	"files": {
+		"includes": ["**/*.ts", "!ts-core/docs", "!rust"]
+	},
+	"vcs": {
+		"enabled": true,
+		"clientKind": "git",
+		"useIgnoreFile": true
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"recommended": true
+		}
+	},
+	"formatter": {
+		"enabled": true
+	}
 }

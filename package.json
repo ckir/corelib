@@ -1,7 +1,17 @@
 {
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.5",
+		"del": "^8.0.1",
 		"tsup": "^8.5.1",
 		"typescript": "^5.9.3"
+	},
+	"scripts": {
+		"build-all": "pnpm -r build",
+		"watch-all": "pnpm -r watch --parallel",
+		"test-all": "pnpm -r test",
+		"lint-all": "pnpm -r lint",
+		"format-all": "pnpm -r format",
+		"docs-all": "pnpm -r docs",
+		"clean-all": "pnpm exec del node_modules dist rust\\target .nx && pnpm install"
 	}
 }

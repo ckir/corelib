@@ -6,12 +6,12 @@
 	"types": "dist/index.d.mts",
 	"scripts": {
 		"build": "tsup",
-		"dev": "bun src/cli/index.ts",
-		"dev:bun": "bun src/cli/index.ts",
-		"dev:node": "tsx src/cli/index.ts",
-		"dev:deno": "deno run --allow-env --allow-read --allow-net src/cli/index.ts",
+		"watch": "tsup --watch",
 		"test": "vitest",
-		"lint": "biome check . --max-diagnostics=100"
+		"lint": "biome check . --max-diagnostics=100",
+		"format": "biome format . --write",
+		"docs": "typedoc",
+		"clean": "del dist"
 	},
 	"dependencies": {
 		"@libsql/client": "^0.17.0",
@@ -19,7 +19,6 @@
 		"confbox": "^0.2.1",
 		"deepmerge-ts": "^7.0.0",
 		"dotenv": "^17.3.1",
-		"inquirer": "^13.3.0",
 		"ky": "^1.7.0",
 		"luxon": "^3.5.0",
 		"pg": "^8.13.0",
@@ -35,7 +34,6 @@
 		"@types/bun": "^1.3.10",
 		"@types/deno": "^2.5.0",
 		"@types/node": "^25.3.3",
-		"@types/pino": "^7.0.4",
 		"happy-dom": "^20.8.3",
 		"tsx": "^4.19.2",
 		"typedoc": "^0.28.17",

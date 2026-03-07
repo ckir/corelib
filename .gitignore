@@ -6,3 +6,4 @@ rust/target
 *.log
 .env.local
 corelib.txt
+lint-output.txt
