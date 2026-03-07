@@ -4,6 +4,9 @@
 	"main": "dist/index.mjs",
 	"type": "module",
 	"types": "dist/index.d.mts",
+	"files": [
+		"dist"
+	],
 	"scripts": {
 		"build": "tsup",
 		"watch": "tsup --watch",
