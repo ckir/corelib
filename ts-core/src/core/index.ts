@@ -2,7 +2,7 @@
 // FILE: ts-core/src/core/index.ts
 // PURPOSE: Core category – FFI integration
 // Dynamic load based on runtime
-// FIXED (2026-03-07): Replaced 'any' type for ffi with 'unknown' to avoid noExplicitAny lint error (safer than any while maintaining dynamic nature). Organized imports alphabetically per Biome assist/source/organizeImports. All unrelated features (e.g., runtime detection, FFI loading logic) remain fully maintained and unchanged.
+// FIXED (2026-03-07): Replaced 'any' type for ffi with 'unknown' to avoid noExplicitAny lint error (safer than any while maintaining dynamic nature). Organized imports alphabetically per Biome assist/source/organizeImports. Added type guards for coreFFI accesses to fix 'unknown' type errors. All unrelated features (e.g., runtime detection, FFI loading logic) remain fully maintained and unchanged.
 // =============================================
 
 import path from "node:path"; // For node/bun
@@ -34,11 +34,27 @@ async function loadFFI() {
 const coreFFI = await loadFFI();
 
 export function logAndDouble(msg: string, value: number): number {
-	return coreFFI.log_and_double(msg, value);
+	if (
+		typeof coreFFI === "object" &&
+		coreFFI !== null &&
+		"log_and_double" in coreFFI &&
+		typeof coreFFI.log_and_double === "function"
+	) {
+		return coreFFI.log_and_double(msg, value);
+	}
+	throw new Error("FFI not loaded or incompatible");
 }
 
 export function getVersion(): string {
-	return coreFFI.get_version();
+	if (
+		typeof coreFFI === "object" &&
+		coreFFI !== null &&
+		"get_version" in coreFFI &&
+		typeof coreFFI.get_version === "function"
+	) {
+		return coreFFI.get_version();
+	}
+	throw new Error("FFI not loaded or incompatible");
 }
 
 export const Core = {

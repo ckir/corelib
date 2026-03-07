@@ -5,6 +5,7 @@
     "strict": true,
     "moduleResolution": "bundler",
     "skipLibCheck": true,
+    "types": ["bun-types"],
     "paths": {
       "@ckir/corelib": ["./ts-core/src/index.ts"],
       "@ckir/corelib-markets": ["./ts-markets/src/index.ts"],

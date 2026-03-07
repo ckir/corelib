@@ -1,1 +1,7 @@
-{ "extends": "../tsconfig.base.json", "include": ["src"] }
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["bun-types", "deno", "node"]
+  },
+  "include": ["src", "tsup.config.ts", "vitest.config.ts"]
+}
