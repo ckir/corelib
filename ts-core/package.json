@@ -1,11 +1,15 @@
 {
 	"name": "@ckir/corelib",
 	"version": "0.1.0",
-	"main": "dist/index.js",
-	"types": "dist/index.d.ts",
+	"main": "dist/index.mjs",
+	"type": "module",
+	"types": "dist/index.d.mts",
 	"scripts": {
 		"build": "tsup",
-		"dev": "tsx src/cli/index.ts",
+		"dev": "bun src/cli/index.ts",
+		"dev:bun": "bun src/cli/index.ts",
+		"dev:node": "tsx src/cli/index.ts",
+		"dev:deno": "deno run --allow-env --allow-read --allow-net src/cli/index.ts",
 		"test": "vitest",
 		"lint": "biome check . --max-diagnostics=100"
 	},

@@ -6,6 +6,12 @@
 //        All unrelated features fully maintained
 // NEW FIXES (2026-03-05):
 //   • Removed explicit 'any' type for impl to let TS infer
+// NEW ADDITIONS (2026-03-05):
+//   • Added multi-runtime 'isMain' guard to prevent Cockpit from running on module import
+//     (e.g., when importing '@ckir/corelib' in user code like test-logger.ts)
+//     - For Node/Bun: process.argv[1] === __filename
+//     - For Deno: Deno.mainModule === import.meta.url
+//     - Prevents unwanted side-effects; Cockpit now only runs when file is executed directly (e.g., tsx src/cli/index.ts)
 // =============================================
 
 import { detectRuntime } from "../common/runtime";
@@ -35,21 +41,36 @@ async function earlyLoadEnvForNode() {
 	} catch {}
 }
 
-(async () => {
-	await earlyLoadEnvForNode();
+// Multi-runtime check: Is this module the entry point (main script)?
+let isMain = false;
+if (typeof Deno !== "undefined") {
+	isMain = Deno.mainModule === import.meta.url;
+} else if (typeof Bun !== "undefined") {
+	isMain = Bun.main === import.meta.path;
+} else {
+	// Node
+	const { fileURLToPath } = await import("node:url");
+	const __filename = fileURLToPath(import.meta.url);
+	isMain = process.argv[1] === __filename;
+}
 
-	const runtime = detectRuntime();
+if (isMain) {
+	(async () => {
+		await earlyLoadEnvForNode();
 
-	let impl: { default: () => Promise<void> };
-	switch (runtime) {
-		case "bun":
-			impl = await import("./impementations/bun.js");
-			break;
-		case "deno":
-			impl = await import("./impementations/deno.js");
-			break;
-		default:
-			impl = await import("./impementations/node.js");
-	}
-	await impl.default();
-})().catch(console.error);
+		const runtime = detectRuntime();
+
+		let impl: { default: () => Promise<void> };
+		switch (runtime) {
+			case "bun":
+				impl = await import("./impementations/bun.js");
+				break;
+			case "deno":
+				impl = await import("./impementations/deno.js");
+				break;
+			default:
+				impl = await import("./impementations/node.js");
+		}
+		await impl.default();
+	})().catch(console.error);
+}

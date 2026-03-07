@@ -10,16 +10,16 @@ import * as Cli from "./cli";
 import * as Configs from "./configs";
 import * as Core from "./core";
 import * as Database from "./database";
-import * as Logger from "./loggers";
+import logger from "./loggers";
 import * as Retrieve from "./retrieve";
 import * as Utils from "./utils";
 
-export { Cli, Configs, Logger, Core, Database, Retrieve, Utils };
+export { Cli, Configs, Core, Database, Retrieve, Utils, logger };
 
 export const CoreLib = {
 	Cli,
 	Configs,
-	Logger,
+	logger,
 	Core,
 	Database,
 	Retrieve,

@@ -10,16 +10,16 @@
 //        allowing type-safe access and assignment to globalThis.logger. 'const' or 'let' do not add to globalThis.
 // =============================================
 
-import { detectRuntime } from "../common/runtime";
 import type { Logger } from "pino";
+import { detectRuntime } from "../common/runtime";
 
 declare global {
-  var logger: Logger | undefined;
+	var logger: Logger | undefined;
 }
 
 const runtime = detectRuntime();
 
-async function loadLoggers() {
+async function loadLogger() {
 	let impl: typeof import("./implementations/node.js");
 	switch (runtime) {
 		case "bun":
@@ -31,9 +31,9 @@ async function loadLoggers() {
 		default:
 			impl = await import("./implementations/node.js");
 	}
-	const { Loggers } = impl;
-	globalThis.logger = Loggers.logger;
-	return Loggers;
+	const logger = impl.default;
+	globalThis.logger = logger;
+	return logger;
 }
 
-export const Loggers = await loadLoggers();
+export default await loadLogger();

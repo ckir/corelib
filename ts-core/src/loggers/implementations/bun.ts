@@ -3,4 +3,6 @@
 // PURPOSE: Bun-specific logger implementation – loads common (pino)
 // =============================================
 
-export { Loggers } from "../common";
+import logger from "../common";
+
+export default logger;

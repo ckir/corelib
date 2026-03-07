@@ -1,47 +1,26 @@
 // =============================================
 // FILE: ts-core/src/cli/common/index.ts
-// PURPOSE: FULL Developers Cockpit MENU as you requested
-// Exact header + numbered list + "Select Action:"
-// Every option has a CLI mirror (dev build-rust, dev gen-docs, etc.)
+// PURPOSE: FULL Developers Cockpit MENU
+//          Interactive numbered menu + CLI mirrors (dev build-rust, dev lint, etc.)
 //
-// FIXED (2026-03-05):
-//   • Explicit console.log of the numbered choices BEFORE the prompt
-//     → menu options are NOW ALWAYS visible in any terminal/runtime
-//     (previous inquirer 'list' renderer sometimes failed to show choices)
-//   • Switched to type: 'input' + smart number/keyword parser
-//     → supports typing 1, 2, ..., 9, 0 or "check", "build", "release", etc.
-//   • One-shot action (no loop) – same as original
+// FIXED (March 2026):
+//   • Resolved persistent TS2769 overload error in runCommand:
+//     - shell is now always string (or undefined), never boolean
+//     - Uses platform-appropriate default shell string → types accept it in all overloads
+//     - Maintains shell behavior (pipes, wildcards, etc.) needed for pnpm/cargo/biome commands
+//   • Kept direct node_modules/.bin/biome calls (no npx → no Bun→npm warnings)
+//   • Kept windowsHide: true (no console flash on Windows)
+//   • Improved error logging
 //
-// NEW FIXES (based on user feedback):
-//   • Made the menu loop: after each action, show menu again until exit
-//   • Fixed exit option numbering to '10. Exit' to match expected output
-//   • Adjusted parsing: num 1-9 for actions, 10 for exit (0 treated as invalid)
-//   • Improved action success handling: use runCommand return value to conditionally log ✅ or ❌
-//     Prevents printing ✅ when command fails (e.g., vitest not found)
-//   • For actions with multiple steps (e.g., clean), check each runCommand and early return on failure
-//
-// NEW ADDITIONS (2026-03-05):
-//   • Added Lint and Format options using Biome
-//     9. Lint Code (biome lint --write --max-diagnostics=0)
-//     10. Format Code (biome format --write --max-diagnostics=0)
-//     Shifted release to 11, exit to 12
-//   • Commands run from rootDir to cover whole workspace
-//   • Added CLI mirrors: dev lint, dev format
-//
-// NEW FIXES (2026-03-05):
-//   • Fixed lint command flag: --apply → --write (Biome uses --write for applying fixes)
-//   • Updated gen-docs: Now runs 'pnpm exec typedoc' since typedoc is installed and typedoc.json exists
-//   • Added --max-diagnostics=0 to lint and format commands to show all diagnostics (unlimited)
-//
-// NEW FIXES (2026-03-05):
-//   • Replaced (globalThis as any) with typeof Bun/Deno checks for better typing
-//   • Changed choices.forEach to for...of loop to avoid lint/suspicious/useIterableCallbackReturn
-//
-// All unrelated features fully maintained:
-//   • loadEnv / runtime detection / .env respect (RUNTIME=bun still shows [Bun])
-//   • Commander CLI mirrors
-//   • runCommand, clean, build-rust, test-rust, bump, gen-docs, release
-//   • Rust FFI, dynamic loggers, Configs/Core/Database/Retrieve/Utils, ts-cloud, etc.
+// FEATURES MAINTAINED (unchanged):
+//   • .env respect (PLATFORM, RUNTIME, MODE, LOG_LEVEL)
+//   • Runtime-aware env loading (Bun.env / Deno.env.toObject() / process.env)
+//   • Commander CLI mirrors (pnpm dev lint, etc.)
+//   • Interactive menu loop until Exit
+//   • Number (1-12) + keyword/partial input parsing
+//   • All actions: check (with Biome smoke test), clean, build-rust, build, test, test-rust,
+//     bump, gen-docs, lint (with fixes), format (with fixes), release
+//   • Workspace-root execution where needed (rootDir)
 // =============================================
 
 import { execSync } from "node:child_process";
@@ -51,27 +30,46 @@ import { program } from "commander";
 import inquirer from "inquirer";
 
 export async function loadEnv() {
-	// Use ACTUAL runtime for env access (prevents crash when .env RUNTIME != real runtime)
+	// Use runtime-native environment access
 	if (typeof Bun !== "undefined") {
 		return Bun.env;
 	}
 	if (typeof Deno !== "undefined") {
 		return Deno.env.toObject();
 	}
-	// Node or cockpit fallback (earlyLoadEnvForNode already put .env values here)
+	// Node or fallback (earlyLoadEnvForNode already populated process.env if needed)
 	return process.env;
 }
 
-const rootDir = path.join(process.cwd(), "..");
+const rootDir = path.join(process.cwd(), ".."); // workspace root (corelib/)
 const rustDir = path.join(rootDir, "rust");
-const tsCoreDir = process.cwd();
+const tsCoreDir = process.cwd(); // ts-core/
 
 export function runCommand(cmd: string, cwd: string = tsCoreDir): boolean {
+	let shell: string | undefined;
+
+	if (process.platform === "win32") {
+		shell = process.env.ComSpec || "cmd.exe"; // Use ComSpec if set (usually cmd.exe)
+	} else {
+		shell = "/bin/sh"; // Standard Unix shell
+	}
+
 	try {
-		execSync(cmd, { cwd, stdio: "inherit" });
+		execSync(cmd, {
+			cwd,
+			stdio: "inherit", // Live output in parent terminal
+			shell, // Explicit string → satisfies all overloads
+			windowsHide: true, // Prevent console window flash on Windows
+		});
 		return true;
-	} catch (_e) {
+	} catch (err: any) {
 		console.error(`❌ Command failed: ${cmd}`);
+		if (err?.message) {
+			console.error(`   → ${err.message.split("\n")[0]}`);
+		}
+		if (err?.status !== undefined) {
+			console.error(`   Exit code: ${err.status}`);
+		}
 		return false;
 	}
 }
@@ -81,7 +79,7 @@ export async function setupCommonCli() {
 
 	console.log("---------- CoreLib Developers Cockpit -----------");
 	console.log(
-		`PLATFORM=${env.PLATFORM} - RUNTIME=${env.RUNTIME} - MODE=${env.MODE}`,
+		`PLATFORM=${env.PLATFORM ?? "unset"}  RUNTIME=${env.RUNTIME ?? "unset"}  MODE=${env.MODE ?? "unset"}`,
 	);
 	console.log("-------------------------------------------------");
 
@@ -89,26 +87,46 @@ export async function setupCommonCli() {
 		check: async () => {
 			console.log("🔍 1. Check Prerequisites & Health...");
 			console.log(
-				`✅ PLATFORM=${env.PLATFORM} | RUNTIME=${env.RUNTIME} | MODE=${env.MODE}`,
+				`  PLATFORM=${env.PLATFORM ?? "unset"} | RUNTIME=${env.RUNTIME ?? "unset"} | MODE=${env.MODE ?? "unset"}`,
 			);
-			console.log("✅ Node.js OK");
+			console.log("  Node.js OK");
+
 			try {
 				execSync("cargo --version", { stdio: "ignore" });
-				console.log("✅ Rust OK");
-			} catch {}
-			console.log("✅ pnpm OK");
+				console.log("  Rust OK");
+			} catch {
+				console.log("  Rust not found");
+			}
+
+			console.log("  pnpm OK");
+
+			// Biome smoke test (direct .bin call, platform-aware)
+			try {
+				const biomeBin = path.join(rootDir, "node_modules", ".bin", "biome");
+				const versionCmd =
+					process.platform === "win32"
+						? `"${biomeBin}.cmd" --version`
+						: `${biomeBin} --version`;
+				execSync(versionCmd, { stdio: "ignore" });
+				console.log("  Biome OK");
+			} catch {
+				console.log("  ⚠️  Biome not detected – lint/format may fail");
+			}
+
 			console.log("Health check complete!");
 		},
+
 		clean: async () => {
 			console.log("🧹 2. CLEAN & REINSTALL (Fresh Start)...");
 			await fs
 				.rm(path.join(tsCoreDir, "dist"), { recursive: true, force: true })
 				.catch(() => {});
-			console.log("✅ Cleaned dist");
-			console.log("🔄 Reinstalling workspace...");
+			console.log("  Cleaned dist/");
+			console.log("  Reinstalling workspace...");
 			if (!runCommand("pnpm install", rootDir)) return;
 			console.log("✅ Fresh start complete!");
 		},
+
 		"build-rust": async () => {
 			console.log("🔨 3. Build Rust...");
 			if (runCommand("cargo build", rustDir)) {
@@ -117,6 +135,7 @@ export async function setupCommonCli() {
 				console.log("❌ Rust build failed");
 			}
 		},
+
 		build: async () => {
 			console.log("📦 4. Build Typescript...");
 			if (runCommand("pnpm exec tsup")) {
@@ -125,6 +144,7 @@ export async function setupCommonCli() {
 				console.log("❌ TypeScript build failed");
 			}
 		},
+
 		test: async () => {
 			console.log("🧪 5. Run Typescript Tests...");
 			if (runCommand("pnpm exec vitest run")) {
@@ -133,6 +153,7 @@ export async function setupCommonCli() {
 				console.log("❌ TypeScript tests failed");
 			}
 		},
+
 		"test-rust": async () => {
 			console.log("🧪 6. Run Rust Tests...");
 			if (runCommand("cargo test", rustDir)) {
@@ -141,6 +162,7 @@ export async function setupCommonCli() {
 				console.log("❌ Rust tests failed");
 			}
 		},
+
 		bump: async () => {
 			console.log("📦 7. Bump version...");
 			if (runCommand("npm version patch --no-git-tag-version")) {
@@ -149,6 +171,7 @@ export async function setupCommonCli() {
 				console.log("❌ Version bump failed");
 			}
 		},
+
 		"gen-docs": async () => {
 			console.log("📚 8. Generate Documentation (TypeDoc)...");
 			if (runCommand("pnpm exec typedoc")) {
@@ -157,35 +180,42 @@ export async function setupCommonCli() {
 				console.log("❌ Documentation generation failed");
 			}
 		},
+
 		lint: async () => {
 			console.log("🔍 9. Lint Code...");
-			if (
-				runCommand(
-					"pnpm exec biome lint --write . --max-diagnostics=0",
-					rootDir,
-				)
-			) {
+			const biomeBin = path.join(rootDir, "node_modules", ".bin", "biome");
+			const cmd =
+				process.platform === "win32"
+					? `"${biomeBin}.cmd" lint --write . --max-diagnostics=0`
+					: `${biomeBin} lint --write . --max-diagnostics=0`;
+
+			const success = runCommand(cmd, rootDir);
+			if (success) {
 				console.log("✅ Lint complete");
 			} else {
-				console.log("❌ Lint failed");
+				console.log("❌ Lint failed – ensure pnpm install was run");
 			}
 		},
+
 		format: async () => {
 			console.log("📝 10. Format Code...");
-			if (
-				runCommand(
-					"pnpm exec biome format --write . --max-diagnostics=0",
-					rootDir,
-				)
-			) {
+			const biomeBin = path.join(rootDir, "node_modules", ".bin", "biome");
+			const cmd =
+				process.platform === "win32"
+					? `"${biomeBin}.cmd" format --write . --max-diagnostics=0`
+					: `${biomeBin} format --write . --max-diagnostics=0`;
+
+			const success = runCommand(cmd, rootDir);
+			if (success) {
 				console.log("✅ Format complete");
 			} else {
-				console.log("❌ Format failed");
+				console.log("❌ Format failed – ensure pnpm install was run");
 			}
 		},
+
 		release: async () => {
 			console.log("📦 11. Create release package...");
-			if (runCommand("pnpm pack")) {
+			if (runCommand("pnpm pack", tsCoreDir)) {
 				console.log("✅ Release package created (.tgz file)");
 			} else {
 				console.log("❌ Release package creation failed");
@@ -193,7 +223,7 @@ export async function setupCommonCli() {
 		},
 	};
 
-	// Register all CLI mirrors (for direct calls like `pnpm dev build-rust`)
+	// Register CLI mirrors (for direct calls like pnpm dev lint)
 	program
 		.command("check")
 		.description("Check Prerequisites & Health")
@@ -230,7 +260,7 @@ export async function setupCommonCli() {
 		.description("Create release package")
 		.action(actions.release);
 
-	// Interactive menu only when no arguments
+	// Interactive menu only when no subcommand provided
 	if (process.argv.slice(2).length === 0) {
 		const choices = [
 			{ name: "1. Check Prerequisites & Health", value: "check" },
@@ -248,14 +278,13 @@ export async function setupCommonCli() {
 		];
 
 		while (true) {
-			// === FIXED: Explicit numbered list so options are ALWAYS visible ===
 			console.log("");
 			for (const choice of choices) {
 				console.log(choice.name);
 			}
 			console.log("");
 
-			const ans = await inquirer.prompt([
+			const { action } = await inquirer.prompt([
 				{
 					type: "input",
 					name: "action",
@@ -263,36 +292,43 @@ export async function setupCommonCli() {
 				},
 			]);
 
-			const input = ans.action.trim();
-			let actionKey: string | undefined;
+			const input = (action as string).trim().toLowerCase();
+			let selectedKey: string | undefined;
 
 			const num = parseInt(input, 10);
 			if (!Number.isNaN(num) && num >= 1 && num <= 12) {
-				actionKey = choices[num - 1].value;
+				selectedKey = choices[num - 1].value;
 			} else if (input.length > 0) {
-				// fallback: match by value or partial name (e.g. "check", "build-rust")
-				const lower = input.toLowerCase();
-				const matched = choices.find(
+				const match = choices.find(
 					(c) =>
-						c.value.toLowerCase() === lower ||
-						c.name.toLowerCase().includes(lower),
+						c.value.toLowerCase() === input ||
+						c.name.toLowerCase().includes(input),
 				);
-				actionKey = matched?.value;
+				selectedKey = match?.value;
 			}
 
-			if (actionKey === "exit" || input.toLowerCase() === "exit") {
+			if (
+				selectedKey === "exit" ||
+				input === "exit" ||
+				input === "q" ||
+				input === "quit"
+			) {
 				console.log("👋 Goodbye!");
 				process.exit(0);
-			} else if (actionKey && actions[actionKey]) {
-				await actions[actionKey]?.();
-			} else {
+			}
+
+			if (selectedKey && actions[selectedKey]) {
+				await actions[selectedKey]();
+			} else if (input.length > 0) {
 				console.log(
-					`❌ Invalid choice: "${input}". Enter a number 1-12 or action key (e.g. "check").`,
+					`❌ Invalid choice: "${action}". Enter 1–12 or keyword (e.g. lint, exit)`,
 				);
 			}
-			console.log(""); // Separator before next menu
+
+			console.log(""); // separator before next prompt
 		}
 	} else {
+		// CLI mode: run single action
 		program.parse();
 	}
 }
