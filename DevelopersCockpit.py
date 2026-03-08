@@ -36,7 +36,7 @@ choices = [
     {'letter': 'L', 'desc': 'Lint TypeScript Code', 'cmd': 'pnpm -r lint'},
     {'letter': 'M', 'desc': 'Lint to File', 'cmd': 'pnpm -r lint > lint-output.txt'},
     {'letter': 'T', 'desc': 'Run Typescript Tests', 'cmd': 'pnpm -r test'},
-    {'letter': 'R', 'desc': 'Build Rust', 'cmd': 'cargo build --release --manifest-path rust/Cargo.toml'},
+    {'letter': 'R', 'desc': 'Build Rust', 'cmd': 'cd rust && npx napi build --release && copy corelib-rust.node ..\\ts-core\\corelib-rust.node'},
     {'letter': 'U', 'desc': 'Run Rust Tests', 'cmd': 'cargo test --manifest-path rust/Cargo.toml'},
     {'letter': 'F', 'desc': 'Format Code', 'cmd': 'pnpm -r format'},
     {'letter': 'V', 'desc': 'Bump version', 'cmd': 'pnpm -r version patch'},

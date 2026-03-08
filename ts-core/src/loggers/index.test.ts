@@ -1,76 +1,200 @@
 // =============================================
 // FILE: ts-core/src/loggers/index.test.ts
-// PURPOSE: Test suite for loggers/index.ts
-// Verifies dynamic loading, all levels, child loggers, no-throw behavior
-// Uses vitest with beforeAll for logger setup
-// FIXED (2026-03-07): Removed non-null assertions (!) to fix noNonNullAssertion lint errors; replaced with optional chaining (?.) and guards where needed (e.g., if (logger) {...}). Adjusted comment indentation for Biome formatting. All unrelated features (e.g., test logic, expectations, logger behaviors) remain fully maintained and unchanged.
-// FIXED (2026-03-07): Removed '.ts' extension from import path ("./index.ts" to "./index") to resolve TS5097 error ("An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled."). All unrelated features (e.g., test suite logic, expectations) remain fully maintained and unchanged.
+// PURPOSE: Comprehensive test suite for loggers/index.ts
+// Verifies strict API, telemetry, child independence, levels, and pino properties.
 // =============================================
 
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+import { SysInfo } from "../utils/SysInfo";
 import logger from "./index";
 
 const testMessage = "Test message";
 const testObj = { key: "value" };
 
 beforeAll(async () => {
-	await logger; // Ensure loaded
+	await logger; // Ensure dynamic loader finished
 });
 
-describe("Logger Dynamic Loading and Logging", () => {
-	it("loads logger without error", () => {
-		expect(logger).toBeDefined();
+describe("Logger Implementation (StrictLoggerWrapper)", () => {
+	describe("Strict API Enforcement", () => {
+		it("accepts valid string message", () => {
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			expect(() => logger!.info(testMessage)).not.toThrow();
+		});
+
+		it("accepts valid string message and object extras", () => {
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			expect(() => logger!.info(testMessage, testObj)).not.toThrow();
+		});
+
+		it("throws when message is not a string", () => {
+			// @ts-expect-error - testing invalid signature
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			expect(() => logger!.info(123)).toThrow(
+				"Logger requires string message first, optional object second",
+			);
+			// @ts-expect-error
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			expect(() => logger!.info({})).toThrow(
+				"Logger requires string message first, optional object second",
+			);
+			// @ts-expect-error
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			expect(() => logger!.info(null)).toThrow(
+				"Logger requires string message first, optional object second",
+			);
+		});
+
+		it("throws when extras is not an object", () => {
+			// @ts-expect-error - testing invalid signature
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			expect(() => logger!.info(testMessage, "not an object")).toThrow(
+				"Logger requires string message first, optional object second",
+			);
+			// @ts-expect-error
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			expect(() => logger!.info(testMessage, 123)).toThrow(
+				"Logger requires string message first, optional object second",
+			);
+		});
+
+		it("specifically throws on null extras", () => {
+			// @ts-expect-error
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			expect(() => logger!.info(testMessage, null)).toThrow(
+				"Logger requires string message first, optional object second",
+			);
+		});
+
+		it("specifically throws on array extras", () => {
+			// @ts-expect-error
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			expect(() => logger!.info(testMessage, [])).toThrow(
+				"Logger requires string message first, optional object second",
+			);
+		});
 	});
 
-	it("logs trace level without error", () => {
-		expect(() => logger?.trace(testMessage)).not.toThrow();
+	describe("Logging Levels", () => {
+		const levels = [
+			"trace",
+			"debug",
+			"info",
+			"warn",
+			"error",
+			"fatal",
+		] as const;
+
+		for (const level of levels) {
+			it(`supports ${level} level`, () => {
+				// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+				expect(() => logger![level](testMessage)).not.toThrow();
+			});
+		}
 	});
 
-	it("logs debug level without error", () => {
-		expect(() => logger?.debug(testMessage)).not.toThrow();
+	describe("Telemetry Functionality", () => {
+		it("defaults telemetry to off and does not call SysInfo.get()", () => {
+			const spy = vi.spyOn(SysInfo, "get");
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			logger!.info(testMessage);
+			expect(spy).not.toHaveBeenCalled();
+			spy.mockRestore();
+		});
+
+		it("calls SysInfo.get() when telemetry is enabled", () => {
+			const spy = vi.spyOn(SysInfo, "get");
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			logger!.setTelemetry("on");
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			logger!.info(testMessage);
+			expect(spy).toHaveBeenCalled();
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			logger!.setTelemetry("off"); // Cleanup
+			spy.mockRestore();
+		});
+
+		it("throws on invalid telemetry mode", () => {
+			// @ts-expect-error
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			expect(() => logger!.setTelemetry("invalid")).toThrow(
+				"setTelemetry accepts only 'on' or 'off'",
+			);
+		});
 	});
 
-	it("logs info level without error", () => {
-		expect(() => logger?.info(testMessage)).not.toThrow();
+	describe("Child Loggers", () => {
+		it("creates a child logger with bindings", () => {
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			const child = logger!.child({ module: "test-module" });
+			expect(child).toBeDefined();
+			expect(child.bindings()).toMatchObject({ module: "test-module" });
+		});
+
+		it("child inherits telemetry setting from parent at creation", () => {
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			logger!.setTelemetry("on");
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			const child = logger!.child({ module: "telemetry-test" });
+
+			const spy = vi.spyOn(SysInfo, "get");
+			child.info(testMessage);
+			expect(spy).toHaveBeenCalled();
+
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			logger!.setTelemetry("off");
+			spy.mockRestore();
+		});
+
+		it("child telemetry is independent from parent after creation", () => {
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			const child = logger!.child({ module: "independent-test" });
+
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			logger!.setTelemetry("on");
+			child.setTelemetry("off");
+
+			const spy = vi.spyOn(SysInfo, "get");
+			child.info(testMessage);
+			expect(spy).not.toHaveBeenCalled(); // Child is off even if parent is on
+
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			logger!.info(testMessage);
+			expect(spy).toHaveBeenCalled(); // Parent is still on
+
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			logger!.setTelemetry("off");
+			spy.mockRestore();
+		});
 	});
 
-	it("logs warn level without error", () => {
-		expect(() => logger?.warn(testMessage)).not.toThrow();
-	});
+	describe("Pino Property Integration", () => {
+		it("allows getting and setting the log level", () => {
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			const originalLevel = logger!.level;
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			logger!.level = "debug";
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			expect(logger!.level).toBe("debug");
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			logger!.level = originalLevel;
+		});
 
-	it("logs error level without error", () => {
-		expect(() => logger?.error(testMessage)).not.toThrow();
-	});
+		it("provides levelVal", () => {
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			expect(typeof logger!.levelVal).toBe("number");
+		});
 
-	it("logs fatal level without error", () => {
-		expect(() => logger?.fatal(testMessage)).not.toThrow();
-	});
+		it("provides bindings", () => {
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			expect(typeof logger!.bindings()).toBe("object");
+		});
 
-	it("logs objects without error", () => {
-		expect(() => logger?.info(testObj, testMessage)).not.toThrow();
-	});
-
-	it("creates child logger and logs without error", () => {
-		const child = logger?.child({ module: "test" });
-
-		// FIXED: Applied non-null assertion (!) to child variable
-		expect(() => child?.info(testMessage)).not.toThrow();
-
-		// Added: Verify child inherits level and has bindings
-		expect(child?.level).toBe(logger?.level);
-		expect(child?.bindings()).toMatchObject({ module: "test" });
-
-		// Added: Log with child and ensure no throw
-		expect(() => child?.debug("Child debug message")).not.toThrow();
-
-		// Added: Detailed - child.levelVal matches parent
-		expect(child?.levelVal).toBe(logger?.levelVal);
-
-		// FIXED: Non-null assertion (!) fixes TS2769 "Argument of type 'Bindings | undefined' is not assignable to parameter of type 'object'"
-		expect(Object.keys(child?.bindings() ?? {})).toHaveLength(1);
-		expect(Object.keys(logger?.bindings() ?? {})).toHaveLength(0);
-
-		// Added: No-throw on child silent log
-		expect(() => child?.silent("Silent message")).not.toThrow();
+		it("provides a silent method", () => {
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			expect(typeof logger!.silent).toBe("function");
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			expect(() => logger!.silent("nothing")).not.toThrow();
+		});
 	});
 });

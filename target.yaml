@@ -1,0 +1,647 @@
+target:
+  napi-rs:
+    corelib-rust-c94d847f:
+      files:
+      - corelib-rust
+  release:
+    '.fingerprint':
+      bitflags-0557ee5e7b41903a:
+        files:
+        - dep-lib-bitflags
+        - invoked.timestamp
+        - lib-bitflags
+        - lib-bitflags.json
+      convert_case-ecf0a616dac238c3:
+        files:
+        - dep-lib-convert_case
+        - invoked.timestamp
+        - lib-convert_case
+        - lib-convert_case.json
+      corelib-rust-c996adf834cc9957:
+        files:
+        - dep-lib-corelib_rust
+        - invoked.timestamp
+        - lib-corelib_rust
+        - lib-corelib_rust.json
+      ctor-85ac5bccff1ba354:
+        files:
+        - dep-lib-ctor
+        - invoked.timestamp
+        - lib-ctor
+        - lib-ctor.json
+      ctor-ae17b55f6ea796ab:
+        files:
+        - dep-lib-ctor
+        - invoked.timestamp
+        - lib-ctor
+        - lib-ctor.json
+      ctor-proc-macro-5e0e989777a5079d:
+        files:
+        - dep-lib-ctor_proc_macro
+        - invoked.timestamp
+        - lib-ctor_proc_macro
+        - lib-ctor_proc_macro.json
+      dtor-1bfc907ae58ca9cf:
+        files:
+        - dep-lib-dtor
+        - invoked.timestamp
+        - lib-dtor
+        - lib-dtor.json
+      dtor-1f8c88749dccc9f8:
+        files:
+        - dep-lib-dtor
+        - invoked.timestamp
+        - lib-dtor
+        - lib-dtor.json
+      dtor-proc-macro-a0caeebd8b7d9533:
+        files:
+        - dep-lib-dtor_proc_macro
+        - invoked.timestamp
+        - lib-dtor_proc_macro
+        - lib-dtor_proc_macro.json
+      futures-22d3e8e77f946241:
+        files:
+        - dep-lib-futures
+        - invoked.timestamp
+        - lib-futures
+        - lib-futures.json
+      futures-channel-1e0d81fc4684b03c:
+        files:
+        - dep-lib-futures_channel
+        - invoked.timestamp
+        - lib-futures_channel
+        - lib-futures_channel.json
+      futures-core-a753f37a20a78373:
+        files:
+        - dep-lib-futures_core
+        - invoked.timestamp
+        - lib-futures_core
+        - lib-futures_core.json
+      futures-executor-940f2d6839f7e132:
+        files:
+        - dep-lib-futures_executor
+        - invoked.timestamp
+        - lib-futures_executor
+        - lib-futures_executor.json
+      futures-io-bf3ef7fe0b0b2766:
+        files:
+        - dep-lib-futures_io
+        - invoked.timestamp
+        - lib-futures_io
+        - lib-futures_io.json
+      futures-macro-0bdf51222838263c:
+        files:
+        - dep-lib-futures_macro
+        - invoked.timestamp
+        - lib-futures_macro
+        - lib-futures_macro.json
+      futures-sink-9fa2ef9909bd4281:
+        files:
+        - dep-lib-futures_sink
+        - invoked.timestamp
+        - lib-futures_sink
+        - lib-futures_sink.json
+      futures-task-f8b3a04e65270c00:
+        files:
+        - dep-lib-futures_task
+        - invoked.timestamp
+        - lib-futures_task
+        - lib-futures_task.json
+      futures-util-47348f0866b2ab4a:
+        files:
+        - dep-lib-futures_util
+        - invoked.timestamp
+        - lib-futures_util
+        - lib-futures_util.json
+      libloading-4472328a0aea4759:
+        files:
+        - dep-lib-libloading
+        - invoked.timestamp
+        - lib-libloading
+        - lib-libloading.json
+      memchr-59a7da1980c53883:
+        files:
+        - dep-lib-memchr
+        - invoked.timestamp
+        - lib-memchr
+        - lib-memchr.json
+      napi-15b2be1a49ab5ba2:
+        files:
+        - dep-lib-napi
+        - invoked.timestamp
+        - lib-napi
+        - lib-napi.json
+      napi-build-9763b62c0414def1:
+        files:
+        - dep-lib-napi_build
+        - invoked.timestamp
+        - lib-napi_build
+        - lib-napi_build.json
+      napi-d9f621717f0daac8:
+        files:
+        - run-build-script-build-script-build
+        - run-build-script-build-script-build.json
+      napi-derive-331c770af5608692:
+        files:
+        - dep-lib-napi_derive
+        - invoked.timestamp
+        - lib-napi_derive
+        - lib-napi_derive.json
+      napi-derive-backend-692a15e6b401a5b9:
+        files:
+        - dep-lib-napi_derive_backend
+        - invoked.timestamp
+        - lib-napi_derive_backend
+        - lib-napi_derive_backend.json
+      napi-ed00c140be45c155:
+        files:
+        - build-script-build-script-build
+        - build-script-build-script-build.json
+        - dep-build-script-build-script-build
+        - invoked.timestamp
+      napi-sys-5e8f475222f027c9:
+        files:
+        - dep-lib-napi_sys
+        - invoked.timestamp
+        - lib-napi_sys
+        - lib-napi_sys.json
+      nohash-hasher-620d124788759381:
+        files:
+        - dep-lib-nohash_hasher
+        - invoked.timestamp
+        - lib-nohash_hasher
+        - lib-nohash_hasher.json
+      pin-project-lite-7f6cdf3c1eeb3838:
+        files:
+        - dep-lib-pin_project_lite
+        - invoked.timestamp
+        - lib-pin_project_lite
+        - lib-pin_project_lite.json
+      proc-macro2-001ff29431967c97:
+        files:
+        - build-script-build-script-build
+        - build-script-build-script-build.json
+        - dep-build-script-build-script-build
+        - invoked.timestamp
+      proc-macro2-b15ca7273f9181e1:
+        files:
+        - dep-lib-proc_macro2
+        - invoked.timestamp
+        - lib-proc_macro2
+        - lib-proc_macro2.json
+      proc-macro2-ede827b1b2a7eabc:
+        files:
+        - run-build-script-build-script-build
+        - run-build-script-build-script-build.json
+      quote-47ff5207b5376b8f:
+        files:
+        - run-build-script-build-script-build
+        - run-build-script-build-script-build.json
+      quote-aaf0a54ef397828d:
+        files:
+        - build-script-build-script-build
+        - build-script-build-script-build.json
+        - dep-build-script-build-script-build
+        - invoked.timestamp
+      quote-f216aab3d425f456:
+        files:
+        - dep-lib-quote
+        - invoked.timestamp
+        - lib-quote
+        - lib-quote.json
+      rustc-hash-d5cf9343f860f336:
+        files:
+        - dep-lib-rustc_hash
+        - invoked.timestamp
+        - lib-rustc_hash
+        - lib-rustc_hash.json
+      semver-bcd60168156b3cd8:
+        files:
+        - dep-lib-semver
+        - invoked.timestamp
+        - lib-semver
+        - lib-semver.json
+      slab-f35fc41aad0844a9:
+        files:
+        - dep-lib-slab
+        - invoked.timestamp
+        - lib-slab
+        - lib-slab.json
+      syn-9b4e9bbe82f5c74d:
+        files:
+        - dep-lib-syn
+        - invoked.timestamp
+        - lib-syn
+        - lib-syn.json
+      unicode-ident-6f8c23653db79248:
+        files:
+        - dep-lib-unicode_ident
+        - invoked.timestamp
+        - lib-unicode_ident
+        - lib-unicode_ident.json
+      unicode-segmentation-9b77c54c1075ed43:
+        files:
+        - dep-lib-unicode_segmentation
+        - invoked.timestamp
+        - lib-unicode_segmentation
+        - lib-unicode_segmentation.json
+      windows-link-6d5d2ad29e488a54:
+        files:
+        - dep-lib-windows_link
+        - invoked.timestamp
+        - lib-windows_link
+        - lib-windows_link.json
+    build:
+      napi-d9f621717f0daac8:
+        out: {}
+        files:
+        - invoked.timestamp
+        - output
+        - root-output
+        - stderr
+      napi-ed00c140be45c155:
+        files:
+        - build-script-build.exe
+        - build_script_build-ed00c140be45c155.d
+        - build_script_build-ed00c140be45c155.exe
+        - build_script_build-ed00c140be45c155.pdb
+        - build_script_build.pdb
+      proc-macro2-001ff29431967c97:
+        files:
+        - build-script-build.exe
+        - build_script_build-001ff29431967c97.d
+        - build_script_build-001ff29431967c97.exe
+        - build_script_build-001ff29431967c97.pdb
+        - build_script_build.pdb
+      proc-macro2-ede827b1b2a7eabc:
+        out: {}
+        files:
+        - invoked.timestamp
+        - output
+        - root-output
+        - stderr
+      quote-47ff5207b5376b8f:
+        out: {}
+        files:
+        - invoked.timestamp
+        - output
+        - root-output
+        - stderr
+      quote-aaf0a54ef397828d:
+        files:
+        - build-script-build.exe
+        - build_script_build-aaf0a54ef397828d.d
+        - build_script_build-aaf0a54ef397828d.exe
+        - build_script_build-aaf0a54ef397828d.pdb
+        - build_script_build.pdb
+    deps:
+      files:
+      - bitflags-0557ee5e7b41903a.d
+      - convert_case-ecf0a616dac238c3.d
+      - corelib_rust.d
+      - corelib_rust.dll
+      - corelib_rust.dll.exp
+      - corelib_rust.dll.lib
+      - corelib_rust.pdb
+      - ctor-85ac5bccff1ba354.d
+      - ctor-ae17b55f6ea796ab.d
+      - ctor_proc_macro-5e0e989777a5079d.d
+      - ctor_proc_macro-5e0e989777a5079d.dll
+      - ctor_proc_macro-5e0e989777a5079d.dll.exp
+      - ctor_proc_macro-5e0e989777a5079d.dll.lib
+      - ctor_proc_macro-5e0e989777a5079d.pdb
+      - dtor-1bfc907ae58ca9cf.d
+      - dtor-1f8c88749dccc9f8.d
+      - dtor_proc_macro-a0caeebd8b7d9533.d
+      - dtor_proc_macro-a0caeebd8b7d9533.dll
+      - dtor_proc_macro-a0caeebd8b7d9533.dll.exp
+      - dtor_proc_macro-a0caeebd8b7d9533.dll.lib
+      - dtor_proc_macro-a0caeebd8b7d9533.pdb
+      - futures-22d3e8e77f946241.d
+      - futures_channel-1e0d81fc4684b03c.d
+      - futures_core-a753f37a20a78373.d
+      - futures_executor-940f2d6839f7e132.d
+      - futures_io-bf3ef7fe0b0b2766.d
+      - futures_macro-0bdf51222838263c.d
+      - futures_macro-0bdf51222838263c.dll
+      - futures_macro-0bdf51222838263c.dll.exp
+      - futures_macro-0bdf51222838263c.dll.lib
+      - futures_macro-0bdf51222838263c.pdb
+      - futures_sink-9fa2ef9909bd4281.d
+      - futures_task-f8b3a04e65270c00.d
+      - futures_util-47348f0866b2ab4a.d
+      - libbitflags-0557ee5e7b41903a.rlib
+      - libbitflags-0557ee5e7b41903a.rmeta
+      - libconvert_case-ecf0a616dac238c3.rlib
+      - libconvert_case-ecf0a616dac238c3.rmeta
+      - libctor-85ac5bccff1ba354.rlib
+      - libctor-85ac5bccff1ba354.rmeta
+      - libctor-ae17b55f6ea796ab.rlib
+      - libctor-ae17b55f6ea796ab.rmeta
+      - libdtor-1bfc907ae58ca9cf.rlib
+      - libdtor-1bfc907ae58ca9cf.rmeta
+      - libdtor-1f8c88749dccc9f8.rlib
+      - libdtor-1f8c88749dccc9f8.rmeta
+      - libfutures-22d3e8e77f946241.rlib
+      - libfutures-22d3e8e77f946241.rmeta
+      - libfutures_channel-1e0d81fc4684b03c.rlib
+      - libfutures_channel-1e0d81fc4684b03c.rmeta
+      - libfutures_core-a753f37a20a78373.rlib
+      - libfutures_core-a753f37a20a78373.rmeta
+      - libfutures_executor-940f2d6839f7e132.rlib
+      - libfutures_executor-940f2d6839f7e132.rmeta
+      - libfutures_io-bf3ef7fe0b0b2766.rlib
+      - libfutures_io-bf3ef7fe0b0b2766.rmeta
+      - libfutures_sink-9fa2ef9909bd4281.rlib
+      - libfutures_sink-9fa2ef9909bd4281.rmeta
+      - libfutures_task-f8b3a04e65270c00.rlib
+      - libfutures_task-f8b3a04e65270c00.rmeta
+      - libfutures_util-47348f0866b2ab4a.rlib
+      - libfutures_util-47348f0866b2ab4a.rmeta
+      - liblibloading-4472328a0aea4759.rlib
+      - liblibloading-4472328a0aea4759.rmeta
+      - libloading-4472328a0aea4759.d
+      - libmemchr-59a7da1980c53883.rlib
+      - libmemchr-59a7da1980c53883.rmeta
+      - libnapi-15b2be1a49ab5ba2.rlib
+      - libnapi-15b2be1a49ab5ba2.rmeta
+      - libnapi_build-9763b62c0414def1.rlib
+      - libnapi_build-9763b62c0414def1.rmeta
+      - libnapi_derive_backend-692a15e6b401a5b9.rlib
+      - libnapi_derive_backend-692a15e6b401a5b9.rmeta
+      - libnapi_sys-5e8f475222f027c9.rlib
+      - libnapi_sys-5e8f475222f027c9.rmeta
+      - libnohash_hasher-620d124788759381.rlib
+      - libnohash_hasher-620d124788759381.rmeta
+      - libpin_project_lite-7f6cdf3c1eeb3838.rlib
+      - libpin_project_lite-7f6cdf3c1eeb3838.rmeta
+      - libproc_macro2-b15ca7273f9181e1.rlib
+      - libproc_macro2-b15ca7273f9181e1.rmeta
+      - libquote-f216aab3d425f456.rlib
+      - libquote-f216aab3d425f456.rmeta
+      - librustc_hash-d5cf9343f860f336.rlib
+      - librustc_hash-d5cf9343f860f336.rmeta
+      - libsemver-bcd60168156b3cd8.rlib
+      - libsemver-bcd60168156b3cd8.rmeta
+      - libslab-f35fc41aad0844a9.rlib
+      - libslab-f35fc41aad0844a9.rmeta
+      - libsyn-9b4e9bbe82f5c74d.rlib
+      - libsyn-9b4e9bbe82f5c74d.rmeta
+      - libunicode_ident-6f8c23653db79248.rlib
+      - libunicode_ident-6f8c23653db79248.rmeta
+      - libunicode_segmentation-9b77c54c1075ed43.rlib
+      - libunicode_segmentation-9b77c54c1075ed43.rmeta
+      - libwindows_link-6d5d2ad29e488a54.rlib
+      - libwindows_link-6d5d2ad29e488a54.rmeta
+      - memchr-59a7da1980c53883.d
+      - napi-15b2be1a49ab5ba2.d
+      - napi_build-9763b62c0414def1.d
+      - napi_derive-331c770af5608692.d
+      - napi_derive-331c770af5608692.dll
+      - napi_derive-331c770af5608692.dll.exp
+      - napi_derive-331c770af5608692.dll.lib
+      - napi_derive-331c770af5608692.pdb
+      - napi_derive_backend-692a15e6b401a5b9.d
+      - napi_sys-5e8f475222f027c9.d
+      - nohash_hasher-620d124788759381.d
+      - pin_project_lite-7f6cdf3c1eeb3838.d
+      - proc_macro2-b15ca7273f9181e1.d
+      - quote-f216aab3d425f456.d
+      - rustc_hash-d5cf9343f860f336.d
+      - semver-bcd60168156b3cd8.d
+      - slab-f35fc41aad0844a9.d
+      - syn-9b4e9bbe82f5c74d.d
+      - unicode_ident-6f8c23653db79248.d
+      - unicode_segmentation-9b77c54c1075ed43.d
+      - windows_link-6d5d2ad29e488a54.d
+    examples: {}
+    incremental: {}
+    files:
+    - '.cargo-lock'
+    - corelib_rust.d
+    - corelib_rust.dll
+    - corelib_rust.dll.exp
+    - corelib_rust.dll.lib
+    - corelib_rust.pdb
+  x86_64-pc-windows-msvc:
+    release:
+      '.fingerprint':
+        bitflags-73b5d476539f40d1:
+          files:
+          - dep-lib-bitflags
+          - invoked.timestamp
+          - lib-bitflags
+          - lib-bitflags.json
+        corelib-rust-c996adf834cc9957:
+          files:
+          - dep-lib-corelib_rust
+          - invoked.timestamp
+          - lib-corelib_rust
+          - lib-corelib_rust.json
+        ctor-5733669c2f888c3c:
+          files:
+          - dep-lib-ctor
+          - invoked.timestamp
+          - lib-ctor
+          - lib-ctor.json
+        dtor-39be66c92cfc7d4a:
+          files:
+          - dep-lib-dtor
+          - invoked.timestamp
+          - lib-dtor
+          - lib-dtor.json
+        futures-59bd37a546fc228e:
+          files:
+          - dep-lib-futures
+          - invoked.timestamp
+          - lib-futures
+          - lib-futures.json
+        futures-channel-48fe23a6aab66a5e:
+          files:
+          - dep-lib-futures_channel
+          - invoked.timestamp
+          - lib-futures_channel
+          - lib-futures_channel.json
+        futures-core-96f5cf8261437c77:
+          files:
+          - dep-lib-futures_core
+          - invoked.timestamp
+          - lib-futures_core
+          - lib-futures_core.json
+        futures-executor-929a0afb849efd24:
+          files:
+          - dep-lib-futures_executor
+          - invoked.timestamp
+          - lib-futures_executor
+          - lib-futures_executor.json
+        futures-io-08efba69ee1ba392:
+          files:
+          - dep-lib-futures_io
+          - invoked.timestamp
+          - lib-futures_io
+          - lib-futures_io.json
+        futures-sink-e754187e4aa3b956:
+          files:
+          - dep-lib-futures_sink
+          - invoked.timestamp
+          - lib-futures_sink
+          - lib-futures_sink.json
+        futures-task-33c7a5a6947135c3:
+          files:
+          - dep-lib-futures_task
+          - invoked.timestamp
+          - lib-futures_task
+          - lib-futures_task.json
+        futures-util-f0f494aef7b2afff:
+          files:
+          - dep-lib-futures_util
+          - invoked.timestamp
+          - lib-futures_util
+          - lib-futures_util.json
+        libloading-ad4cfa60ea342922:
+          files:
+          - dep-lib-libloading
+          - invoked.timestamp
+          - lib-libloading
+          - lib-libloading.json
+        memchr-1089a8f3b0973f4d:
+          files:
+          - dep-lib-memchr
+          - invoked.timestamp
+          - lib-memchr
+          - lib-memchr.json
+        napi-ba7fb2f33bc21487:
+          files:
+          - run-build-script-build-script-build
+          - run-build-script-build-script-build.json
+        napi-e618f77f2e4c8202:
+          files:
+          - dep-lib-napi
+          - invoked.timestamp
+          - lib-napi
+          - lib-napi.json
+        napi-sys-c3f9659f4c751381:
+          files:
+          - dep-lib-napi_sys
+          - invoked.timestamp
+          - lib-napi_sys
+          - lib-napi_sys.json
+        nohash-hasher-2708e3eefa5ec4f5:
+          files:
+          - dep-lib-nohash_hasher
+          - invoked.timestamp
+          - lib-nohash_hasher
+          - lib-nohash_hasher.json
+        pin-project-lite-87fc0e9b33327428:
+          files:
+          - dep-lib-pin_project_lite
+          - invoked.timestamp
+          - lib-pin_project_lite
+          - lib-pin_project_lite.json
+        rustc-hash-94391ee0414b19b4:
+          files:
+          - dep-lib-rustc_hash
+          - invoked.timestamp
+          - lib-rustc_hash
+          - lib-rustc_hash.json
+        slab-2e40a381dc14d82e:
+          files:
+          - dep-lib-slab
+          - invoked.timestamp
+          - lib-slab
+          - lib-slab.json
+        windows-link-2592ae7849b6929b:
+          files:
+          - dep-lib-windows_link
+          - invoked.timestamp
+          - lib-windows_link
+          - lib-windows_link.json
+      build:
+        napi-ba7fb2f33bc21487:
+          out: {}
+          files:
+          - invoked.timestamp
+          - output
+          - root-output
+          - stderr
+      deps:
+        files:
+        - bitflags-73b5d476539f40d1.d
+        - corelib_rust.d
+        - corelib_rust.dll
+        - corelib_rust.dll.exp
+        - corelib_rust.dll.lib
+        - corelib_rust.pdb
+        - ctor-5733669c2f888c3c.d
+        - dtor-39be66c92cfc7d4a.d
+        - futures-59bd37a546fc228e.d
+        - futures_channel-48fe23a6aab66a5e.d
+        - futures_core-96f5cf8261437c77.d
+        - futures_executor-929a0afb849efd24.d
+        - futures_io-08efba69ee1ba392.d
+        - futures_sink-e754187e4aa3b956.d
+        - futures_task-33c7a5a6947135c3.d
+        - futures_util-f0f494aef7b2afff.d
+        - libbitflags-73b5d476539f40d1.rlib
+        - libbitflags-73b5d476539f40d1.rmeta
+        - libctor-5733669c2f888c3c.rlib
+        - libctor-5733669c2f888c3c.rmeta
+        - libdtor-39be66c92cfc7d4a.rlib
+        - libdtor-39be66c92cfc7d4a.rmeta
+        - libfutures-59bd37a546fc228e.rlib
+        - libfutures-59bd37a546fc228e.rmeta
+        - libfutures_channel-48fe23a6aab66a5e.rlib
+        - libfutures_channel-48fe23a6aab66a5e.rmeta
+        - libfutures_core-96f5cf8261437c77.rlib
+        - libfutures_core-96f5cf8261437c77.rmeta
+        - libfutures_executor-929a0afb849efd24.rlib
+        - libfutures_executor-929a0afb849efd24.rmeta
+        - libfutures_io-08efba69ee1ba392.rlib
+        - libfutures_io-08efba69ee1ba392.rmeta
+        - libfutures_sink-e754187e4aa3b956.rlib
+        - libfutures_sink-e754187e4aa3b956.rmeta
+        - libfutures_task-33c7a5a6947135c3.rlib
+        - libfutures_task-33c7a5a6947135c3.rmeta
+        - libfutures_util-f0f494aef7b2afff.rlib
+        - libfutures_util-f0f494aef7b2afff.rmeta
+        - liblibloading-ad4cfa60ea342922.rlib
+        - liblibloading-ad4cfa60ea342922.rmeta
+        - libloading-ad4cfa60ea342922.d
+        - libmemchr-1089a8f3b0973f4d.rlib
+        - libmemchr-1089a8f3b0973f4d.rmeta
+        - libnapi-e618f77f2e4c8202.rlib
+        - libnapi-e618f77f2e4c8202.rmeta
+        - libnapi_sys-c3f9659f4c751381.rlib
+        - libnapi_sys-c3f9659f4c751381.rmeta
+        - libnohash_hasher-2708e3eefa5ec4f5.rlib
+        - libnohash_hasher-2708e3eefa5ec4f5.rmeta
+        - libpin_project_lite-87fc0e9b33327428.rlib
+        - libpin_project_lite-87fc0e9b33327428.rmeta
+        - librustc_hash-94391ee0414b19b4.rlib
+        - librustc_hash-94391ee0414b19b4.rmeta
+        - libslab-2e40a381dc14d82e.rlib
+        - libslab-2e40a381dc14d82e.rmeta
+        - libwindows_link-2592ae7849b6929b.rlib
+        - libwindows_link-2592ae7849b6929b.rmeta
+        - memchr-1089a8f3b0973f4d.d
+        - napi-e618f77f2e4c8202.d
+        - napi_sys-c3f9659f4c751381.d
+        - nohash_hasher-2708e3eefa5ec4f5.d
+        - pin_project_lite-87fc0e9b33327428.d
+        - rustc_hash-94391ee0414b19b4.d
+        - slab-2e40a381dc14d82e.d
+        - windows_link-2592ae7849b6929b.d
+      examples: {}
+      incremental: {}
+      files:
+      - '.cargo-lock'
+      - corelib_rust.d
+      - corelib_rust.dll
+      - corelib_rust.dll.exp
+      - corelib_rust.dll.lib
+      - corelib_rust.pdb
+    files:
+    - CACHEDIR.TAG
+  files:
+  - '.rustc_info.json'
+  - CACHEDIR.TAG

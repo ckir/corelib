@@ -5,7 +5,6 @@
 // Logger callback can be added later via ThreadsafeFunction
 // =============================================
 
-use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
 #[napi]

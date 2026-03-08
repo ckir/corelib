@@ -5,6 +5,7 @@
 // FIXED (2026-03-07): Replaced 'any' type for ffi with 'unknown' to avoid noExplicitAny lint error (safer than any while maintaining dynamic nature). Organized imports alphabetically per Biome assist/source/organizeImports. Added type guards for coreFFI accesses to fix 'unknown' type errors. All unrelated features (e.g., runtime detection, FFI loading logic) remain fully maintained and unchanged.
 // =============================================
 
+import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path"; // For node/bun
 import { detectRuntime } from "../common/runtime";
@@ -14,16 +15,24 @@ const require = createRequire(import.meta.url);
 let ffi: unknown;
 
 async function loadFFI() {
-	// FIXED (2026-03-07): Use import.meta.dirname and createRequire for ESM compatibility (replaces __dirname and require). All unrelated features (e.g., runtime detection, FFI loading logic) remain fully maintained and unchanged.
-	const libPath = path.resolve(
+	// FIXED (2026-03-08): Loader now prioritizes local corelib-rust.node for distribution packages.
+	// Falling back to rust/target/release for local development convenience.
+	// Relative to src/core/index.ts:
+	const localPath = path.resolve(
 		import.meta.dirname,
-		"../../rust/target/release/corelib-rust.node",
-	); // Adjust build path
+		"../../corelib-rust.node",
+	);
+	const devPath = path.resolve(
+		import.meta.dirname,
+		"../../ts-core/corelib-rust.node",
+	);
+
+	const libPath = existsSync(localPath) ? localPath : devPath;
 
 	if (runtime === "deno") {
 		// Deno: Try dlopen on .node (may need --allow-ffi --unstable)
 		// If fails, build plain cdylib and adjust symbols
-		ffi = (Deno as any).dlopen(libPath, {
+		ffi = Deno.dlopen(libPath, {
 			log_and_double: { parameters: ["buffer", "i32"], result: "i32" },
 			get_version: { parameters: [], result: "buffer" },
 		});

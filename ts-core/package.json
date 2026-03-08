@@ -5,9 +5,12 @@
 	"type": "module",
 	"types": "dist/index.d.ts",
 	"files": [
-		"dist"
+		"dist",
+		"scripts",
+		"corelib-rust.node"
 	],
 	"scripts": {
+		"postinstall": "node scripts/postinstall.js",
 		"build": "tsup",
 		"watch": "tsup --watch",
 		"test": "vitest",
@@ -20,7 +23,6 @@
 		"@libsql/client": "^0.17.0",
 		"commander": "^14.0.3",
 		"confbox": "^0.2.1",
-		"deepmerge-ts": "^7.0.0",
 		"dotenv": "^17.3.1",
 		"ky": "^1.7.0",
 		"luxon": "^3.5.0",
@@ -30,6 +32,7 @@
 		"pino-socket": "^8.0.0",
 		"protobufjs": "^8.0.0",
 		"serialize-error": "^13.0.1",
+		"ts-deepmerge": "^7.0.3",
 		"undici": "^7.22.0"
 	},
 	"devDependencies": {
@@ -39,6 +42,7 @@
 		"@types/node": "^25.3.3",
 		"bun-types": "^1.1.0",
 		"happy-dom": "^20.8.3",
+		"msw": "^2.12.10",
 		"tsx": "^4.19.2",
 		"typedoc": "^0.28.17",
 		"vitest": "^4.0.18"
