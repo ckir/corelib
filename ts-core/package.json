@@ -23,6 +23,7 @@
 		"@libsql/client": "^0.17.0",
 		"commander": "^14.0.3",
 		"confbox": "^0.2.1",
+		"deepmerge-ts": "^7.1.5",
 		"dotenv": "^17.3.1",
 		"ky": "^1.7.0",
 		"luxon": "^3.5.0",
@@ -32,7 +33,6 @@
 		"pino-socket": "^8.0.0",
 		"protobufjs": "^8.0.0",
 		"serialize-error": "^13.0.1",
-		"ts-deepmerge": "^7.0.3",
 		"undici": "^7.22.0"
 	},
 	"devDependencies": {

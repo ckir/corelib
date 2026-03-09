@@ -4,13 +4,21 @@
 // Supports single or parallel requests with discriminated union results for safe typing.
 // =============================================
 
+import { deepmergeCustom } from "deepmerge-ts";
 import ky, { HTTPError, type Options as KyOptions } from "ky";
 import { type ErrorObject, serializeError } from "serialize-error";
-import { merge } from "ts-deepmerge";
 import {
 	type SerializedResponse,
 	serializeResponse,
 } from "./RequestResponseSerialize";
+
+/**
+ * Custom deepmerge instance that overwrites arrays instead of merging them.
+ * This matches the previous ts-deepmerge { mergeArrays: false } behavior.
+ */
+const customDeepmerge = deepmergeCustom({
+	mergeArrays: false,
+});
 
 /**
  * Discriminated union for request results, ensuring type-safe success/error handling.
@@ -97,20 +105,15 @@ export async function endPoint<T = unknown>(
 
 	// 3. Construct final options.
 	// Manually concat hooks to ensure default 'beforeRetry' is preserved.
-	const kyOptions = merge.withOptions(
-		{ mergeArrays: false },
-		DEFAULT_REQUEST_OPTIONS,
-		remainingOptions,
-		{
-			headers: { ...normalizedDefaultHeaders, ...normalizedInputHeaders },
-			hooks: {
-				beforeRetry: [
-					...(DEFAULT_REQUEST_OPTIONS.hooks?.beforeRetry || []),
-					...(hooks?.beforeRetry || []),
-				],
-			},
+	const kyOptions = customDeepmerge(DEFAULT_REQUEST_OPTIONS, remainingOptions, {
+		headers: { ...normalizedDefaultHeaders, ...normalizedInputHeaders },
+		hooks: {
+			beforeRetry: [
+				...(DEFAULT_REQUEST_OPTIONS.hooks?.beforeRetry || []),
+				...(hooks?.beforeRetry || []),
+			],
 		},
-	) as KyOptions;
+	}) as KyOptions;
 
 	try {
 		const responseObject = await ky(url, kyOptions);

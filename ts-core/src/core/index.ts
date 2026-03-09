@@ -8,7 +8,7 @@
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path"; // For node/bun
-import { detectRuntime } from "../common/runtime";
+import { detectRuntime } from "../utils/runtime";
 
 const runtime = detectRuntime();
 const require = createRequire(import.meta.url);

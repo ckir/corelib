@@ -5,7 +5,7 @@
 // FIXED (2026-03-07): Removed /// <reference types="bun-types" /> as it's now handled globally in tsconfig.base.json, resolving TS2688 and TS2339 by including bun-types in compilerOptions.types. All unrelated features (e.g., runtime detection, connect logic, fallback) remain fully maintained and unchanged.
 // =============================================
 
-import { detectRuntime } from "../common/runtime";
+import { detectRuntime } from "../utils/runtime";
 
 const runtime = detectRuntime();
 

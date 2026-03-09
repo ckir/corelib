@@ -45,3 +45,24 @@ console.log(`Memory Used: ${stats.memory.heapUsed} bytes`);
 - `Configs`: Configuration Management
 - `Database`: Dynamic Runtime Database Drivers
 - `Common`: Shared utilities like `detectRuntime`
+
+## Configuration
+
+The `ConfigManager` handles loading and overriding configurations from defaults, files, env, and CLI.
+
+### Usage Example
+
+```typescript
+import { ConfigManager } from '@ckir/corelib';
+
+const manager = ConfigManager.getInstance();
+await manager.initialize();
+console.log(globalThis.sysconfig); // Access global config
+console.log(manager.getConfig()); // Or directly
+
+// Update value
+manager.updateValue('key.path', 'newValue');
+
+// Env override: CORELIB_KEY_PATH='value'
+// CLI override: --key-path='value'
+```

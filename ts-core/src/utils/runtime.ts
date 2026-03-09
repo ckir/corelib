@@ -1,5 +1,5 @@
 // =============================================
-// FILE: ts-core/src/common/runtime.ts
+// FILE: ts-core/src/utils/runtime.ts
 // PURPOSE: Central runtime detector
 // NEW: Respects RUNTIME= from .env (for Developers Cockpit)
 // NEW FIXES (2026-03-05):

@@ -4,7 +4,7 @@
 // (Global type is now defined in common/index.ts)
 // =============================================
 
-import { detectRuntime } from "../common/runtime";
+import { detectRuntime } from "../utils/runtime";
 import type { StrictLogger } from "./common";
 
 declare global {

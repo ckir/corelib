@@ -5,7 +5,7 @@
 // NEW (2026-03-07): Added exports for RequestUnlimited and related types/utilities.
 // =============================================
 
-import { detectRuntime } from "../common/runtime";
+import { detectRuntime } from "../utils/runtime";
 
 export const Retrieve = {
 	run: () => console.log(`[RETRIEVE] Running on ${detectRuntime()}`),

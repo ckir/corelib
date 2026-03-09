@@ -10,13 +10,7 @@
 
 import { createRequire } from "node:module";
 
-export function detectRuntime(): "node" | "bun" | "deno" | "unknown" {
-	if (typeof Deno !== "undefined") return "deno";
-	if (typeof Bun !== "undefined") return "bun";
-	if (typeof process !== "undefined" && process.release?.name === "node")
-		return "node";
-	return "unknown";
-}
+import { detectRuntime } from "./runtime";
 
 function redactEnv(
 	env: Record<string, string | undefined>,
@@ -139,5 +133,4 @@ export function getSysInfo() {
  */
 export const SysInfo = {
 	get: getSysInfo,
-	detectRuntime,
 };

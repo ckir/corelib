@@ -7,4 +7,3 @@
 // FIXED (2026-03-07): Adjusted formatting to match Biome rules (consistent line endings, no trailing spaces). All unrelated features remain fully maintained and unchanged.
 // =============================================
 
-export * from "./runtime";
