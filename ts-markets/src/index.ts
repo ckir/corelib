@@ -14,3 +14,6 @@ export { ApiNasdaqUnlimited, type NasdaqResult };
 export const Markets = {
 	nasdaq: { ApiNasdaqUnlimited },
 };
+
+// Update to ts-markets/src/index.ts (add to end)
+export { MarketStatus, type NasdaqMarketInfo } from "./nasdaq/MarketStatus";

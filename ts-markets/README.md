@@ -38,3 +38,23 @@ if (result.status === 'success') {
 // Parallel requests
 const results = await ApiNasdaqUnlimited.endPoints(['https://api.nasdaq.com/api/endpoint1', 'https://api.nasdaq.com/api/endpoint2']);
 ```
+
+// Append to ts-markets/README.md
+
+### Market Status
+
+Fetch current Nasdaq market status and calculate sleep duration until next open.
+
+```typescript
+import { MarketStatus } from '@ckir/corelib-markets';
+
+const status = await MarketStatus.getStatus();
+
+if (status.status === 'success') {
+  console.log('Market Status:', status.value.mrktStatus);
+  const sleepMs = MarketStatus.getSleepDuration(status.value);
+  console.log('Sleep until next open (ms):', sleepMs);
+} else {
+  console.error('Error:', status.reason.message);
+}
+```

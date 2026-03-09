@@ -120,6 +120,9 @@ importers:
       ky:
         specifier: ^1.14.3
         version: 1.14.3
+      luxon:
+        specifier: ^3.7.2
+        version: 3.7.2
       serialize-error:
         specifier: ^13.0.1
         version: 13.0.1
@@ -127,6 +130,9 @@ importers:
       '@types/deno':
         specifier: ^2.5.0
         version: 2.5.0
+      '@types/luxon':
+        specifier: ^3.7.1
+        version: 3.7.1
       '@types/node':
         specifier: ^25.3.3
         version: 25.3.5
@@ -707,6 +713,9 @@ packages:
 
   '@types/hast@3.0.4':
     resolution: {integrity: sha512-WPs+bbQw5aCj+x6laNGWLH3wviHtoCv/P3+otBhbOhJgG8qtpdAMlTCxLtsTWA7LH1Oh/bFCHsBn0TPS5m30EQ==}
+
+  '@types/luxon@3.7.1':
+    resolution: {integrity: sha512-H3iskjFIAn5SlJU7OuxUmTEpebK6TKB8rxZShDslBMZJ5u9S//KM1sbdAisiSrqwLQncVjnpi2OK2J51h+4lsg==}
 
   '@types/node@25.3.5':
     resolution: {integrity: sha512-oX8xrhvpiyRCQkG1MFchB09f+cXftgIXb3a7UUa4Y3wpmZPw5tyZGTLWhlESOLq1Rq6oDlc8npVU2/9xiCuXMA==}
@@ -2107,6 +2116,8 @@ snapshots:
   '@types/hast@3.0.4':
     dependencies:
       '@types/unist': 3.0.3
+
+  '@types/luxon@3.7.1': {}
 
   '@types/node@25.3.5':
     dependencies:
