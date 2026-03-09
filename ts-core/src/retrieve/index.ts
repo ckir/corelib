@@ -11,13 +11,11 @@ export const Retrieve = {
 	run: () => console.log(`[RETRIEVE] Running on ${detectRuntime()}`),
 };
 
-export {
-	RequestResponseSerialize,
-	SerializedResponse,
-} from "./RequestResponseSerialize";
+export { RequestResponseSerialize } from "./RequestResponseSerialize";
+export type { SerializedResponse } from "./RequestResponseSerialize";
 export {
 	endPoint,
 	endPoints,
-	RequestResult,
 	RequestUnlimited,
 } from "./RequestUnlimited";
+export type { RequestResult } from "./RequestUnlimited";

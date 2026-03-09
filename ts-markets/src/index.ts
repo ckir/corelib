@@ -4,10 +4,13 @@
 // Can be imported separately: import { Markets } from '@ckir/corelib-markets'
 // =============================================
 
-import { ApiNasdaqUnlimited } from "./nasdaq/ApiNasdaqUnlimited";
+import {
+	ApiNasdaqUnlimited,
+	type NasdaqResult,
+} from "./nasdaq/ApiNasdaqUnlimited";
 
-export { ApiNasdaqUnlimited };
+export { ApiNasdaqUnlimited, type NasdaqResult };
 
 export const Markets = {
-	nasdaq: ApiNasdaqUnlimited,
+	nasdaq: { ApiNasdaqUnlimited },
 };
