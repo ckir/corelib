@@ -7,13 +7,24 @@
 	"scripts": {
 		"build": "tsup",
 		"watch": "tsup --watch",
+		"test": "vitest",
+		"lint": "biome check . --max-diagnostics=100",
 		"format": "biome format . --write",
 		"docs": "typedoc",
 		"clean": "del dist"
 	},
 	"devDependencies": {
-		"typedoc": "^0.28.17",
+		"@types/deno": "^2.5.0",
 		"@types/node": "^25.3.3",
-		"bun-types": "^1.1.0"
+		"bun-types": "^1.1.0",
+		"happy-dom": "^20.8.3",
+		"msw": "^2.12.10",
+		"typedoc": "^0.28.17",
+		"vitest": "^4.0.18"
+	},
+	"dependencies": {
+		"@ckir/corelib": "workspace:*",
+		"ky": "^1.14.3",
+		"serialize-error": "^13.0.1"
 	}
 }

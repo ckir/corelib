@@ -66,6 +66,38 @@ export class ConfigManager extends EventEmitter {
 	}
 
 	/**
+	 * Retrieves a nested configuration value by string path (e.g., "db.mysql.port").
+	 * @param {string} path - The dot-notation path to the configuration value.
+	 * @returns {any} The value at the specified path, or undefined if not found.
+	 */
+	// biome-ignore lint/suspicious/noExplicitAny: Dynamic configuration return
+	public get(path: string): any {
+		const keys = path.split(".");
+		let current = this._config;
+
+		for (const key of keys) {
+			if (
+				current === null ||
+				typeof current !== "object" ||
+				!(key in current)
+			) {
+				return undefined;
+			}
+			current = current[key];
+		}
+
+		return current;
+	}
+
+	/**
+	 * Static helper to retrieve a configuration value from the singleton instance.
+	 */
+	// biome-ignore lint/suspicious/noExplicitAny: Dynamic configuration return
+	public static get(path: string): any {
+		return ConfigManager.getInstance().get(path);
+	}
+
+	/**
 	 * Main initialization sequence.
 	 * 1. Load Defaults
 	 * 2. Detect CLI -C flag for external config

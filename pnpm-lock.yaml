@@ -23,6 +23,9 @@ importers:
 
   ts-cloud:
     devDependencies:
+      '@types/deno':
+        specifier: ^2.5.0
+        version: 2.5.0
       '@types/node':
         specifier: ^25.3.3
         version: 25.3.5
@@ -110,16 +113,38 @@ importers:
         version: 4.0.18(@types/node@25.3.5)(happy-dom@20.8.3)(msw@2.12.10(@types/node@25.3.5)(typescript@5.9.3))(tsx@4.21.0)(yaml@2.8.2)
 
   ts-markets:
+    dependencies:
+      '@ckir/corelib':
+        specifier: workspace:*
+        version: link:../ts-core
+      ky:
+        specifier: ^1.14.3
+        version: 1.14.3
+      serialize-error:
+        specifier: ^13.0.1
+        version: 13.0.1
     devDependencies:
+      '@types/deno':
+        specifier: ^2.5.0
+        version: 2.5.0
       '@types/node':
         specifier: ^25.3.3
         version: 25.3.5
       bun-types:
         specifier: ^1.1.0
         version: 1.3.10
+      happy-dom:
+        specifier: ^20.8.3
+        version: 20.8.3
+      msw:
+        specifier: ^2.12.10
+        version: 2.12.10(@types/node@25.3.5)(typescript@5.9.3)
       typedoc:
         specifier: ^0.28.17
         version: 0.28.17(typescript@5.9.3)
+      vitest:
+        specifier: ^4.0.18
+        version: 4.0.18(@types/node@25.3.5)(happy-dom@20.8.3)(msw@2.12.10(@types/node@25.3.5)(typescript@5.9.3))(tsx@4.21.0)(yaml@2.8.2)
 
 packages:
 

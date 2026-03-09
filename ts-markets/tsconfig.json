@@ -1,7 +1,7 @@
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "types": ["bun-types", "node"]
+    "types": ["bun-types", "deno", "node"]
   },
   "include": ["src", "tsup.config.ts"]
 }
