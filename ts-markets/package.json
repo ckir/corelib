@@ -17,6 +17,7 @@
 		"@types/deno": "^2.5.0",
 		"@types/luxon": "^3.7.1",
 		"@types/node": "^25.3.3",
+		"@types/ws": "^8.18.1",
 		"bun-types": "^1.1.0",
 		"happy-dom": "^20.8.3",
 		"msw": "^2.12.10",
@@ -24,9 +25,12 @@
 		"vitest": "^4.0.18"
 	},
 	"dependencies": {
+		"@bufbuild/protobuf": "^2.11.0",
 		"@ckir/corelib": "workspace:*",
 		"ky": "^1.14.3",
 		"luxon": "^3.7.2",
-		"serialize-error": "^13.0.1"
+		"protobufjs": "^8.0.0",
+		"serialize-error": "^13.0.1",
+		"ws": "^8.19.0"
 	}
 }

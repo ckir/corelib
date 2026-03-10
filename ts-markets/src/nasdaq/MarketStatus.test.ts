@@ -17,6 +17,7 @@ import {
 	it,
 	vi,
 } from "vitest";
+import { ApiNasdaqUnlimited } from "./ApiNasdaqUnlimited";
 import { MarketStatus, type NasdaqMarketInfo } from "./MarketStatus";
 
 const server = setupServer(
@@ -49,20 +50,36 @@ const server = setupServer(
 	}),
 );
 
-vi.mock("@ckir/corelib", () => ({
-	logger: {
-		debug: vi.fn(),
-		warn: vi.fn(),
-		error: vi.fn(),
-		fatal: vi.fn(),
-	},
-}));
+vi.mock("@ckir/corelib", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@ckir/corelib")>();
+	return {
+		...actual,
+		ConfigManager: {
+			get: vi.fn(),
+		},
+		logger: {
+			debug: vi.fn(),
+			warn: vi.fn(),
+			error: vi.fn(),
+			fatal: vi.fn(),
+			child: vi.fn().mockReturnThis(),
+		},
+	};
+});
+
+// Import the mocked logger to use in expectations
+import { logger } from "@ckir/corelib";
 
 describe("MarketStatus", () => {
-	beforeAll(() => server.listen());
+	beforeAll(() => {
+		server.listen();
+		// Also mock globalThis.logger as the library might use it
+		globalThis.logger = logger as any;
+	});
 	afterEach(() => {
 		server.resetHandlers();
 		vi.clearAllMocks();
+		vi.restoreAllMocks();
 		vi.useRealTimers();
 	});
 	afterAll(() => server.close());
@@ -76,9 +93,9 @@ describe("MarketStatus", () => {
 				expect(result.value.mrktStatus).toBe("Open");
 				expect(result.value.isBusinessDay).toBe(true);
 			}
-			expect(
-				vi.mocked(require("@ckir/corelib").logger.debug),
-			).toHaveBeenCalledWith("[MarketStatus] Schema validated successfully");
+			expect(logger?.debug).toHaveBeenCalledWith(
+				"[MarketStatus] Schema validated successfully",
+			);
 		});
 
 		it("should handle Nasdaq logic errors (rCode !== 200)", async () => {
@@ -117,9 +134,7 @@ describe("MarketStatus", () => {
 			if (result.status === "error") {
 				expect(result.reason.message).toBe("Transport Error");
 			}
-			expect(
-				vi.mocked(require("@ckir/corelib").logger.error),
-			).toHaveBeenCalled();
+			expect(logger?.error).toHaveBeenCalled();
 		});
 
 		it("should handle malformed schema (missing fields)", async () => {
@@ -140,16 +155,13 @@ describe("MarketStatus", () => {
 					"STRICT SCHEMA VALIDATION FAILED: Missing required fields",
 				);
 			}
-			expect(
-				vi.mocked(require("@ckir/corelib").logger.fatal),
-			).toHaveBeenCalled();
+			expect(logger?.fatal).toHaveBeenCalled();
 		});
 
 		it("should handle unexpected exceptions", async () => {
-			server.use(
-				http.get("https://api.nasdaq.com/api/market-info", () => {
-					throw new Error("Unexpected");
-				}),
+			// specifically mock endPoint to throw to bypass its internal catch
+			vi.spyOn(ApiNasdaqUnlimited, "endPoint").mockRejectedValue(
+				new Error("Unexpected"),
 			);
 
 			const result = await MarketStatus.getStatus();
@@ -158,9 +170,7 @@ describe("MarketStatus", () => {
 			if (result.status === "error") {
 				expect(result.reason.message).toBe("Unexpected");
 			}
-			expect(
-				vi.mocked(require("@ckir/corelib").logger.error),
-			).toHaveBeenCalled();
+			expect(logger?.error).toHaveBeenCalled();
 		});
 	});
 
@@ -177,7 +187,7 @@ describe("MarketStatus", () => {
 			afterHoursMarketOpeningTime: "Mar 9, 2026 04:00 PM ET",
 			afterHoursMarketClosingTime: "Mar 9, 2026 08:00 PM ET",
 			previousTradeDate: "Mar 6, 2026",
-			nextTradeDate: "Mar 9, 2026",
+			nextTradeDate: "Mar 10, 2026",
 			isBusinessDay: true,
 			mrktStatus: "Closed",
 			mrktCountDown: "Opens in 1D 18H 5M",
@@ -200,10 +210,8 @@ describe("MarketStatus", () => {
 			);
 
 			const ms = MarketStatus.getSleepDuration(mockData);
-			expect(ms).toBe(3600000); // 1 hour in ms
-			expect(
-				vi.mocked(require("@ckir/corelib").logger.debug),
-			).toHaveBeenCalled();
+			expect(ms).toBe(3600000); // 1 hour in ms (03:00 -> 04:00)
+			expect(logger?.debug).toHaveBeenCalled();
 		});
 
 		it("should calculate to market open if after pmOpen but before open", () => {
@@ -214,7 +222,7 @@ describe("MarketStatus", () => {
 			);
 
 			const ms = MarketStatus.getSleepDuration(mockData);
-			expect(ms).toBe(4.5 * 3600000); // 4.5 hours
+			expect(ms).toBe(4.5 * 3600000); // 4.5 hours (05:00 -> 09:30)
 		});
 
 		it("should use nextTradeDate if target in past (e.g., after hours)", () => {
@@ -223,9 +231,8 @@ describe("MarketStatus", () => {
 					zone: "America/New_York",
 				}).toJSDate(),
 			);
-			const data = { ...mockData, nextTradeDate: "Mar 10, 2026" };
-
-			const ms = MarketStatus.getSleepDuration(data);
+			// nextTradeDate is Mar 10 in mockData
+			const ms = MarketStatus.getSleepDuration(mockData);
 			expect(ms).toBe(7 * 3600000); // From 21:00 to 04:00 next day = 7 hours
 		});
 
@@ -239,19 +246,27 @@ describe("MarketStatus", () => {
 
 			const ms = MarketStatus.getSleepDuration(data);
 			expect(ms).toBe(300000);
-			expect(
-				vi.mocked(require("@ckir/corelib").logger.warn),
-			).toHaveBeenCalled();
+			expect(logger?.warn).toHaveBeenCalled();
 		});
 
-		it("should return min 60000ms if diff <=0", () => {
+		it("should return min 60000ms if diff <= 0", () => {
+			// If target NY Open is determined to be exactly NOW or in the past (after adjustments)
+			// we force min 60s sleep.
+
+			// Mock data has openRaw: "2026-03-09T09:30:00"
+			// and pmOpenRaw: "2026-03-09T04:00:00"
+
+			// Let's set time to Mar 10, 2026 04:00:00
 			vi.setSystemTime(
-				DateTime.fromISO("2026-03-09T04:00:00", {
+				DateTime.fromISO("2026-03-10T04:00:00", {
 					zone: "America/New_York",
 				}).toJSDate(),
-			); // Exactly at pmOpen
+			);
 
-			const ms = MarketStatus.getSleepDuration(mockData);
+			// Ensure nextTradeDate is parsed correctly to Mar 10
+			const data = { ...mockData, nextTradeDate: "Mar 10, 2026" };
+
+			const ms = MarketStatus.getSleepDuration(data);
 			expect(ms).toBe(60000);
 		});
 	});

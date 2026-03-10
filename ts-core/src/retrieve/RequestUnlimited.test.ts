@@ -289,7 +289,6 @@ describe("RequestUnlimited", () => {
 
 		it("should use DEFAULT_REQUEST_OPTIONS when no options provided", () => {
 			expect(RequestUnlimited.defaults.timeout).toBe(50000);
-			// biome-ignore lint/suspicious/noExplicitAny: default has retry
 			expect((RequestUnlimited.defaults.retry as any).limit).toBe(5);
 		});
 	});

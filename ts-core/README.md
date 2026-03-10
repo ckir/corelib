@@ -66,3 +66,33 @@ manager.updateValue('key.path', 'newValue');
 // Env override: CORELIB_KEY_PATH='value'
 // CLI override: --key-path='value'
 ```
+// ... existing content ...
+
+### 6. Database (SQLite/Postgres)
+Unified multi-runtime database support with transactions, prepared statements, and streaming.
+
+```typescript
+import { createDatabase } from '@ckir/corelib';
+
+const db = await createDatabase({ dialect: 'sqlite', url: 'libsql://remote-or-file' });
+
+// Query
+const result = await db.query<{ name: string }>('SELECT name FROM users');
+if (result.status === 'success') {
+  console.log(result.value.rows);
+}
+
+// Transaction
+await db.transaction(async () => {
+  await db.query('INSERT INTO users (name) VALUES (?)', ['Alice']);
+  return { status: 'success', value: true };
+});
+
+// Prepared
+const prep = await db.driver.prepare('SELECT * FROM users WHERE id = ?');
+const exec = await prep.value.execute([1]);
+await prep.value.close();
+
+// Stream
+await db.driver.stream('SELECT * FROM large_table', [], (row) => console.log(row));
+```

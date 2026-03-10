@@ -41,7 +41,6 @@ function fromNodeLike(runtime: "node" | "bun") {
 	const require = createRequire(import.meta.url);
 	const os = require("node:os");
 
-	// biome-ignore lint/suspicious/noExplicitAny: Dynamic memory usage object
 	const mem: any =
 		typeof process.memoryUsage === "function" ? process.memoryUsage() : {};
 
@@ -66,7 +65,6 @@ function fromNodeLike(runtime: "node" | "bun") {
 }
 
 function fromDeno() {
-	// biome-ignore lint/suspicious/noExplicitAny: Deno is global but types can be unstable
 	const DenoAny = typeof Deno !== "undefined" ? (Deno as any) : null;
 	const mem =
 		DenoAny && typeof DenoAny.systemMemoryInfo === "function"

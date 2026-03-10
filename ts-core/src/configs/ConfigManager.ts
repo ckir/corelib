@@ -38,7 +38,6 @@ const leafMerger = deepmergeCustom({
  */
 export class ConfigManager extends EventEmitter {
 	private static instance: ConfigManager;
-	// biome-ignore lint/suspicious/noExplicitAny: Dynamic configuration type
 	private _config: any = {};
 	private _defaultsPath: string;
 
@@ -48,9 +47,7 @@ export class ConfigManager extends EventEmitter {
 		this._defaultsPath = join(__dirname, "ConfigManager.json");
 
 		// Initialize the Global Active Object if not already present
-		// biome-ignore lint/suspicious/noExplicitAny: Legacy global access
 		if (!(globalThis as any).sysconfig) {
-			// biome-ignore lint/suspicious/noExplicitAny: Legacy global access
 			(globalThis as any).sysconfig = this._config;
 		}
 	}
@@ -70,7 +67,6 @@ export class ConfigManager extends EventEmitter {
 	 * @param {string} path - The dot-notation path to the configuration value.
 	 * @returns {any} The value at the specified path, or undefined if not found.
 	 */
-	// biome-ignore lint/suspicious/noExplicitAny: Dynamic configuration return
 	public get(path: string): any {
 		const keys = path.split(".");
 		let current = this._config;
@@ -92,7 +88,6 @@ export class ConfigManager extends EventEmitter {
 	/**
 	 * Static helper to retrieve a configuration value from the singleton instance.
 	 */
-	// biome-ignore lint/suspicious/noExplicitAny: Dynamic configuration return
 	public static get(path: string): any {
 		return ConfigManager.getInstance().get(path);
 	}
@@ -133,7 +128,6 @@ export class ConfigManager extends EventEmitter {
 		await this.applyCliOverrides(program);
 
 		// Finalize global object reference
-		// biome-ignore lint/suspicious/noExplicitAny: Legacy global access
 		(globalThis as any).sysconfig = this._config;
 		this.emit("initialized", this._config);
 	}
@@ -142,7 +136,6 @@ export class ConfigManager extends EventEmitter {
 	 * Retrieves the current active configuration object.
 	 * @returns {any} The current configuration state.
 	 */
-	// biome-ignore lint/suspicious/noExplicitAny: Dynamic configuration type
 	public getConfig(): any {
 		return this._config;
 	}
@@ -165,7 +158,6 @@ export class ConfigManager extends EventEmitter {
 	 * Fetches and parses configuration from a URL or Local Path.
 	 * Supports .enc decryption and dynamic confbox parsing by extension.
 	 */
-	// biome-ignore lint/suspicious/noExplicitAny: Dynamic configuration type
 	private async fetchExternalConfig(source: string): Promise<any> {
 		let content: string;
 
@@ -214,7 +206,6 @@ export class ConfigManager extends EventEmitter {
 	 * Processes the specific hierarchy:
 	 * commonAll -> [AppName].common -> [AppName].[platform] -> [AppName].[platform].[mode]
 	 */
-	// biome-ignore lint/suspicious/noExplicitAny: Dynamic configuration type
 	private processHierarchy(data: any): void {
 		if (!data) return;
 
@@ -274,14 +265,12 @@ export class ConfigManager extends EventEmitter {
 	 * Maps Kebab-case CLI arguments to the config structure.
 	 */
 	private async applyCliOverrides(program: Command): Promise<void> {
-		// biome-ignore lint/suspicious/noExplicitAny: Dynamic CLI overrides
 		const overrides: Record<string, any> = {};
 		let i = 0;
 		while (i < program.args.length) {
 			const arg = program.args[i];
 			if (arg.startsWith("--")) {
 				let key = arg.slice(2);
-				// biome-ignore lint/suspicious/noExplicitAny: Dynamic CLI value
 				let value: any;
 				const eqIdx = key.indexOf("=");
 				if (eqIdx > -1) {
@@ -308,7 +297,6 @@ export class ConfigManager extends EventEmitter {
 	 * Core update method that updates both the local object
 	 * and the active globalThis object, then emits events.
 	 */
-	// biome-ignore lint/suspicious/noExplicitAny: Dynamic update value
 	public updateValue(path: string, value: any): void {
 		this.setPath(this._config, path, value);
 		this.emit("change", { path, value });
@@ -318,7 +306,6 @@ export class ConfigManager extends EventEmitter {
 	/**
 	 * Helper to set nested object values by string path (e.g., "db.mysql.port")
 	 */
-	// biome-ignore lint/suspicious/noExplicitAny: Dynamic object for nested config
 	private setPath(obj: any, path: string, value: any): void {
 		const keys = path.split(".");
 		let current = obj;
@@ -335,7 +322,6 @@ export class ConfigManager extends EventEmitter {
 	/**
 	 * Parses values from Env/CLI, automatically handling JSON strings for arrays/objects.
 	 */
-	// biome-ignore lint/suspicious/noExplicitAny: Dynamic parsed value
 	private parseValue(val: any): any {
 		if (typeof val !== "string") return val;
 
@@ -376,9 +362,7 @@ export class ConfigManager extends EventEmitter {
 	 */
 	private logError(msg: string, error?: unknown): void {
 		const serialized = error ? serializeError(error) : undefined;
-		// biome-ignore lint/suspicious/noExplicitAny: Legacy global logger access
 		if ((globalThis as any).logger) {
-			// biome-ignore lint/suspicious/noExplicitAny: Legacy global logger access
 			(globalThis as any).logger.error(msg, { error: serialized });
 		} else {
 			console.error(`❌ [ConfigManager] ${msg}`, serialized || "");

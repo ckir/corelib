@@ -11,7 +11,6 @@ import crypto from "node:crypto";
  * Line 1: Ciphertext (Base64)
  * Password: CORELIB_AES_PASSWORD (Hex)
  */
-// biome-ignore lint/suspicious/noExplicitAny: Dynamic decrypted config
 export async function decryptConfig(encryptedData: string): Promise<any> {
 	const { getEnv } = await import("../utils");
 	const password = getEnv("CORELIB_AES_PASSWORD");

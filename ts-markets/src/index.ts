@@ -15,5 +15,6 @@ export const Markets = {
 	nasdaq: { ApiNasdaqUnlimited },
 };
 
+export { YahooStreaming } from "./nasdaq/datafeeds/streaming/yahoo/YahooStreaming";
 // Update to ts-markets/src/index.ts (add to end)
 export { MarketStatus, type NasdaqMarketInfo } from "./nasdaq/MarketStatus";

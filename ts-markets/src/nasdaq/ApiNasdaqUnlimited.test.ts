@@ -78,7 +78,6 @@ describe("ApiNasdaqUnlimited", () => {
 			level: "info",
 			levelVal: 30,
 			bindings: vi.fn().mockReturnValue({}),
-			// biome-ignore lint/suspicious/noExplicitAny: Mocking strict logger
 		} as any;
 	});
 
@@ -91,7 +90,6 @@ describe("ApiNasdaqUnlimited", () => {
 
 	describe("endPoint()", () => {
 		it("should return data on success", async () => {
-			// biome-ignore lint/suspicious/noExplicitAny: generic test response
 			const result = await ApiNasdaqUnlimited.endPoint<any>(
 				"https://api.nasdaq.com/api/quote/AAPL/info",
 			);
@@ -130,7 +128,6 @@ describe("ApiNasdaqUnlimited", () => {
 		});
 
 		it("should use charting headers for charting URLs", async () => {
-			// biome-ignore lint/suspicious/noExplicitAny: generic test response
 			const result = await ApiNasdaqUnlimited.endPoint<any>(
 				"https://charting.nasdaq.com/data",
 			);
@@ -146,7 +143,6 @@ describe("ApiNasdaqUnlimited", () => {
 				"X-CUSTOM-CONFIG": "overridden",
 			});
 
-			// biome-ignore lint/suspicious/noExplicitAny: generic test response
 			const result = await ApiNasdaqUnlimited.endPoint<any>(
 				"https://api.nasdaq.com/override",
 			);
@@ -185,7 +181,6 @@ describe("ApiNasdaqUnlimited", () => {
 				"https://charting.nasdaq.com/data",
 			];
 
-			// biome-ignore lint/suspicious/noExplicitAny: generic test response
 			const results = await ApiNasdaqUnlimited.endPoints<any>(urls);
 
 			expect(results).toHaveLength(2);
@@ -199,7 +194,6 @@ describe("ApiNasdaqUnlimited", () => {
 				"https://api.nasdaq.com/404",
 			];
 
-			// biome-ignore lint/suspicious/noExplicitAny: generic test response
 			const results = await ApiNasdaqUnlimited.endPoints<any>(urls);
 
 			expect(results[0].status).toBe("success");

@@ -101,8 +101,9 @@ function getSleepDuration(data: NasdaqMarketInfo): number {
 		return ms > 0 ? ms : 60 * 1000; // Minimum 1 minute
 	}
 
-	// Default fallback (mirrors Rust's else { 300 })
-	return 300 * 1000;
+	// Default fallback: If target is STILL <= now after nextTradeDate adjustment
+	// we must be exactly at target or something is wrong.
+	return 60 * 1000;
 }
 
 /**

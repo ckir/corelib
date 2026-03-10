@@ -1,32 +1,33 @@
-// =============================================
-// FILE: ts-core/src/database/index.ts
-// PURPOSE: Database category – runtime features
-// Example: Bun uses built-in SQLite
-// FIXED (2026-03-07): Removed /// <reference types="bun-types" /> as it's now handled globally in tsconfig.base.json, resolving TS2688 and TS2339 by including bun-types in compilerOptions.types. All unrelated features (e.g., runtime detection, connect logic, fallback) remain fully maintained and unchanged.
-// =============================================
+/**
+ * @file packages/tsdk/packages/database/src/index.ts
+ */
 
-import { detectRuntime } from "../utils/runtime";
+import type { BaseDbConfig, Database } from "./core/types.js";
+import { PostgresDb } from "./postgres/postgres-db.js";
+import { SqliteDb } from "./sqlite/sqlite-db.js";
 
-const runtime = detectRuntime();
+export * from "./core/driver.js";
+export * from "./core/errors.js";
+export * from "./core/result.js";
+export * from "./core/transaction-context.js";
+export type { Database } from "./core/types.js";
+export * from "./core/types.js";
+export * from "./core/utils.js";
+export * from "./postgres/index.js";
+export * from "./sqlite/index.js";
 
-export const Database = {
-	connect: () => {
-		if (runtime === "bun") {
-			// Bun feature: built-in SQLite
-			// @ts-expect-error - typedoc has issues with bun-types and deno types coexisting
-			const db = new Bun.SQLite(":memory:");
-			console.log("[DB] Using Bun SQLite");
-			return db;
-		} else if (runtime === "node") {
-			// Node: pg example
-			const { Client } = require("pg");
-			const client = new Client();
-			console.log("[DB] Using Node pg");
-			return client;
-		} else {
-			// Deno/fallback
-			console.log("[DB] Fallback stub");
-			return {};
-		}
-	},
+/**
+ * Factory function to create a database instance based on the configuration.
+ */
+export async function createDatabase(config: BaseDbConfig): Promise<Database> {
+	if (config.dialect === "postgres") {
+		return new PostgresDb(config as any);
+	}
+	return new SqliteDb(config as any);
+}
+
+export const DatabaseSection = {
+	status: "active" as const,
+	Database: SqliteDb,
+	createDatabase,
 };

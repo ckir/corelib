@@ -126,7 +126,6 @@ class StrictLoggerWrapper implements StrictLogger {
 		this.pinoInstance.level = v;
 	}
 	get levelVal() {
-		// biome-ignore lint/suspicious/noExplicitAny: pino internal
 		return (this.pinoInstance as any).levelVal;
 	}
 	bindings() {

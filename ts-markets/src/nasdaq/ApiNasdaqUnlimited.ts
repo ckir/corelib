@@ -99,7 +99,6 @@ async function nasdaqEndPoint<T = unknown>(
 	}
 
 	const val = result.value;
-	// biome-ignore lint/suspicious/noExplicitAny: Dynamic Nasdaq response body
 	const nasdaqBody = val.body as Record<string, any> | null;
 
 	if (
@@ -126,7 +125,6 @@ async function nasdaqEndPoint<T = unknown>(
 
 	return {
 		status: "success",
-		// biome-ignore lint/suspicious/noExplicitAny: generic data field
 		value: (body as any)?.data as T,
 		details,
 	};
