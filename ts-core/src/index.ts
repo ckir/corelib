@@ -9,7 +9,6 @@
 export { ConfigManager } from "./configs";
 export * from "./core"; // FFI
 export * from "./database";
-export * from "./database/index";
 export { default as logger } from "./loggers";
 export type { LogMethod, StrictLogger } from "./loggers/common";
 export * from "./retrieve";

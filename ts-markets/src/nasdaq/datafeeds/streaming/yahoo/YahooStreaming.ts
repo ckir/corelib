@@ -4,12 +4,6 @@
  * Provides real-time ticker updates with robust reconnection logic, silence detection,
  * and database persistence. Uses Protocol Buffers for message parsing.
  *
- * FIXED (2026-03-04):
- *   • Replaced 'new Logger' with 'Logger.logger.child'
- *   • Added private isStopped flag so that stop() truly prevents reconnection
- *     (the previous close() event was triggering reconnect()).
- *   • All existing behaviour (DB persistence, metrics, silence watchdog, backoff)
- *     is preserved.
  */
 
 import { EventEmitter } from "node:events";

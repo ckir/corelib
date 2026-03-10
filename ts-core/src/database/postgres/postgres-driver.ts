@@ -32,11 +32,16 @@ export class PostgresDriver implements DbDriver {
 		params?: QueryParams,
 	): Promise<DatabaseResult<QueryResponse<T>>> {
 		try {
-			const res = await this.client(sql, params);
+			// use unsafe() because we receive raw strings from the higher level Database API
+			const queryParams = Array.isArray(params)
+				? params
+				: params
+					? Object.values(params)
+					: [];
+			const res = await this.client.unsafe(sql, queryParams);
 			return wrapSuccess({
 				rows: res as unknown as T[],
 				affectedRows: res.count,
-				// lastInsertId not native; use RETURNING
 			});
 		} catch (e) {
 			return wrapError(e);
@@ -45,11 +50,18 @@ export class PostgresDriver implements DbDriver {
 
 	async prepare(sql: string): Promise<DatabaseResult<PreparedDriverStatement>> {
 		try {
-			const prepared = this.client.prepare(sql);
+			// postgres.js prepared is not directly accessible via unsafe() this way,
+			// but we can use the main client function as it is already optimized.
+			// However, for consistency we'll use a wrapper.
 			return wrapSuccess({
 				execute: async <T>(params?: QueryParams) => {
 					try {
-						const res = await prepared(params);
+						const queryParams = Array.isArray(params)
+							? params
+							: params
+								? Object.values(params)
+								: [];
+						const res = await this.client.unsafe(sql, queryParams);
 						return wrapSuccess({
 							rows: res as unknown as T[],
 							affectedRows: res.count,
@@ -68,13 +80,13 @@ export class PostgresDriver implements DbDriver {
 	}
 
 	async beginTransaction(): Promise<void> {
-		await this.client`BEGIN`;
+		await this.client.unsafe("BEGIN");
 	}
 	async commitTransaction(): Promise<void> {
-		await this.client`COMMIT`;
+		await this.client.unsafe("COMMIT");
 	}
 	async rollbackTransaction(): Promise<void> {
-		await this.client`ROLLBACK`;
+		await this.client.unsafe("ROLLBACK");
 	}
 
 	async stream<T>(
@@ -83,7 +95,12 @@ export class PostgresDriver implements DbDriver {
 		onRow: (row: T) => void,
 	): Promise<DatabaseResult<void>> {
 		try {
-			for await (const row of this.client(sql, params)) {
+			const queryParams = Array.isArray(params)
+				? params
+				: params
+					? Object.values(params)
+					: [];
+			for await (const row of this.client.unsafe(sql, queryParams).cursor()) {
 				onRow(row as T);
 			}
 			return wrapSuccess(undefined);

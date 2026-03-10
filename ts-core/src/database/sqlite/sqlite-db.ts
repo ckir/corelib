@@ -57,37 +57,73 @@ export class SqliteDb {
 	}
 
 	/**
+	 * Disconnects from the database.
+	 */
+	async disconnect(): Promise<void> {
+		await this.driver.disconnect();
+	}
+
+	/**
 	 * Executes operations within a transaction using AsyncLocalStorage for context.
 	 */
 	async transaction<T>(
 		callback: () => Promise<DatabaseResult<T>>,
 	): Promise<DatabaseResult<T>> {
-		try {
-			await this.driver.connect();
-			await this.driver.beginTransaction();
+		const existingDriver = getActiveTransaction() as SqliteDriver | undefined;
+		const driver = existingDriver || this.driver;
+		const isNested = !!existingDriver;
+		const savepointName = `sp_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
 
-			return await runInTransaction(this.driver, async () => {
+		try {
+			await driver.connect();
+			if (isNested) {
+				await driver.query(`SAVEPOINT ${savepointName}`);
+			} else {
+				await driver.beginTransaction();
+			}
+
+			return await runInTransaction(driver, async () => {
 				const result = await callback();
 
 				if (result.status === "success") {
-					await this.driver.commitTransaction();
+					if (isNested) {
+						await driver.query(`RELEASE SAVEPOINT ${savepointName}`);
+					} else {
+						await driver.commitTransaction();
+					}
 				} else {
 					this.config.logger?.warn("Transaction rollback initiated", {
 						reason: result.reason,
+						isNested,
 					});
-					await this.driver.rollbackTransaction();
+					if (isNested) {
+						await driver.query(`ROLLBACK TO SAVEPOINT ${savepointName}`);
+					} else {
+						await driver.rollbackTransaction();
+					}
 				}
 				return result;
 			});
 		} catch (e) {
 			this.config.logger?.error("Transaction failed due to exception", {
 				error: e,
+				isNested,
 			});
-			await this.driver.rollbackTransaction();
+			try {
+				if (isNested) {
+					await driver.query(`ROLLBACK TO SAVEPOINT ${savepointName}`);
+				} else {
+					await driver.rollbackTransaction();
+				}
+			} catch (rollbackErr) {
+				this.config.logger?.error("Failed to rollback transaction", {
+					error: rollbackErr,
+				});
+			}
 			return wrapError(e);
 		} finally {
-			if (this.config.mode === "stateless") {
-				await this.driver.disconnect();
+			if (!isNested && this.config.mode === "stateless") {
+				await driver.disconnect();
 			}
 		}
 	}

@@ -51,4 +51,9 @@ export interface Database {
 	transaction<T>(
 		callback: () => Promise<import("./result").DatabaseResult<T>>,
 	): Promise<import("./result").DatabaseResult<T>>;
+
+	/**
+	 * Disconnects from the database (only useful in 'stateful' mode).
+	 */
+	disconnect(): Promise<void>;
 }
