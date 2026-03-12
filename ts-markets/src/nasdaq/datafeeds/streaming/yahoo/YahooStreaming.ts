@@ -1,5 +1,5 @@
 /**
- * @file packages/tsdk/packages/markets/src/Nasdaq/Datafeeds/Streaming/Yahoo/YahooStreaming.ts
+ * @file ts-markets\src\nasdaq\datafeeds\streaming\yahoo\YahooStreaming.ts
  * @description Yahoo Finance streaming data feed implementation using WebSocket.
  * Provides real-time ticker updates with robust reconnection logic, silence detection,
  * and database persistence. Uses Protocol Buffers for message parsing.
@@ -23,7 +23,7 @@ export interface YahooStreamingOptions {
 }
 
 export class YahooStreaming extends EventEmitter {
-	public static readonly WS_URL = "wss://streamer.finance.yahoo.com";
+	public static readonly WS_URL = "wss://streamer.finance.yahoo.com/?version=2";
 
 	private ws: WebSocket | null = null;
 	private readonly db: Database;

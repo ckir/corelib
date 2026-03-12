@@ -23,6 +23,7 @@
 		"@libsql/client": "^0.17.0",
 		"commander": "^14.0.3",
 		"confbox": "^0.2.1",
+		"croner": "^10.0.1",
 		"deepmerge-ts": "^7.1.5",
 		"dotenv": "^17.3.1",
 		"ky": "^1.7.0",

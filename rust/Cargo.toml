@@ -9,6 +9,9 @@ crate-type = ["cdylib"]
 [dependencies]
 napi = { version = "3.8.3", features = ["napi9"] }
 napi-derive = "3.5.2"
+# NEW: Utils section dependencies (mirrors TS utils/cron.ts)
+chrono = { version = "0.4", features = ["clock"] }
+cron = "0.15.0"
 
 [build-dependencies]
 napi-build = "2"

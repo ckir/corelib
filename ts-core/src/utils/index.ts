@@ -13,6 +13,8 @@ export { detectRuntime } from "./runtime";
 
 export { getSysInfo, SysInfo } from "./SysInfo";
 
+export { includeExcludeCron } from "./cron";
+
 export const Utils = {
 	run: () => console.log(`[UTILS] Running on ${detectRuntime()}`),
 };

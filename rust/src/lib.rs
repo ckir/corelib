@@ -1,18 +1,25 @@
 // =============================================
 // FILE: rust/src/lib.rs
-// PURPOSE: Your requested FFI example
-// Accepts parameters from TS, logs a message, returns a value (doubled)
-// Logger callback can be added later via ThreadsafeFunction
+// PURPOSE: Core Rust FFI entry point + public modules
+// All original FFI functions and N-API exports are unchanged.
 // =============================================
+
+/// Public utils module (mirrors TS `utils` section).
+/// Contains internal helpers for future FFI functions (cron, etc.).
+pub mod utils;
 
 use napi_derive::napi;
 
+/// Logs a message in Rust and returns the input value doubled.
+/// Used by the TS FFI bridge (`logAndDouble`).
 #[napi]
 pub fn log_and_double(msg: String, value: i32) -> i32 {
     println!("[Rust FFI] {}", msg);
     value * 2
 }
 
+/// Returns the Cargo package version as a string.
+/// Used by the TS FFI bridge (`getVersion`).
 #[napi]
 pub fn get_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
