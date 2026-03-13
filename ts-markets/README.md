@@ -58,3 +58,20 @@ if (status.status === 'success') {
   console.error('Error:', status.reason.message);
 }
 ```
+
+### Yahoo Real-Time Streaming (Rust-powered)
+
+```ts
+import { YahooStreaming } from '@ckir/corelib-markets';
+
+const stream = new YahooStreaming();
+
+await stream.init({ silenceSeconds: 45 });
+await stream.start();
+
+stream.subscribe(["AAPL", "TSLA"]);
+
+stream.on("pricing", (data) => console.log("PRICE", data));
+stream.on("log", (r) => globalThis.logger?.info(r.msg, r.extras));
+stream.on("silence-reconnect", () => console.log("Reconnecting after silence"));
+```

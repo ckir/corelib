@@ -8,12 +8,13 @@
 // =============================================
 
 import { detectRuntime } from "./runtime";
+import { createRequire } from "node:module";
 
-export { detectRuntime } from "./runtime";
-
-export { getSysInfo, SysInfo } from "./SysInfo";
+const require = createRequire(import.meta.url);
 
 export { includeExcludeCron } from "./cron";
+export { detectRuntime } from "./runtime";
+export { getSysInfo, SysInfo } from "./SysInfo";
 
 export const Utils = {
 	run: () => console.log(`[UTILS] Running on ${detectRuntime()}`),
@@ -96,4 +97,13 @@ export const getPlatform = (): "linux" | "windows" => {
 export const getMode = (): "development" | "production" => {
 	const env = getEnv("NODE_ENV")?.toLowerCase();
 	return env === "production" ? "production" : "development";
+};
+
+export const getTempDir = (): string => {
+	if (detectRuntime() === "deno") {
+		return Deno.env.get("TMPDIR") || Deno.env.get("TEMP") || "/tmp";
+	} else {
+		const os = require("node:os");
+		return os.tmpdir();
+	}
 };

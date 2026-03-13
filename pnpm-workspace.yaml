@@ -2,6 +2,7 @@ packages:
   - ts-core
   - ts-markets
   - ts-cloud
+  - rust
 
 onlyBuiltDependencies:
   - esbuild

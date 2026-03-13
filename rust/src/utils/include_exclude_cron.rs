@@ -54,17 +54,13 @@ where
     // Pre-parse all include crons (fast path)
     let include_schedules: Vec<Schedule> = include_exprs
         .into_iter()
-        .map(|expr| {
-            Schedule::from_str(&expr).expect("invalid include cron expression")
-        })
+        .map(|expr| Schedule::from_str(&expr).expect("invalid include cron expression"))
         .collect();
 
     // Pre-parse all exclude crons
     let exclude_schedules: Vec<Schedule> = exclude_exprs
         .into_iter()
-        .map(|expr| {
-            Schedule::from_str(&expr).expect("invalid exclude cron expression")
-        })
+        .map(|expr| Schedule::from_str(&expr).expect("invalid exclude cron expression"))
         .collect();
 
     let stop_flag = Arc::new(AtomicBool::new(false));
@@ -84,7 +80,9 @@ where
             let included = include_schedules.iter().any(|schedule| {
                 let test_time = now - Duration::seconds(1);
                 let mut upcoming = schedule.after(&test_time);
-                upcoming.next().is_some_and(|next| next <= now + Duration::seconds(1))
+                upcoming
+                    .next()
+                    .is_some_and(|next| next <= now + Duration::seconds(1))
             });
 
             if !included {
@@ -96,7 +94,9 @@ where
             let excluded = exclude_schedules.iter().any(|schedule| {
                 let test_time = now - Duration::seconds(1);
                 let mut upcoming = schedule.after(&test_time);
-                upcoming.next().is_some_and(|next| next <= now + Duration::seconds(1))
+                upcoming
+                    .next()
+                    .is_some_and(|next| next <= now + Duration::seconds(1))
             });
 
             if !excluded {
@@ -125,13 +125,9 @@ mod tests {
         let counter = Arc::new(AtomicUsize::new(0));
         let c = Arc::clone(&counter);
 
-        let handle = include_exclude_cron(
-            vec!["* * * * * * *".to_string()],
-            vec![],
-            move || {
-                c.fetch_add(1, Ordering::SeqCst);
-            },
-        );
+        let handle = include_exclude_cron(vec!["* * * * * * *".to_string()], vec![], move || {
+            c.fetch_add(1, Ordering::SeqCst);
+        });
 
         thread::sleep(Duration::from_secs(4));
         handle.stop();
@@ -166,19 +162,18 @@ mod tests {
 
         // Fixed: correct 7-field cron that fires when second == 0
         // (every minute at xx:xx:00)
-        let handle = include_exclude_cron(
-            vec!["0 * * * * * *".to_string()],
-            vec![],
-            move || {
-                c.fetch_add(1, Ordering::SeqCst);
-            },
-        );
+        let handle = include_exclude_cron(vec!["0 * * * * * *".to_string()], vec![], move || {
+            c.fetch_add(1, Ordering::SeqCst);
+        });
 
         thread::sleep(Duration::from_secs(65)); // long enough to guarantee at least one hit
         handle.stop();
 
         let calls = counter.load(Ordering::SeqCst);
-        assert!(calls >= 1, "Should have fired at least once when second == 0");
+        assert!(
+            calls >= 1,
+            "Should have fired at least once when second == 0"
+        );
     }
 
     #[test]
@@ -201,13 +196,9 @@ mod tests {
         let counter = Arc::new(AtomicUsize::new(0));
         let c = Arc::clone(&counter);
 
-        let handle = include_exclude_cron(
-            vec!["* * * * * * *".to_string()],
-            vec![],
-            move || {
-                c.fetch_add(1, Ordering::SeqCst);
-            },
-        );
+        let handle = include_exclude_cron(vec!["* * * * * * *".to_string()], vec![], move || {
+            c.fetch_add(1, Ordering::SeqCst);
+        });
 
         thread::sleep(Duration::from_secs(2));
         handle.stop();
@@ -226,6 +217,10 @@ mod tests {
     #[test]
     #[should_panic(expected = "invalid exclude cron expression")]
     fn invalid_exclude_cron_panics() {
-        let _ = include_exclude_cron(vec!["* * * * * * *".to_string()], vec!["bad".to_string()], || {});
+        let _ = include_exclude_cron(
+            vec!["* * * * * * *".to_string()],
+            vec!["bad".to_string()],
+            || {},
+        );
     }
 }

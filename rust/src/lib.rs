@@ -24,3 +24,25 @@ pub fn log_and_double(msg: String, value: i32) -> i32 {
 pub fn get_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
+
+pub mod markets {
+    pub mod nasdaq {
+        pub mod datafeeds {
+            pub mod streaming {
+                pub mod yahoo {
+                    pub mod yahoo_streaming_proto_handler;
+                    pub mod yahoo_streamer;
+                    pub use yahoo_streamer::{
+                        EventRecord, LogRecord, RustCallbacks, YahooConfig, YahooStreaming,
+                        YahooStreamingCore,
+                    };
+                }
+            }
+        }
+    }
+}
+
+pub use markets::nasdaq::datafeeds::streaming::yahoo::{
+    EventRecord, LogRecord, RustCallbacks, YahooConfig, YahooStreaming, YahooStreamingCore,
+};
+

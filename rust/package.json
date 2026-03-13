@@ -15,6 +15,9 @@
   },
   "scripts": {
     "build": "napi build --release --platform",
-    "build:local": "napi build --release"
+    "build:local": "napi build --release",
+    "test": "cargo test",
+    "format": "cargo fmt",
+    "lint": "cargo clippy"
   }
 }

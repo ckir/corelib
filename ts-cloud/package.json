@@ -7,6 +7,8 @@
 	"scripts": {
 		"build": "tsup",
 		"watch": "tsup --watch",
+		"test": "vitest",
+		"lint": "biome check . --max-diagnostics=100",
 		"format": "biome format . --write",
 		"docs": "typedoc",
 		"clean": "del dist"
@@ -15,6 +17,7 @@
 		"@types/deno": "^2.5.0",
 		"typedoc": "^0.28.17",
 		"@types/node": "^25.3.3",
-		"bun-types": "^1.1.0"
+		"bun-types": "^1.1.0",
+		"vitest": "^4.0.18"
 	}
 }
