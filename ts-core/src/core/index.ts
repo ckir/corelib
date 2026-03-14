@@ -15,12 +15,22 @@ const require = createRequire(import.meta.url);
 let ffi: unknown;
 
 async function loadFFI() {
-	// Distribution: corelib-rust.node is in the same directory as the bundled index.js (dist/)
-	// Development: it might be in ../../ (root of ts-core)
-	const localPath = path.resolve(import.meta.dirname, "../corelib-rust.node");
-	const devPath = path.resolve(import.meta.dirname, "../../corelib-rust.node");
+	const binaryName = "corelib-rust.node";
 
-	const libPath = existsSync(localPath) ? localPath : devPath;
+	// We try paths relative to this file's location (src/core/index.ts or dist/index.js)
+	const pathsToTry = [
+		path.resolve(import.meta.dirname, binaryName), // same dir (unlikely but possible)
+		path.resolve(import.meta.dirname, "..", binaryName), // parent dir (standard for dist/ -> root)
+		path.resolve(import.meta.dirname, "..", "..", binaryName), // grandparent dir (standard for src/core/ -> root)
+	];
+
+	const libPath = pathsToTry.find((p) => existsSync(p));
+
+	if (!libPath) {
+		throw new Error(
+			`Could not find ${binaryName} in any of: ${pathsToTry.join(", ")}`,
+		);
+	}
 
 	if (runtime === "deno") {
 		// Deno: Try dlopen on .node (may need --allow-ffi --unstable)

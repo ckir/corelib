@@ -8,3 +8,5 @@ rust/target
 corelib.txt
 lint-output.txt
 *.node
+*.tgz
+

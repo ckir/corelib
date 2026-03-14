@@ -1,23 +1,23 @@
 {
-  "name": "corelib-rust",
-  "version": "0.1.0",
-  "main": "index.js",
-  "types": "index.d.ts",
-  "napi": {
-    "name": "corelib-rust",
-    "package": {
-      "name": "corelib-rust"
-    }
-  },
-  "license": "MIT",
-  "devDependencies": {
-    "@napi-rs/cli": "^3.0.0"
-  },
-  "scripts": {
-    "build": "napi build --release --platform",
-    "build:local": "napi build --release",
-    "test": "cargo test",
-    "format": "cargo fmt",
-    "lint": "cargo clippy"
-  }
+    "name":  "corelib-rust",
+    "version":  "0.1.1",
+    "main":  "index.js",
+    "types":  "index.d.ts",
+    "napi":  {
+                 "name":  "corelib-rust",
+                 "package":  {
+                                 "name":  "corelib-rust"
+                             }
+             },
+    "license":  "MIT",
+    "devDependencies":  {
+                            "@napi-rs/cli":  "^3.0.0"
+                        },
+    "scripts":  {
+                    "build":  "napi build --release --platform",
+                    "build:local":  "napi build --release",
+                    "test":  "cargo test",
+                    "format":  "cargo fmt",
+                    "lint":  "cargo clippy"
+                }
 }

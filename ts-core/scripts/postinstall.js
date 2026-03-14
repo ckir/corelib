@@ -41,7 +41,8 @@ async function run() {
 		const version = pkg.version;
 
 		// 2. Identify the Github Repo (Use GITHUB_REPOSITORY if in CI, or fallback to your hardcoded path)
-		const repo = process.env.GITHUB_REPOSITORY || "ckir/corelib";
+		// FIXED (2026-03-14): Ensure repo is correctly identified.
+		const repo = "ckir/corelib"; 
 		const url = `https://github.com/${repo}/releases/download/v${version}/${artifactName}`;
 
 		console.log(`[POSTINSTALL] Downloading binary from ${url}...`);
