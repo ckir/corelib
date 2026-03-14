@@ -7,3 +7,4 @@ rust/target
 .env.local
 corelib.txt
 lint-output.txt
+*.node

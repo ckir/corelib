@@ -28,13 +28,23 @@ jobs:
           version: 10.31.0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
           cache: 'pnpm'
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Install Dependencies
         run: pnpm install
+
+      - name: Build Rust FFI
+        shell: bash
+        run: |
+          cd rust
+          pnpm exec napi build --release
+          cp corelib-rust.node ../ts-core/corelib-rust.node
 
       - name: Build Core
         run: pnpm --filter @ckir/corelib build
