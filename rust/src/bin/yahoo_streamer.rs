@@ -52,10 +52,7 @@ async fn main() {
     }
 
     if let Some(s) = args.symbols {
-        let symbols: Vec<String> = s
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .collect();
+        let symbols: Vec<String> = s.split(',').map(|s| s.trim().to_string()).collect();
         streamer.subscribe(symbols).await;
     }
 

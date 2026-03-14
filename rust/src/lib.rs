@@ -30,8 +30,8 @@ pub mod markets {
         pub mod datafeeds {
             pub mod streaming {
                 pub mod yahoo {
-                    pub mod yahoo_streaming_proto_handler;
                     pub mod yahoo_streamer;
+                    pub mod yahoo_streaming_proto_handler;
                     pub use yahoo_streamer::{
                         EventRecord, LogRecord, RustCallbacks, YahooConfig, YahooStreaming,
                         YahooStreamingCore,
@@ -45,4 +45,3 @@ pub mod markets {
 pub use markets::nasdaq::datafeeds::streaming::yahoo::{
     EventRecord, LogRecord, RustCallbacks, YahooConfig, YahooStreaming, YahooStreamingCore,
 };
-

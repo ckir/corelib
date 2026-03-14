@@ -7,8 +7,8 @@
 // NEW: Added getPlatform and getMode from ConfigUtils
 // =============================================
 
-import { detectRuntime } from "./runtime";
 import { createRequire } from "node:module";
+import { detectRuntime } from "./runtime";
 
 const require = createRequire(import.meta.url);
 

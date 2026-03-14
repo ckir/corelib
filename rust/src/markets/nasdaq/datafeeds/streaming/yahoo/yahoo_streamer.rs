@@ -123,7 +123,7 @@ impl<C: YahooCallbacks> YahooStreamingCore<C> {
         });
 
         let db = Database::create(&db_path).expect("Failed to open redb");
-        
+
         // Ensure table exists
         {
             let write_txn = db.begin_write().unwrap();
@@ -181,13 +181,17 @@ impl<C: YahooCallbacks> YahooStreamingCore<C> {
         guard.ws_task = Some(task);
     }
 
-    async fn run_loop(inner: Arc<Mutex<Inner<C>>>, mut stop_rx: mpsc::Receiver<()>, mut sub_rx: mpsc::Receiver<Vec<String>>) {
+    async fn run_loop(
+        inner: Arc<Mutex<Inner<C>>>,
+        mut stop_rx: mpsc::Receiver<()>,
+        mut sub_rx: mpsc::Receiver<Vec<String>>,
+    ) {
         let mut backoff = 5u64;
         loop {
             let inner_clone = Arc::clone(&inner);
-            
+
             let res = Self::ws_loop(inner_clone, &mut sub_rx, &mut stop_rx).await;
-            
+
             match res {
                 Ok(true) => {
                     // Stopped gracefully
@@ -195,7 +199,10 @@ impl<C: YahooCallbacks> YahooStreamingCore<C> {
                 }
                 _ => {
                     // Disconnected or error, reconnect after backoff
-                    inner.lock().await.callbacks.on_event(EventRecord { r#type: "reconnecting".to_string(), data: None });
+                    inner.lock().await.callbacks.on_event(EventRecord {
+                        r#type: "reconnecting".to_string(),
+                        data: None,
+                    });
                 }
             }
 
@@ -205,7 +212,7 @@ impl<C: YahooCallbacks> YahooStreamingCore<C> {
     }
 
     async fn ws_loop(
-        inner: Arc<Mutex<Inner<C>>>, 
+        inner: Arc<Mutex<Inner<C>>>,
         sub_rx: &mut mpsc::Receiver<Vec<String>>,
         stop_rx: &mut mpsc::Receiver<()>,
     ) -> std::result::Result<bool, ()> {
@@ -239,7 +246,7 @@ impl<C: YahooCallbacks> YahooStreamingCore<C> {
 
         let mut silence_timer = tokio::time::interval(tokio::time::Duration::from_secs(60));
         let mut ping_timer = tokio::time::interval(tokio::time::Duration::from_secs(PING_INTERVAL));
-        
+
         // consume the interval's first immediate tick
         let _ = silence_timer.tick().await;
         let _ = ping_timer.tick().await;

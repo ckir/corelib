@@ -18,9 +18,9 @@ export class YahooStreaming extends EventEmitter {
 		super();
 
 		this.rust = new RustYahoo(
-			(_err, record) => this.emit("log", record),
-			(_err, data) => this.emit("pricing", data),
-			(_err, event) => {
+			(_err: any, record: any) => this.emit("log", record),
+			(_err: any, data: any) => this.emit("pricing", data),
+			(_err: any, event: any) => {
 				if (event) {
 					this.emit(event.type, event.data ?? null);
 				}

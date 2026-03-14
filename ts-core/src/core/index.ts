@@ -46,7 +46,7 @@ async function loadFFI() {
 	return ffi;
 }
 
-/** 
+/**
  * Raw FFI exports from the native binary.
  * Use with caution and proper type casting.
  */

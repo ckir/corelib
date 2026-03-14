@@ -1,39 +1,39 @@
 {
-    "name":  "@ckir/corelib-markets",
-    "version":  "0.1.4",
-    "main":  "dist/index.js",
-    "type":  "module",
-    "types":  "dist/index.d.ts",
-    "files":  [
-                  "dist"
-              ],
-    "scripts":  {
-                    "build":  "tsup",
-                    "watch":  "tsup --watch",
-                    "test":  "vitest",
-                    "lint":  "biome check . --max-diagnostics=100",
-                    "format":  "biome format . --write",
-                    "docs":  "typedoc",
-                    "clean":  "del dist"
-                },
-    "devDependencies":  {
-                            "@types/deno":  "^2.5.0",
-                            "@types/luxon":  "^3.7.1",
-                            "@types/node":  "^25.3.3",
-                            "@types/ws":  "^8.18.1",
-                            "bun-types":  "^1.1.0",
-                            "happy-dom":  "^20.8.3",
-                            "msw":  "^2.12.10",
-                            "typedoc":  "^0.28.17",
-                            "vitest":  "^4.0.18"
-                        },
-    "dependencies":  {
-                         "@bufbuild/protobuf":  "^2.11.0",
-                         "@ckir/corelib":  "workspace:*",
-                         "ky":  "^1.14.3",
-                         "luxon":  "^3.7.2",
-                         "protobufjs":  "^8.0.0",
-                         "serialize-error":  "^13.0.1",
-                         "ws":  "^8.19.0"
-                     }
+    "name": "@ckir/corelib-markets",
+    "version": "0.1.5",
+    "main": "dist/index.js",
+    "type": "module",
+    "types": "dist/index.d.ts",
+    "files": [
+        "dist"
+    ],
+    "scripts": {
+        "build": "tsup",
+        "watch": "tsup --watch",
+        "test": "vitest",
+        "lint": "biome check . --max-diagnostics=100",
+        "format": "biome format . --write",
+        "docs": "typedoc",
+        "clean": "del dist"
+    },
+    "devDependencies": {
+        "@types/deno": "^2.5.0",
+        "@types/luxon": "^3.7.1",
+        "@types/node": "^25.3.3",
+        "@types/ws": "^8.18.1",
+        "bun-types": "^1.1.0",
+        "happy-dom": "^20.8.3",
+        "msw": "^2.12.10",
+        "typedoc": "^0.28.17",
+        "vitest": "^4.0.18"
+    },
+    "dependencies": {
+        "@bufbuild/protobuf": "^2.11.0",
+        "@ckir/corelib": "workspace:*",
+        "ky": "^1.14.3",
+        "luxon": "^3.7.2",
+        "protobufjs": "^8.0.0",
+        "serialize-error": "^13.0.1",
+        "ws": "^8.19.0"
+    }
 }
