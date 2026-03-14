@@ -30,6 +30,46 @@ corelib/
 
 ---
 
+## 📦 Installation for External Projects
+
+Since these packages are not published to the public NPM registry, you can install them directly from the GitHub Release assets.
+
+### 1. Install via Direct URL (Recommended)
+You can point your package manager directly to the `.tgz` file in the GitHub Release. Replace `v0.1.5` with the desired version.
+
+```bash
+# Using pnpm
+pnpm add https://github.com/ckir/corelib/releases/download/v0.1.5/ckir-corelib-0.1.5.tgz
+pnpm add https://github.com/ckir/corelib/releases/download/v0.1.5/ckir-corelib-markets-0.1.5.tgz
+
+# Using npm
+npm install https://github.com/ckir/corelib/releases/download/v0.1.5/ckir-corelib-0.1.5.tgz
+```
+
+### ⚠️ Important: Handling Internal Dependencies
+Because `@ckir/corelib-markets` depends on `@ckir/corelib`, and neither is on NPM, your package manager might try to find `@ckir/corelib` on the public registry and fail (404). 
+
+To fix this, add an **override** to your `package.json` so the manager knows to use the specific version for the sub-dependency:
+
+**For pnpm (`package.json`):**
+```json
+"pnpm": {
+  "overrides": {
+    "@ckir/corelib": "https://github.com/ckir/corelib/releases/download/v0.1.5/ckir-corelib-0.1.5.tgz"
+  }
+}
+```
+
+### 🦀 The Native Rust Binary
+The `@ckir/corelib` package includes a `postinstall` script that automatically downloads the correct prebuilt Rust binary (`corelib-rust-*.node`) for your OS (Windows, Linux, or macOS) from the GitHub Release.
+
+If the automatic download is blocked or fails, you can trigger it manually:
+```bash
+node node_modules/@ckir/corelib/scripts/postinstall.js
+```
+
+---
+
 ## 🛠️ Getting Started
 
 ### Prerequisites
