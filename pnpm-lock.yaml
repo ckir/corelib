@@ -132,9 +132,6 @@ importers:
       '@ckir/corelib':
         specifier: workspace:*
         version: link:../ts-core
-      corelib-rust:
-        specifier: workspace:*
-        version: link:../rust
       ky:
         specifier: ^1.14.3
         version: 1.14.3
