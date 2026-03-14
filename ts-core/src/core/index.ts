@@ -15,17 +15,10 @@ const require = createRequire(import.meta.url);
 let ffi: unknown;
 
 async function loadFFI() {
-	// FIXED (2026-03-08): Loader now prioritizes local corelib-rust.node for distribution packages.
-	// Falling back to rust/target/release for local development convenience.
-	// Relative to src/core/index.ts:
-	const localPath = path.resolve(
-		import.meta.dirname,
-		"../../corelib-rust.node",
-	);
-	const devPath = path.resolve(
-		import.meta.dirname,
-		"../../ts-core/corelib-rust.node",
-	);
+	// Distribution: corelib-rust.node is in the same directory as the bundled index.js (dist/)
+	// Development: it might be in ../../ (root of ts-core)
+	const localPath = path.resolve(import.meta.dirname, "../corelib-rust.node");
+	const devPath = path.resolve(import.meta.dirname, "../../corelib-rust.node");
 
 	const libPath = existsSync(localPath) ? localPath : devPath;
 
