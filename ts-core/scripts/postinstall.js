@@ -11,11 +11,12 @@ import { resolve } from "node:path";
 async function run() {
 	const MODE = process.env.MODE || "production";
 	const isDev = MODE === "development";
+	const isCI = !!process.env.GITHUB_ACTIONS;
 
-	console.log(`[POSTINSTALL] Running in ${MODE} mode`);
+	console.log(`[POSTINSTALL] Running in ${MODE} mode (CI: ${isCI})`);
 
-	if (isDev) {
-		console.log("[POSTINSTALL] Local development mode detected. Skipping binary download.");
+	if (isDev || isCI) {
+		console.log("[POSTINSTALL] Local development or CI mode detected. Skipping binary download.");
 		process.exit(0);
 	}
 
