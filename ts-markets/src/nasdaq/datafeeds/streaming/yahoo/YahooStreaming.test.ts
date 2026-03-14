@@ -7,14 +7,8 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Hoist mocks to ensure they are set up before importing YahooStreaming (which has top-level await import)
-vi.mock("@ckir/corelib", () => ({
-	getMode: vi.fn(),
-	getTempDir: vi.fn(() => "/tmp"),
-	detectRuntime: vi.fn(() => "node"),
-}));
-
-vi.mock("corelib-rust", () => {
+// Hoist mocks to ensure they are set up before importing YahooStreaming
+vi.mock("@ckir/corelib", () => {
 	class MockYahoo {
 		on_log: any;
 		on_pricing: any;
@@ -30,10 +24,18 @@ vi.mock("corelib-rust", () => {
 		});
 		subscribe = vi.fn().mockResolvedValue(undefined);
 		unsubscribe = vi.fn().mockResolvedValue(undefined);
-		clean = vi.fn().mockResolvedValue(undefined);
 		stop = vi.fn().mockResolvedValue(undefined);
+		clean = vi.fn().mockResolvedValue(undefined);
 	}
-	return { YahooStreaming: MockYahoo };
+
+	return {
+		getMode: vi.fn(),
+		getTempDir: vi.fn(() => "/tmp"),
+		detectRuntime: vi.fn(() => "node"),
+		coreFFI: {
+			YahooStreaming: MockYahoo,
+		},
+	};
 });
 
 import { getMode, getTempDir } from "@ckir/corelib";

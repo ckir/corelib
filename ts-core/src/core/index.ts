@@ -46,7 +46,11 @@ async function loadFFI() {
 	return ffi;
 }
 
-const coreFFI = await loadFFI();
+/** 
+ * Raw FFI exports from the native binary.
+ * Use with caution and proper type casting.
+ */
+export const coreFFI = await loadFFI();
 
 export function logAndDouble(msg: string, value: number): number {
 	if (

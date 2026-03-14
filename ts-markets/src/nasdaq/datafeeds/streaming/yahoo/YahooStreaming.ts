@@ -6,9 +6,9 @@
 // =============================================
 
 import { EventEmitter } from "node:events";
-import { getMode, getTempDir } from "@ckir/corelib";
+import { coreFFI, getMode, getTempDir } from "@ckir/corelib";
 
-const { YahooStreaming: RustYahoo } = await import("corelib-rust"); // napi class
+const { YahooStreaming: RustYahoo } = coreFFI as any; // napi class
 
 export class YahooStreaming extends EventEmitter {
 	private rust: InstanceType<typeof RustYahoo>;
