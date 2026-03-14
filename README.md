@@ -1,112 +1,151 @@
-# @ckir/corelib Monorepo
+# Corelib Monorepo
 
-Multi-runtime TypeScript library with high-resilience utilities, logging, and private Rust FFI (napi-rs).
+A high-performance, resilient, and multi-runtime monorepo for TypeScript and Rust. This workspace provides foundational utilities, cloud extensions, and financial market tooling designed for Node.js, Bun, and Deno.
 
-## Workspace Packages
+## 🚀 Overview
 
-- **[@ckir/corelib](./ts-core)**: Core library including FFI, logging, resilient HTTP requests, and system utilities.
-- **[@ckir/corelib-cloud](./ts-cloud)**: Cloud-specific extensions and utilities.
-- **[@ckir/corelib-markets](./ts-markets)**: Market data and financial utilities.
+This repository is structured as a pnpm monorepo, integrating TypeScript's flexibility with Rust's performance through FFI (Foreign Function Interface). It is built on principles of resilience, performance, and cross-runtime compatibility.
 
-## Developers Cockpit
-
-Run `.\DevelopersCockpit.ps1` (Windows) or `pwsh DevelopersCockpit.ps1` (Linux/Mac) to open the interactive management menu.
-
-### Menu Options
-- **P**: Check Prerequisites & Health
-- **C**: Clean & Fresh Start
-- **W / B**: Watch or Build TypeScript
-- **L / F**: Lint or Format Code
-- **T / U**: Run TS or Rust Tests
-- **R**: Build Rust FFI
-- **D**: Generate TypeDoc Documentation
-- **V**: Bump Version
-- **E**: Create Release Package
-- **Q**: Quit
+### Key Features
+- **Isomorphic Core**: All foundational utilities in `ts-core` support Node.js, Bun, and Deno.
+- **Resilient HTTP**: Standardized fetch wrapper (`RequestUnlimited`) with automatic retries and consistent error serialization.
+- **Strict Logging**: Structured logging API with `(msg: string, extras?: object)` signature and telemetry support.
+- **Native Performance**: Performance-critical paths implemented in Rust via N-API/FFI.
+- **Unified Configuration**: Centralized `ConfigManager` supporting overrides via files, environment variables, and CLI.
 
 ---
 
-## Quick Start & Usage Examples
+## 📂 Project Structure
 
-### 1. Resilient HTTP (Retrieve)
-High-resilience HTTP client using `ky` with automatic retries (429, 5xx) and serialized results.
+```text
+corelib/
+├── ts-core/      # (@ckir/corelib) Base logic, FFI, logging, and resilient HTTP.
+├── ts-cloud/     # (@ckir/corelib-cloud) Cloud-specific extensions.
+├── ts-markets/   # (@ckir/corelib-markets) Market data tooling (Nasdaq, Yahoo).
+├── rust/         # (corelib-rust) Native Rust core exposed via N-API.
+├── .gemini/      # AI agent configuration and mandates.
+├── biome.json    # Monorepo-wide linting and formatting (Biome).
+└── package.json  # Root workspace configuration.
+```
+
+---
+
+## 🛠️ Getting Started
+
+### Prerequisites
+- [Node.js](https://nodejs.org/) (latest LTS)
+- [pnpm](https://pnpm.io/) (for package management)
+- [Rust](https://rust-lang.org/) (for native module builds)
+
+### Installation & Build
+```powershell
+# Install all dependencies
+pnpm install
+
+# Build all packages using the Cockpit script
+./DevelopersCockpit.ps1 -Build -All
+```
+
+### Running Tests
+```powershell
+# Run all tests across the monorepo
+pnpm test-all
+```
+
+---
+
+## 📖 Usage Examples
+
+### 1. Core Utilities (@ckir/corelib)
+The core package provides the foundation for logging, HTTP, and system info.
 
 ```typescript
-import { RequestUnlimited, endPoint, endPoints } from '@ckir/corelib';
+import { logger, endPoint, getSysInfo, ConfigManager } from '@ckir/corelib';
 
-// Single Request
-const result = await endPoint<{ id: number }>('https://api.example.com/user/1');
+// Structured Logging with Telemetry
+logger.setTelemetry('on');
+logger.info("Service initialized", { version: "0.1.0" });
 
+// Resilient Fetch (ky wrapper)
+const result = await endPoint('https://api.github.com/repos/google/gemini-cli');
 if (result.status === 'success') {
-  console.log('User ID:', result.value.body.id);
-  console.log('Status Code:', result.value.status);
-} else {
-  console.error('Request failed:', result.reason);
+  console.log(result.value.body);
 }
 
-// Parallel Requests (maintained order)
-const results = await endPoints(['/api/v1', '/api/v2']);
+// System Information (Cross-Runtime)
+const stats = getSysInfo();
+console.log(`OS: ${stats.os.platform}, Memory Used: ${stats.memory.heapUsed} bytes`);
+
+// Configuration Management
+const config = ConfigManager.getInstance();
+await config.initialize();
+const dbUrl = config.getValue('database.url');
 ```
 
-### 2. Strict Logger with Telemetry
-High-performance logger (based on Pino) with strict signatures and optional system telemetry.
+### 2. Database Support (@ckir/corelib)
+Unified API for SQLite and PostgreSQL with transaction support.
 
 ```typescript
-import { logger } from '@ckir/corelib';
+import { createDatabase } from '@ckir/corelib';
 
-// Strict signature: (message: string, extras?: object)
-logger.info("Application started", { port: 3000, env: "production" });
+const db = await createDatabase({ 
+  dialect: 'sqlite', 
+  url: 'file:./local.db' 
+});
 
-// Child loggers with independent settings
-const authLogger = logger.child({ module: "auth" });
+// Query execution
+const users = await db.query('SELECT * FROM users WHERE active = ?', [true]);
 
-// Enable Telemetry (adds CPU, Memory, OS info to EVERY log call)
-authLogger.setTelemetry("on");
-authLogger.debug("User login attempt"); // Includes live system stats
-
-// Change level dynamically
-logger.level = 'debug';
+// Transaction management
+await db.transaction(async () => {
+  await db.query('INSERT INTO logs (msg) VALUES (?)', ['Transaction started']);
+  // ... more operations
+  return { status: 'success', value: true };
+});
 ```
 
-### 3. System Information (Utils)
-Cross-runtime (Node, Bun, Deno) system telemetry provider.
+### 3. Market Data (@ckir/corelib-markets)
+Advanced financial utilities, including Nasdaq APIs and Yahoo Streaming.
 
 ```typescript
-import { SysInfo, getSysInfo } from '@ckir/corelib';
+import { ApiNasdaqUnlimited, MarketStatus, YahooStreaming } from '@ckir/corelib-markets';
 
-const info = getSysInfo();
-console.log(`Runtime: ${info.runtime}`);
-console.log(`Memory RSS: ${info.memory.rss} bytes`);
-console.log(`OS: ${info.os} ${info.osVersion}`);
-```
+// 1. Nasdaq Resilient API
+const nasdaqData = await ApiNasdaqUnlimited.endPoint('https://api.nasdaq.com/api/quote/AAPL/info');
 
-### 4. Rust FFI (Core)
-High-performance logic powered by Rust via N-API.
+// 2. Market Status & Scheduling
+const status = await MarketStatus.getStatus();
+if (status.status === 'success') {
+  const sleepMs = MarketStatus.getSleepDuration(status.value);
+  console.log(`Nasdaq is ${status.value.mrktStatus}. Sleeping ${sleepMs}ms until open.`);
+}
 
-```typescript
-import { logAndDouble, getVersion } from '@ckir/corelib';
+// 3. Real-Time Yahoo Streaming (Rust-powered)
+const stream = new YahooStreaming();
+await stream.init({ silenceSeconds: 45 });
+await stream.start();
+stream.subscribe(["AAPL", "TSLA", "NVDA"]);
 
-const version = getVersion();
-const result = logAndDouble("Input value", 21); // Logs in Rust, returns 42
-```
-
-### 5. Runtime Detection (Common)
-Unified runtime detection for isomorphic code.
-
-```typescript
-import { detectRuntime } from '@ckir/corelib';
-
-const runtime = detectRuntime(); // 'node' | 'bun' | 'deno' | 'edge-cloudflare' ...
+stream.on("pricing", (data) => console.log("Price Update:", data));
 ```
 
 ---
 
-## Linking for Development
-For local linking:
-- In `corelib/ts-core`: `pnpm link --global`
-- In your project: `pnpm add @ckir/corelib --global`
+## 🔧 Development Workflow
 
-## Installing from GitHub
-```bash
-pnpm add @ckir/corelib@git+https://github.com/user/corelib.git#path:/ts-core
-```
+### Tooling
+- **Orchestration**: Use `DevelopersCockpit.ps1` for all build, test, and maintenance tasks.
+- **Linting & Formatting**: [Biome](https://biomejs.dev/) is used for all TypeScript code. Run `pnpm lint-all`.
+- **Testing**: [Vitest](https://vitest.dev/) for unit and integration tests.
+- **Documentation**: [TypeDoc](https://typedoc.org/) for API documentation. Run `pnpm docs-all`.
+
+### Engineering Standards
+- **Surgical Edits**: Follow the `GEMINI.md` mandates for all changes.
+- **FFI Stability**: Always verify the Rust bridge (`corelib-rust.node`) when changing core logic.
+- **Type Safety**: Avoid `any`. Use `unknown` or specific interfaces. All public APIs must be documented.
+
+---
+
+## 📜 License
+
+Refer to the [LICENSE](./LICENSE) file for details.

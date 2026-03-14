@@ -12,6 +12,7 @@
 import os
 import subprocess
 import sys
+import json
 
 def load_env():
     config = {}
@@ -25,6 +26,17 @@ def load_env():
     except FileNotFoundError:
         print("[CLI] .env not found; using defaults.")
     return config
+
+def get_current_version():
+    try:
+        # Check ts-core/package.json as the source of truth for versioning
+        path = os.path.join('ts-core', 'package.json')
+        if os.path.exists(path):
+            with open(path, 'r') as f:
+                return json.load(f).get('version', '0.1.0')
+    except Exception:
+        pass
+    return "0.1.0"
 
 config = load_env()
 
@@ -40,8 +52,11 @@ choices = [
     {'letter': 'U', 'desc': 'Run Rust Tests', 'cmd': 'cargo test --manifest-path rust/Cargo.toml'},
     {'letter': 'F', 'desc': 'Format Code', 'cmd': 'pnpm -r format'},
     {'letter': 'V', 'desc': 'Bump version', 'cmd': 'pnpm -r version patch'},
+    {'letter': 'K', 'desc': 'Tag & Push Version to Origin', 'cmd': None},
+    {'letter': 'H', 'desc': 'Trigger GitHub Release Workflow', 'cmd': 'gh workflow run release.yml'},
+    {'letter': 'G', 'desc': 'Verify GitHub Release Assets', 'cmd': 'powershell -ExecutionPolicy Bypass -File ./TestRelease.ps1'},
     {'letter': 'D', 'desc': 'Generate Documentation (TypeDoc)', 'cmd': 'pnpm -r docs'},
-    {'letter': 'E', 'desc': 'Create release package'},
+    {'letter': 'E', 'desc': 'Create Local release package (Zip/Tar)'},
     {'letter': 'Q', 'desc': 'Quit', 'cmd': None},
 ]
 
@@ -58,26 +73,37 @@ def get_health_cmd():
 
 def get_release_cmd():
     platform = config.get('PLATFORM', 'linux').lower()
-    files = 'dist rust/target/release package.json LICENSE README.md'
+    # Updated to include workspace dists and key files
+    files = 'ts-core/dist ts-cloud/dist ts-markets/dist rust/target/release package.json LICENSE README.md'
     if platform == 'windows':
-        return f'powershell Compress-Archive -Path {files} -DestinationPath release.zip'
+        return f'powershell Compress-Archive -Path {files} -DestinationPath release.zip -Force'
     else:
         return f'tar -czf release.tar.gz {files}'
 
+def get_tag_push_cmd():
+    version = get_current_version()
+    tag = f"v{version}"
+    return f'git tag {tag} && git push origin {tag}'
+
 def display_menu():
     config_str = ' | '.join([f"{k}={v}" for k, v in config.items()])
-    title = f"Developers Cockpit [Config: {config_str}]" if config_str else "Developers Cockpit"
-    print(f"[CLI] {title} running via Python")
+    version = get_current_version()
+    title = f"Developers Cockpit [v{version}] [Config: {config_str}]" if config_str else f"Developers Cockpit [v{version}]"
+    print(f"\n[CLI] {title}")
     print("Select an option:")
     for choice in choices:
         print(f"{choice['letter']}: {choice['desc']}")
 
 while True:
     display_menu()
-    action = input("Enter the letter (e.g., P): ").strip().upper()
+    action = input("Enter the letter: ").strip().upper()
 
     selected = next((c for c in choices if c['letter'] == action), None)
-    if not selected or selected['letter'] == 'Q':
+    if not selected:
+        print("[CLI] Invalid action; try again.")
+        continue
+    
+    if selected['letter'] == 'Q':
         print("[CLI] Quitting...")
         sys.exit(0)
 
@@ -86,6 +112,8 @@ while True:
         cmd = get_health_cmd()
     elif selected['letter'] == 'E':
         cmd = get_release_cmd()
+    elif selected['letter'] == 'K':
+        cmd = get_tag_push_cmd()
 
     if cmd:
         print(f"[CLI] Running: {cmd}")
@@ -97,4 +125,5 @@ while True:
             print(f"[CLI] Error during action {action}: {e}")
             input("Press Enter to continue...")  # Pause even on error
     else:
-        print("[CLI] Invalid action; try again.")
+        print("[CLI] Command not defined for this action.")
+
