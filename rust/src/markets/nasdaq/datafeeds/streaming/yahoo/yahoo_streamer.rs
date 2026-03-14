@@ -13,7 +13,7 @@ use napi::bindgen_prelude::*;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
 use prost::Message as ProstMessage;
-use redb::{Database, ReadableTable, TableDefinition};
+use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
 use serde_json;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
@@ -240,7 +240,7 @@ impl<C: YahooCallbacks> YahooStreamingCore<C> {
             let guard = inner.lock().await;
             if !guard.subscriptions.is_empty() {
                 let payload = serde_json::json!({ "subscribe": guard.subscriptions }).to_string();
-                let _ = write.send(Message::Text(payload)).await;
+                let _ = write.send(Message::Text(payload.into())).await;
             }
         }
 
@@ -266,7 +266,11 @@ impl<C: YahooCallbacks> YahooStreamingCore<C> {
                             };
 
                             if obj["type"].as_str() != Some("pricing") {
-                                inner.lock().await.callbacks.on_log(LogRecord { level: "trace".to_string(), msg: text, extras: None });
+                                inner.lock().await.callbacks.on_log(LogRecord {
+                                    level: "trace".to_string(),
+                                    msg: text.to_string(),
+                                    extras: None,
+                                });
                                 continue;
                             }
 
@@ -311,14 +315,14 @@ impl<C: YahooCallbacks> YahooStreamingCore<C> {
                     if let Some(subs) = new_subs {
                         if !subs.is_empty() {
                             let payload = serde_json::json!({ "subscribe": subs }).to_string();
-                            let _ = write.send(Message::Text(payload)).await;
+                            let _ = write.send(Message::Text(payload.into())).await;
                         }
                     } else {
                         // sub_tx dropped, but we should probably keep running until stop_rx
                     }
                 }
                 _ = ping_timer.tick() => {
-                    let _ = write.send(Message::Ping(vec![])).await;
+                    let _ = write.send(Message::Ping(vec![].into())).await;
                 }
                 _ = silence_timer.tick() => {
                     inner.lock().await.callbacks.on_event(EventRecord { r#type: "silence-reconnect".to_string(), data: None });
