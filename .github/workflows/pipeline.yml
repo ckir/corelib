@@ -1,0 +1,262 @@
+# =============================================
+# FILE: .github/workflows/pipeline.yml
+# PURPOSE: Unified CI/CD Pipeline for Corelib Monorepo.
+# SEQUENCE: Validate -> Test (Multi-OS) -> Deploy Docs (Main) / Create Release (Tags)
+# =============================================
+
+name: Corelib Pipeline
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  # ---------------------------------------------------------
+  # STAGE 1: VALIDATION (Linting & Formatting)
+  # ---------------------------------------------------------
+  validate:
+    name: Validate (Lint & Format)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: 'pnpm'
+      
+      - name: Install dependencies
+        run: pnpm install
+      
+      - name: Check Formatting
+        run: pnpm format-all # Assumes this fails if changes are needed, or use biome check
+      
+      - name: Lint Code
+        run: pnpm lint-all
+
+  # ---------------------------------------------------------
+  # STAGE 2: MULTI-OS TESTING
+  # ---------------------------------------------------------
+  test:
+    name: Test (${{ matrix.os }})
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: 'pnpm'
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build Rust FFI
+        shell: bash
+        run: |
+          cd rust
+          pnpm exec napi build --release
+          cp corelib-rust.node ../ts-core/corelib-rust.node
+
+      - name: Run All Tests
+        run: pnpm test-all
+
+  # ---------------------------------------------------------
+  # STAGE 3: DOCUMENTATION (Only on main branch)
+  # ---------------------------------------------------------
+  docs:
+    name: Deploy Documentation
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: 'pnpm'
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Generate all documentation
+        run: pnpm docs-all
+
+      - name: Prepare unified docs folder
+        run: |
+          mkdir -p docs-root
+          cp -r ts-core/docs     docs-root/ts-core     2>/dev/null || true
+          cp -r ts-markets/docs  docs-root/ts-markets  2>/dev/null || true
+          cp -r ts-cloud/docs    docs-root/ts-cloud    2>/dev/null || true
+          cp -r rust/docs        docs-root/rust        2>/dev/null || true
+          cat <<EOF > docs-root/index.html
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>Corelib Documentation</title>
+              <style>
+                  body { font-family: sans-serif; padding: 2rem; background: #f4f4f4; }
+                  ul { list-style: none; padding: 0; }
+                  li { margin-bottom: 1rem; background: white; padding: 1rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+                  a { text-decoration: none; color: #0066cc; font-weight: bold; font-size: 1.2rem; }
+                  a:hover { text-decoration: underline; }
+                  p { color: #666; margin: 0.5rem 0 0; }
+              </style>
+          </head>
+          <body>
+              <h1>Corelib Monorepo Documentation</h1>
+              <ul>
+                  <li><a href="ts-core/index.html">@ckir/corelib</a><p>Base logic, FFI, logging, and resilient HTTP.</p></li>
+                  <li><a href="ts-markets/index.html">@ckir/corelib-markets</a><p>Market data tooling (Nasdaq, Yahoo).</p></li>
+                  <li><a href="ts-cloud/index.html">@ckir/corelib-cloud</a><p>Cloud-specific extensions.</p></li>
+                  <li><a href="rust/corelib_rust/index.html">corelib-rust</a><p>Native Rust core documentation.</p></li>
+              </ul>
+          </body>
+          </html>
+          EOF
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs-root
+          publish_branch: gh-pages
+          force_orphan: true
+
+  # ---------------------------------------------------------
+  # STAGE 4: RELEASE (Only on tags v*)
+  # ---------------------------------------------------------
+  build-ts:
+    name: Pack TS Packages
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install
+      - name: Build All
+        run: pnpm build-all
+      - name: Pack Packages
+        run: |
+          mkdir dist-packages
+          pnpm --filter @ckir/corelib pack --pack-destination ./dist-packages
+          pnpm --filter @ckir/corelib-cloud pack --pack-destination ./dist-packages
+          pnpm --filter @ckir/corelib-markets pack --pack-destination ./dist-packages
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ts-packages
+          path: dist-packages/*.tgz
+          retention-days: 1
+
+  build-rust:
+    name: Build Rust Binaries
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: corelib-rust-linux-x64.node
+            bin_name: yahoo_streamer-linux-x64
+          - os: macos-latest
+            artifact_name: corelib-rust-darwin-x64.node
+            bin_name: yahoo_streamer-darwin-x64
+          - os: macos-14
+            artifact_name: corelib-rust-darwin-arm64.node
+            bin_name: yahoo_streamer-darwin-arm64
+          - os: windows-latest
+            artifact_name: corelib-rust-win32-x64.node
+            bin_name: yahoo_streamer-win32-x64.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: 'pnpm'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install dependencies
+        run: pnpm install
+      - name: Build Rust FFI
+        run: |
+          cd rust
+          pnpm exec napi build --release
+      - name: Build yahoo_streamer CLI
+        run: |
+          cd rust
+          cargo build --release --bin yahoo_streamer --features clap
+      - name: Rename Artifacts
+        shell: bash
+        run: |
+          mv rust/corelib-rust.node ${{ matrix.artifact_name }}
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            mv rust/target/release/yahoo_streamer.exe ${{ matrix.bin_name }}
+          else
+            mv rust/target/release/yahoo_streamer ${{ matrix.bin_name }}
+          fi
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_name }}
+          retention-days: 1
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.bin_name }}
+          path: ${{ matrix.bin_name }}
+          retention-days: 1
+
+  release:
+    name: Create GitHub Release
+    needs: [build-ts, build-rust]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: ts-packages
+          path: artifacts
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
