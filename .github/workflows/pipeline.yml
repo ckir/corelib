@@ -37,11 +37,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install
       
-      - name: Check Formatting
-        run: pnpm format-all # Assumes this fails if changes are needed, or use biome check
-      
-      - name: Lint Code
-        run: pnpm lint-all
+      - name: Check Formatting & Lint
+        run: pnpm lint-all # pnpm lint-all runs 'biome check' which includes formatting
 
   # ---------------------------------------------------------
   # STAGE 2: MULTI-OS TESTING
@@ -74,6 +71,9 @@ jobs:
           cd rust
           pnpm exec napi build --release
           cp corelib-rust.node ../ts-core/corelib-rust.node
+
+      - name: Build TypeScript Packages
+        run: pnpm -r build --filter "!corelib-rust"
 
       - name: Run All Tests
         run: pnpm test-all
