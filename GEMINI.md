@@ -18,6 +18,8 @@ This document defines the foundational architectural rules and development stand
 - **Package Manager**: Use `pnpm` exclusively. Never use `npm` or `yarn`.
 - **Build System**: Use `tsup` for bundling ESM. All packages must be `"type": "module"`.
 - **Documentation**: All public APIs must be documented via TypeDoc. Run `pnpm -r docs` after significant changes.
+- Rust documentation is generated with `cargo doc` and automatically moved to `rust/docs`.
+- Run `pnpm -r docs` (or option D in Developers Cockpit) to update both TS and Rust docs.
 
 ## 3. Engineering Standards
 

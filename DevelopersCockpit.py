@@ -54,8 +54,8 @@ choices = [
     {'letter': 'V', 'desc': 'Bump version', 'cmd': 'pnpm -r version patch'},
     {'letter': 'K', 'desc': 'Tag & Push Version to Origin', 'cmd': None},
     {'letter': 'H', 'desc': 'Trigger GitHub Release Workflow', 'cmd': 'gh workflow run release.yml'},
-    {'letter': 'G', 'desc': 'Verify GitHub Release Assets', 'cmd': 'powershell -ExecutionPolicy Bypass -File ./TestRelease.ps1'},
-    {'letter': 'D', 'desc': 'Generate Documentation (TypeDoc)', 'cmd': 'pnpm -r docs'},
+    {'letter': 'G', 'desc': 'Verify GitHub Release Assets', 'cmd': 'pwsh -ExecutionPolicy Bypass -File ./TestRelease.ps1'},
+    {'letter': 'D', 'desc': 'Generate Documentation', 'cmd': 'pnpm -r docs'},
     {'letter': 'E', 'desc': 'Create Local release package (Zip/Tar)'},
     {'letter': 'Q', 'desc': 'Quit', 'cmd': None},
 ]
@@ -76,7 +76,7 @@ def get_release_cmd():
     # Updated to include workspace dists and key files
     files = 'ts-core/dist ts-cloud/dist ts-markets/dist rust/target/release package.json LICENSE README.md'
     if platform == 'windows':
-        return f'powershell Compress-Archive -Path {files} -DestinationPath release.zip -Force'
+        return f'pwsh Compress-Archive -Path {files} -DestinationPath release.zip -Force'
     else:
         return f'tar -czf release.tar.gz {files}'
 

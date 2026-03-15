@@ -1,7 +1,8 @@
 # =============================================
 # FILE: .github/workflows/release.yml
-# PURPOSE: Builds TS packages, cross-compiles Rust FFI binaries, 
-#          and creates a GitHub Release with minimal packages.
+# PURPOSE: Builds TS packages, cross-compiles Rust FFI binaries,
+#          AND builds the yahoo_streamer CLI binary for all platforms.
+#          Creates a GitHub Release with all artifacts.
 # =============================================
 
 name: Build and Release
@@ -55,18 +56,22 @@ jobs:
           retention-days: 1
 
   build-rust:
-    name: Build Rust Binaries
+    name: Build Rust Binaries + CLI
     strategy:
       matrix:
         include:
           - os: ubuntu-latest
             artifact_name: corelib-rust-linux-x64.node
+            bin_name: yahoo_streamer-linux-x64
           - os: macos-latest
             artifact_name: corelib-rust-darwin-x64.node
+            bin_name: yahoo_streamer-darwin-x64
           - os: macos-14
             artifact_name: corelib-rust-darwin-arm64.node
+            bin_name: yahoo_streamer-darwin-arm64
           - os: windows-latest
             artifact_name: corelib-rust-win32-x64.node
+            bin_name: yahoo_streamer-win32-x64.exe
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout Code
@@ -89,21 +94,40 @@ jobs:
       - name: Install Dependencies
         run: pnpm install
 
-      - name: Build Rust FFI
+      - name: Build Rust FFI (.node)
         run: |
           cd rust
           pnpm exec napi build --release
-          
-      - name: Rename Artifact for OS/Arch
+
+      - name: Build yahoo_streamer CLI binary
+        run: |
+          cd rust
+          cargo build --release --bin yahoo_streamer --features clap
+
+      - name: Rename Artifacts
         shell: bash
         run: |
           mv rust/corelib-rust.node ${{ matrix.artifact_name }}
+          
+          # Rename the CLI binary (Windows needs .exe)
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            mv rust/target/release/yahoo_streamer.exe ${{ matrix.bin_name }}
+          else
+            mv rust/target/release/yahoo_streamer ${{ matrix.bin_name }}
+          fi
 
-      - name: Upload Rust Artifact
+      - name: Upload Rust FFI Artifact
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.artifact_name }}
+          retention-days: 1
+
+      - name: Upload yahoo_streamer Binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.bin_name }}
+          path: ${{ matrix.bin_name }}
           retention-days: 1
 
   release:
@@ -122,7 +146,7 @@ jobs:
           name: ts-packages
           path: artifacts
 
-      - name: Download Rust Artifacts
+      - name: Download All Rust Artifacts
         uses: actions/download-artifact@v8
         with:
           path: artifacts
