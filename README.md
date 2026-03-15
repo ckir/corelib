@@ -96,12 +96,12 @@ pnpm test-all
 
 ## 📖 Documentation
 
-Detailed API documentation is generated for each package using [TypeDoc](https://typedoc.org/). You can view the generated HTML by running `pnpm docs-all` and opening the following paths in your browser:
+Detailed API documentation is generated for each package. You can view the generated HTML by opening the following paths in your browser:
 
-- **[Core Utilities Documentation](./ts-core/docs/index.html)** (`@ckir/corelib`)
-- **[Market Data Documentation](./ts-markets/docs/index.html)** (`@ckir/corelib-markets`)
-- **[Cloud Extensions Documentation](./ts-cloud/docs/index.html)** (`@ckir/corelib-cloud`)
-- **[Rust Native Core Documentation](./rust/docs/corelib_rust/index.html)** (`corelib-rust`)
+- **[Core Utilities Documentation](https://ckir.github.io/corelib/docs/ts-core/index.html)** (`@ckir/corelib`)
+- **[Market Data Documentation](https://ckir.github.io/corelib/docs/ts-markets/index.html)** (`@ckir/corelib-markets`)
+- **[Cloud Extensions Documentation](https://ckir.github.io/corelib/docs/ts-cloud/index.html)** (`@ckir/corelib-cloud`)
+- **[Rust Native Core Documentation](https://ckir.github.io/corelib/docs/rust/corelib_rust/index.html)** (`corelib-rust`)
 
 ---
 
