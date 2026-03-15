@@ -9,7 +9,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -47,6 +47,31 @@ jobs:
           cp -r ts-markets/docs  docs/ts-markets  2>/dev/null || true
           cp -r ts-cloud/docs    docs/ts-cloud    2>/dev/null || true
           cp -r rust/docs        docs/rust        2>/dev/null || true
+          cat <<EOF > docs/index.html
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>Corelib Documentation</title>
+              <style>
+                  body { font-family: sans-serif; padding: 2rem; background: #f4f4f4; }
+                  ul { list-style: none; padding: 0; }
+                  li { margin-bottom: 1rem; background: white; padding: 1rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+                  a { text-decoration: none; color: #0066cc; font-weight: bold; font-size: 1.2rem; }
+                  a:hover { text-decoration: underline; }
+                  p { color: #666; margin: 0.5rem 0 0; }
+              </style>
+          </head>
+          <body>
+              <h1>Corelib Monorepo Documentation</h1>
+              <ul>
+                  <li><a href="ts-core/index.html">@ckir/corelib</a><p>Base logic, FFI, logging, and resilient HTTP.</p></li>
+                  <li><a href="ts-markets/index.html">@ckir/corelib-markets</a><p>Market data tooling (Nasdaq, Yahoo).</p></li>
+                  <li><a href="ts-cloud/index.html">@ckir/corelib-cloud</a><p>Cloud-specific extensions.</p></li>
+                  <li><a href="rust/corelib_rust/index.html">corelib-rust</a><p>Native Rust core documentation.</p></li>
+              </ul>
+          </body>
+          </html>
+          EOF
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
