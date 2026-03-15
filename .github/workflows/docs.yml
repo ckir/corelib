@@ -1,0 +1,54 @@
+name: Deploy Docs to GitHub Pages
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'pnpm'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Generate all documentation
+        run: pnpm -r docs
+
+      - name: Prepare unified docs folder
+        run: |
+          mkdir -p docs
+          cp -r ts-core/docs     docs/ts-core     2>/dev/null || true
+          cp -r ts-markets/docs  docs/ts-markets  2>/dev/null || true
+          cp -r ts-cloud/docs    docs/ts-cloud    2>/dev/null || true
+          cp -r rust/docs        docs/rust        2>/dev/null || true
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs
+          publish_branch: gh-pages
+          force_orphan: true
