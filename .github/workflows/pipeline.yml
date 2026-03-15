@@ -73,7 +73,7 @@ jobs:
           cp corelib-rust.node ../ts-core/corelib-rust.node
 
       - name: Build TypeScript Packages
-        run: pnpm -r build --filter "!corelib-rust"
+        run: pnpm --filter "!corelib-rust" -r build
 
       - name: Run All Tests
         run: pnpm test-all
