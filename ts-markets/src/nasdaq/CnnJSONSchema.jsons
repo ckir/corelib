@@ -1,0 +1,506 @@
+﻿{
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "type": "object",
+    "properties": {
+        "fear_and_greed": {
+            "type": "object",
+            "properties": {
+                "score": {
+                    "type": "number"
+                },
+                "rating": {
+                    "type": "string"
+                },
+                "timestamp": {
+                    "type": "string"
+                },
+                "previous_close": {
+                    "type": "number"
+                },
+                "previous_1_week": {
+                    "type": "number"
+                },
+                "previous_1_month": {
+                    "type": "number"
+                },
+                "previous_1_year": {
+                    "type": "number"
+                }
+            },
+            "additionalProperties": false,
+            "required": [
+                "score",
+                "rating",
+                "timestamp",
+                "previous_close",
+                "previous_1_week",
+                "previous_1_month",
+                "previous_1_year"
+            ]
+        },
+        "fear_and_greed_historical": {
+            "type": "object",
+            "properties": {
+                "timestamp": {
+                    "type": "number"
+                },
+                "score": {
+                    "type": "number"
+                },
+                "rating": {
+                    "type": "string"
+                },
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "x": {
+                                "type": "number"
+                            },
+                            "y": {
+                                "type": "number"
+                            },
+                            "rating": {
+                                "type": "string"
+                            }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                            "x",
+                            "y",
+                            "rating"
+                        ]
+                    },
+                    "additionalItems": false
+                }
+            },
+            "additionalProperties": false,
+            "required": [
+                "timestamp",
+                "score",
+                "rating",
+                "data"
+            ]
+        },
+        "market_momentum_sp500": {
+            "type": "object",
+            "properties": {
+                "timestamp": {
+                    "type": "number"
+                },
+                "score": {
+                    "type": "number"
+                },
+                "rating": {
+                    "type": "string"
+                },
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "x": {
+                                "type": "number"
+                            },
+                            "y": {
+                                "type": "number"
+                            },
+                            "rating": {
+                                "type": "string"
+                            }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                            "x",
+                            "y",
+                            "rating"
+                        ]
+                    },
+                    "additionalItems": false
+                }
+            },
+            "additionalProperties": false,
+            "required": [
+                "timestamp",
+                "score",
+                "rating",
+                "data"
+            ]
+        },
+        "market_momentum_sp125": {
+            "type": "object",
+            "properties": {
+                "timestamp": {
+                    "type": "number"
+                },
+                "score": {
+                    "type": "number"
+                },
+                "rating": {
+                    "type": "string"
+                },
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "x": {
+                                "type": "number"
+                            },
+                            "y": {
+                                "type": "number"
+                            },
+                            "rating": {
+                                "type": "string"
+                            }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                            "x",
+                            "y",
+                            "rating"
+                        ]
+                    },
+                    "additionalItems": false
+                }
+            },
+            "additionalProperties": false,
+            "required": [
+                "timestamp",
+                "score",
+                "rating",
+                "data"
+            ]
+        },
+        "stock_price_strength": {
+            "type": "object",
+            "properties": {
+                "timestamp": {
+                    "type": "number"
+                },
+                "score": {
+                    "type": "number"
+                },
+                "rating": {
+                    "type": "string"
+                },
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "x": {
+                                "type": "number"
+                            },
+                            "y": {
+                                "type": "number"
+                            },
+                            "rating": {
+                                "type": "string"
+                            }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                            "x",
+                            "y",
+                            "rating"
+                        ]
+                    },
+                    "additionalItems": false
+                }
+            },
+            "additionalProperties": false,
+            "required": [
+                "timestamp",
+                "score",
+                "rating",
+                "data"
+            ]
+        },
+        "stock_price_breadth": {
+            "type": "object",
+            "properties": {
+                "timestamp": {
+                    "type": "number"
+                },
+                "score": {
+                    "type": "number"
+                },
+                "rating": {
+                    "type": "string"
+                },
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "x": {
+                                "type": "number"
+                            },
+                            "y": {
+                                "type": "number"
+                            },
+                            "rating": {
+                                "type": "string"
+                            }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                            "x",
+                            "y",
+                            "rating"
+                        ]
+                    },
+                    "additionalItems": false
+                }
+            },
+            "additionalProperties": false,
+            "required": [
+                "timestamp",
+                "score",
+                "rating",
+                "data"
+            ]
+        },
+        "put_call_options": {
+            "type": "object",
+            "properties": {
+                "timestamp": {
+                    "type": "number"
+                },
+                "score": {
+                    "type": "number"
+                },
+                "rating": {
+                    "type": "string"
+                },
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "x": {
+                                "type": "number"
+                            },
+                            "y": {
+                                "type": "number"
+                            },
+                            "rating": {
+                                "type": "string"
+                            }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                            "x",
+                            "y",
+                            "rating"
+                        ]
+                    },
+                    "additionalItems": false
+                }
+            },
+            "additionalProperties": false,
+            "required": [
+                "timestamp",
+                "score",
+                "rating",
+                "data"
+            ]
+        },
+        "market_volatility_vix": {
+            "type": "object",
+            "properties": {
+                "timestamp": {
+                    "type": "number"
+                },
+                "score": {
+                    "type": "number"
+                },
+                "rating": {
+                    "type": "string"
+                },
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "x": {
+                                "type": "number"
+                            },
+                            "y": {
+                                "type": "number"
+                            },
+                            "rating": {
+                                "type": "string"
+                            }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                            "x",
+                            "y",
+                            "rating"
+                        ]
+                    },
+                    "additionalItems": false
+                }
+            },
+            "additionalProperties": false,
+            "required": [
+                "timestamp",
+                "score",
+                "rating",
+                "data"
+            ]
+        },
+        "market_volatility_vix_50": {
+            "type": "object",
+            "properties": {
+                "timestamp": {
+                    "type": "number"
+                },
+                "score": {
+                    "type": "number"
+                },
+                "rating": {
+                    "type": "string"
+                },
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "x": {
+                                "type": "number"
+                            },
+                            "y": {
+                                "type": "number"
+                            },
+                            "rating": {
+                                "type": "string"
+                            }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                            "x",
+                            "y",
+                            "rating"
+                        ]
+                    },
+                    "additionalItems": false
+                }
+            },
+            "additionalProperties": false,
+            "required": [
+                "timestamp",
+                "score",
+                "rating",
+                "data"
+            ]
+        },
+        "junk_bond_demand": {
+            "type": "object",
+            "properties": {
+                "timestamp": {
+                    "type": "number"
+                },
+                "score": {
+                    "type": "integer"
+                },
+                "rating": {
+                    "type": "string"
+                },
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "x": {
+                                "type": "number"
+                            },
+                            "y": {
+                                "type": "number"
+                            },
+                            "rating": {
+                                "type": "string"
+                            }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                            "x",
+                            "y",
+                            "rating"
+                        ]
+                    },
+                    "additionalItems": false
+                }
+            },
+            "additionalProperties": false,
+            "required": [
+                "timestamp",
+                "score",
+                "rating",
+                "data"
+            ]
+        },
+        "safe_haven_demand": {
+            "type": "object",
+            "properties": {
+                "timestamp": {
+                    "type": "number"
+                },
+                "score": {
+                    "type": "number"
+                },
+                "rating": {
+                    "type": "string"
+                },
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "x": {
+                                "type": "number"
+                            },
+                            "y": {
+                                "type": "number"
+                            },
+                            "rating": {
+                                "type": "string"
+                            }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                            "x",
+                            "y",
+                            "rating"
+                        ]
+                    },
+                    "additionalItems": false
+                }
+            },
+            "additionalProperties": false,
+            "required": [
+                "timestamp",
+                "score",
+                "rating",
+                "data"
+            ]
+        }
+    },
+    "additionalProperties": false,
+    "required": [
+        "fear_and_greed",
+        "fear_and_greed_historical",
+        "market_momentum_sp500",
+        "market_momentum_sp125",
+        "stock_price_strength",
+        "stock_price_breadth",
+        "put_call_options",
+        "market_volatility_vix",
+        "market_volatility_vix_50",
+        "junk_bond_demand",
+        "safe_haven_demand"
+    ]
+}

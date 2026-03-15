@@ -35,15 +35,15 @@ corelib/
 Since these packages are not published to the public NPM registry, you can install them directly from the GitHub Release assets.
 
 ### 1. Install via Direct URL (Recommended)
-You can point your package manager directly to the `.tgz` file in the GitHub Release. Replace `v0.1.8` with the desired version.
+You can point your package manager directly to the `.tgz` file in the GitHub Release. Replace `v0.1.9` with the desired version.
 
 ```bash
 # Using pnpm
-pnpm add https://github.com/ckir/corelib/releases/download/v0.1.8/ckir-corelib-0.1.8.tgz
-pnpm add https://github.com/ckir/corelib/releases/download/v0.1.8/ckir-corelib-markets-0.1.8.tgz
+pnpm add https://github.com/ckir/corelib/releases/download/v0.1.9/ckir-corelib-0.1.9.tgz
+pnpm add https://github.com/ckir/corelib/releases/download/v0.1.9/ckir-corelib-markets-0.1.9.tgz
 
 # Using npm
-npm install https://github.com/ckir/corelib/releases/download/v0.1.8/ckir-corelib-0.1.8.tgz
+npm install https://github.com/ckir/corelib/releases/download/v0.1.9/ckir-corelib-0.1.9.tgz
 ```
 
 ### ⚠️ Important: Handling Internal Dependencies
@@ -55,7 +55,7 @@ To fix this, add an **override** to your `package.json` so the manager knows to 
 ```json
 "pnpm": {
   "overrides": {
-    "@ckir/corelib": "https://github.com/ckir/corelib/releases/download/v0.1.8/ckir-corelib-0.1.8.tgz"
+    "@ckir/corelib": "https://github.com/ckir/corelib/releases/download/v0.1.9/ckir-corelib-0.1.9.tgz"
   }
 }
 ```
@@ -160,7 +160,14 @@ if (status.status === 'success') {
   console.log(`Nasdaq is ${status.value.mrktStatus}. Sleeping ${sleepMs}ms until open.`);
 }
 
-// 3. Real-Time Yahoo Streaming (Rust-powered)
+// 3. CNN Fear & Greed Index
+import { CnnFearAndGreed, CnnFearAndGreedFilter } from '@ckir/corelib-markets';
+const cnn = await CnnFearAndGreed.getFearAndGreed("2026-03-15", CnnFearAndGreedFilter.FearAndGreed);
+if (cnn.status === "success") {
+  console.log(`CNN Fear & Greed Score: ${cnn.value.score} (${cnn.value.rating})`);
+}
+
+// 4. Real-Time Yahoo Streaming (Rust-powered)
 const stream = new YahooStreaming();
 await stream.init({ silenceSeconds: 45 });
 await stream.start();

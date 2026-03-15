@@ -7,7 +7,7 @@ import type { DbDriver } from "./driver.js";
  */
 
 // Define internal types to avoid any
-interface AsyncLocalStorageLike<T> {
+export interface AsyncLocalStorageLike<T> {
 	run<R>(store: T, callback: () => R): R;
 	getStore(): T | undefined;
 }

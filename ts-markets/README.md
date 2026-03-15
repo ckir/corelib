@@ -59,6 +59,27 @@ if (status.status === 'success') {
 }
 ```
 
+### CNN Fear & Greed Index
+
+Retrieve the CNN Fear & Greed Index with optional date and client-side filtering.
+
+```typescript
+import { CnnFearAndGreed, CnnFearAndGreedFilter } from '@ckir/corelib-markets';
+
+// Fetch current Fear & Greed Index
+const result = await CnnFearAndGreed.getFearAndGreed();
+
+// Fetch for specific date with filter
+const historical = await CnnFearAndGreed.getFearAndGreed(
+  "2026-03-15", 
+  CnnFearAndGreedFilter.MarketVolatilityVix
+);
+
+if (result.status === 'success') {
+  console.log('Fear & Greed:', result.value);
+}
+```
+
 ### Yahoo Real-Time Streaming (Rust-powered)
 
 ```ts

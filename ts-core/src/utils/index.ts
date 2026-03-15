@@ -13,7 +13,7 @@ import { detectRuntime } from "./runtime";
 const require = createRequire(import.meta.url);
 
 export { includeExcludeCron } from "./cron";
-export { detectRuntime } from "./runtime";
+export { detectRuntime, type Runtime } from "./runtime";
 export { getSysInfo, SysInfo } from "./SysInfo";
 
 export const Utils = {

@@ -9,12 +9,24 @@ import {
 	type NasdaqResult,
 } from "./nasdaq/ApiNasdaqUnlimited";
 
+import {
+	CnnFearAndGreed,
+	CnnFearAndGreedFilter,
+	type CnnFilterInput,
+	type CnnResult,
+} from "./nasdaq/CnnFearAndGreed";
+
 export { ApiNasdaqUnlimited, type NasdaqResult };
+export {
+	CnnFearAndGreed,
+	type CnnResult,
+	type CnnFilterInput,
+	CnnFearAndGreedFilter,
+};
 
 export const Markets = {
 	nasdaq: { ApiNasdaqUnlimited },
 };
 
 export { YahooStreaming } from "./nasdaq/datafeeds/streaming/yahoo/YahooStreaming";
-// Update to ts-markets/src/index.ts (add to end)
 export { MarketStatus, type NasdaqMarketInfo } from "./nasdaq/MarketStatus";

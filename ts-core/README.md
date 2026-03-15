@@ -41,7 +41,7 @@ console.log(`Memory Used: ${stats.memory.heapUsed} bytes`);
 - `Core`: Rust FFI (logAndDouble, getVersion)
 - `logger`: Strict Logger (trace, debug, info, warn, error, fatal)
 - `Retrieve`: HTTP Utilities (endPoint, endPoints)
-- `Utils`: System Utilities (SysInfo, getSysInfo)
+- `Utils`: System & Cron Utilities (SysInfo, includeExcludeCron)
 - `Configs`: Configuration Management
 - `Database`: Dynamic Runtime Database Drivers
 - `Common`: Shared utilities like `detectRuntime`
@@ -95,4 +95,21 @@ await prep.value.close();
 
 // Stream
 await db.driver.stream('SELECT * FROM large_table', [], (row) => console.log(row));
+```
+
+### 7. Cron Utilities
+Flexible cron handler supporting inclusion and exclusion rules with second-level precision.
+
+```typescript
+import { includeExcludeCron } from '@ckir/corelib';
+
+const job = includeExcludeCron(
+  ["*/5 * * * * *"], // Include: Every 5 seconds
+  ["0 * * * * *"],   // Exclude: At the start of every minute
+  () => {
+    console.log("Tick (but not on the minute)!");
+  }
+);
+
+// job.stop(); // Stop the job when needed
 ```
