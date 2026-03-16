@@ -187,6 +187,31 @@ stream.subscribe(["AAPL", "TSLA", "NVDA"]);
 
 stream.on("pricing", (data) => console.log("Price Update:", data));
 ```
+### MarketMonitor (Resilient Status Poller)
+
+Long-running adaptive poller that emits market phase changes with full data.  
+Automatically falls back to time-based heuristic during API outages.
+
+```typescript
+import { MarketMonitor } from '@ckir/corelib-markets';
+
+const monitor = new MarketMonitor({
+  liveIntervalSec: 15,      // during open/pre/after-hours
+  closedIntervalSec: 1800,  // during closed
+  warnIntervalSec: 30       // warning throttle
+});
+
+monitor.on("status-change", (phase, data, heuristic) => {
+  console.log(`Market is now ${phase} (heuristic=${!!heuristic})`, data);
+});
+
+monitor.on("stopped", () => console.log("Monitor stopped"));
+
+monitor.start();
+
+// Later
+monitor.stop();
+```
 
 ---
 

@@ -14,32 +14,39 @@ This document defines the foundational architectural rules and development stand
 
 ## 2. Tooling & Workflow
 
-- **Management**: Always use `DevelopersCockpit.ps1` as the primary interface for building, testing, and cleaning.
+- **Management**: Use `DevelopersCockpit.ps1` (Windows) or `DevelopersCockpit.py` (Cross-Runtime) as the primary interface for building, testing, and cleaning.
 - **Package Manager**: Use `pnpm` exclusively. Never use `npm` or `yarn`.
 - **Build System**: Use `tsup` for bundling ESM. All packages must be `"type": "module"`.
-- **Documentation**: All public APIs must be documented via TypeDoc. Run `pnpm -r docs` after significant changes.
-- Rust documentation is generated with `cargo doc` and automatically moved to `rust/docs`.
-- Run `pnpm -r docs` (or option D in Developers Cockpit) to update both TS and Rust docs.
+- **Documentation**: All public APIs must be documented. 
+    - TS docs are generated via TypeDoc.
+    - Rust docs are generated via `cargo doc` and moved to `rust/docs`.
+    - Run `pnpm docs-all` to regenerate the entire unified documentation suite.
+    - Live Docs: [ckir.github.io/corelib](https://ckir.github.io/corelib/index.html)
 
 ## 3. Engineering Standards
 
 - **Linting & Formatting**: Biome is the source of truth. 
-    - Run `pnpm -r lint` (which executes `biome check`) before any commit.
-    - Use `biome-ignore` only when strictly necessary (e.g., `any` types for FFI or non-null assertions in tests).
+    - Run `pnpm lint-all` (which executes `biome check`) before any commit. This enforces both linting and formatting.
 - **Testing**:
-    - Use **Vitest** for all TypeScript tests.
-    - Use **MSW** (Mock Service Worker) for all network-related tests.
-    - Maintain 100% pass rate for `pnpm -r test`.
-- **Type Safety**:
-    - Avoid `any` where possible. Prefer `unknown` or specific interfaces.
-    - Export critical types (like `StrictLogger`, `RequestResult`) from package entry points (`index.ts`).
-- **FFI Stability**: 
-    - The Rust FFI bridge is a critical dependency. Always verify `logAndDouble` and `getVersion` stubs when changing core logic.
-    - Use `as any` or `biome-ignore` for Deno-specific FFI calls if types are unstable.
+    - Use **Vitest** for all TypeScript tests and **MSW** for network mocks.
+    - Maintain 100% pass rate for `pnpm test-all` across **Ubuntu, macOS, and Windows**.
+- **Type Safety**: Avoid `any`. Export critical types from package entry points (`index.ts`).
+- **FFI Stability**: The Rust FFI bridge is critical. Always verify the prebuilt `.node` binaries when changing core logic.
 
-## 4. Gemini Operational Mandates
+## 4. CI/CD Pipeline (`pipeline.yml`)
 
-- **Validation**: Every implementation task **must** conclude with `pnpm -r build`, `pnpm -r lint`, `pnpm -r test`, and `pnpm -r docs`.
-- **Surgical Edits**: Prefer `replace` over `write_file` for large files to preserve existing comments and structure.
-- **Usage Examples**: When adding new features, immediately update the corresponding `README.md` with clear usage examples.
+The monorepo uses a strictly staged GitHub Actions pipeline:
+1.  **Validate**: Linting and formatting check (Biome).
+2.  **Test**: Multi-OS execution (Ubuntu, macOS, Windows). **Mandatory**: TS packages must be built before testing to ensure correct workspace resolution.
+3.  **Deploy Docs**: Triggered on `main` branch push. Publishes unified index to GitHub Pages.
+4.  **Release**: Triggered on `v*` tags. Builds and attaches 11 assets:
+    - TS Packages (`.tgz` for core, cloud, markets).
+    - Rust FFI Nodes (Darwin x64/arm64, Linux x64, Win x64).
+    - `yahoo_streamer` CLI Binaries (Darwin x64/arm64, Linux x64, Win x64).
+
+## 5. Gemini Operational Mandates
+
+- **Validation**: Every implementation task **must** conclude with `pnpm build-all`, `pnpm lint-all`, `pnpm test-all`, and `pnpm docs-all`.
+- **Surgical Edits**: Prefer `replace` over `write_file` for large files to preserve structure.
+- **Usage Examples**: When adding new features, immediately update `README.md` with clear examples, specifically noting installation via release `.tgz` assets if applicable.
 - **No Regressions**: If a change causes a TypeDoc warning or a Lint violation, it is incomplete. Fix it before reporting success.

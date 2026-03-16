@@ -141,6 +141,39 @@ export class ConfigManager extends EventEmitter {
 	}
 
 	/**
+	 * Public method to load and merge a new configuration from a URL or file path on demand.
+	 * Respects the established configuration hierarchy and maintains Env overrides.
+	 * @param source - The URL or local file path to the configuration.
+	 */
+	public async loadExternalConfig(source: string): Promise<void> {
+		try {
+			// 1. Fetch and parse the external configuration using existing logic
+			const externalData = await this.fetchExternalConfig(source);
+
+			// 2. Process it through the established hierarchy (commonAll -> app -> platform -> mode)
+			this.processHierarchy(externalData);
+
+			// 3. Re-apply environment variables to maintain precedence rules
+			this.applyEnvOverrides();
+
+			// Note: If you want CLI overrides to apply here as well, you would need to
+			// cache the parsed `program` from initialize() into a class property first.
+
+			// 4. Update the global object reference
+			(globalThis as any).sysconfig = this._config;
+
+			// 5. Emit a general update event for listeners to react
+			this.emit("configLoaded", this._config);
+		} catch (error) {
+			this.logError(
+				`Failed to load external config dynamically from ${source}`,
+				error,
+			);
+			throw error;
+		}
+	}
+
+	/**
 	 * Loads the base ConfigManager.json from the local directory
 	 */
 	private loadDefaults(): void {

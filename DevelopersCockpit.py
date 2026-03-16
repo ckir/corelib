@@ -46,7 +46,7 @@ choices = [
     {'letter': 'W', 'desc': 'Watch TypeScript', 'cmd': 'pnpm -r watch --parallel'},
     {'letter': 'B', 'desc': 'Build TypeScript', 'cmd': 'pnpm -r build'},
     {'letter': 'L', 'desc': 'Lint TypeScript Code', 'cmd': 'pnpm -r lint'},
-    {'letter': 'M', 'desc': 'Lint to File', 'cmd': 'pnpm -r lint > lint-output.txt'},
+    {'letter': 'M', 'desc': 'Lint to File', 'cmd': 'pnpm -r lint --fix > lint-output.txt'},
     {'letter': 'T', 'desc': 'Run Typescript Tests', 'cmd': 'pnpm -r test'},
     {'letter': 'R', 'desc': 'Build Rust', 'cmd': 'cd rust && npx napi build --release && copy corelib-rust.node ..\\ts-core\\corelib-rust.node'},
     {'letter': 'U', 'desc': 'Run Rust Tests', 'cmd': 'cargo test --manifest-path rust/Cargo.toml'},

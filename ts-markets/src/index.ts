@@ -30,3 +30,4 @@ export const Markets = {
 
 export { YahooStreaming } from "./nasdaq/datafeeds/streaming/yahoo/YahooStreaming";
 export { MarketStatus, type NasdaqMarketInfo } from "./nasdaq/MarketStatus";
+export { MarketMonitor, type MarketPhase } from "./nasdaq/MarketMonitor";

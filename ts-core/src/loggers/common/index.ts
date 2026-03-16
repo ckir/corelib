@@ -143,6 +143,7 @@ const transport = pino.transport({
 
 const basePino = pino({ level: process.env.LOG_LEVEL || "info" }, transport);
 
-globalThis.logger = new StrictLoggerWrapper(basePino);
+const loggerInstance: StrictLogger = new StrictLoggerWrapper(basePino);
+globalThis.logger = loggerInstance;
 
-export default globalThis.logger;
+export default loggerInstance;
