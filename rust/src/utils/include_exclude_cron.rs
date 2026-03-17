@@ -69,41 +69,54 @@ where
 
     // Background tick thread
     thread::spawn(move || {
+        let mut last_fire_ts = 0;
         loop {
             if stop_flag_clone.load(Ordering::Relaxed) {
                 break;
             }
 
             let now: DateTime<Utc> = Utc::now();
+            let now_ts = now.timestamp();
+
+            if now_ts <= last_fire_ts {
+                // Already handled this second, sleep until next one
+                let next_sec_ts = last_fire_ts + 1;
+                let next_sec = DateTime::from_timestamp(next_sec_ts, 0).expect("invalid timestamp");
+                let sleep_dur = next_sec - Utc::now();
+                if sleep_dur > Duration::zero() {
+                    thread::sleep(StdDuration::from_millis(sleep_dur.num_milliseconds() as u64));
+                } else {
+                    thread::sleep(StdDuration::from_millis(10));
+                }
+                continue;
+            }
+
+            let test_time = now - Duration::seconds(1);
 
             // ANY include matches?
             let included = include_schedules.iter().any(|schedule| {
-                let test_time = now - Duration::seconds(1);
                 let mut upcoming = schedule.after(&test_time);
-                upcoming
-                    .next()
-                    .is_some_and(|next| next <= now + Duration::seconds(1))
+                upcoming.next().is_some_and(|next| next.timestamp() == now_ts)
             });
 
             if !included {
-                thread::sleep(StdDuration::from_secs(1));
+                // Not a fire second for us, sleep a bit but check again soon-ish
+                // to stay aligned with the start of seconds.
+                thread::sleep(StdDuration::from_millis(100));
                 continue;
             }
 
             // ANY exclude matches?
             let excluded = exclude_schedules.iter().any(|schedule| {
-                let test_time = now - Duration::seconds(1);
                 let mut upcoming = schedule.after(&test_time);
-                upcoming
-                    .next()
-                    .is_some_and(|next| next <= now + Duration::seconds(1))
+                upcoming.next().is_some_and(|next| next.timestamp() == now_ts)
             });
 
             if !excluded {
                 (handler_clone)();
             }
 
-            thread::sleep(StdDuration::from_secs(1));
+            last_fire_ts = now_ts;
         }
     });
 
@@ -156,23 +169,24 @@ mod tests {
     }
 
     #[test]
-    fn only_specific_second_include_works() {
+    fn fires_only_on_specific_seconds() {
         let counter = Arc::new(AtomicUsize::new(0));
         let c = Arc::clone(&counter);
 
-        // Fixed: correct 7-field cron that fires when second == 0
-        // (every minute at xx:xx:00)
-        let handle = include_exclude_cron(vec!["0 * * * * * *".to_string()], vec![], move || {
+        // Fire every 2 seconds
+        let handle = include_exclude_cron(vec!["*/2 * * * * * *".to_string()], vec![], move || {
             c.fetch_add(1, Ordering::SeqCst);
         });
 
-        thread::sleep(Duration::from_secs(65)); // long enough to guarantee at least one hit
+        thread::sleep(Duration::from_secs(6));
         handle.stop();
 
         let calls = counter.load(Ordering::SeqCst);
+        // In 6 seconds, every 2 seconds should fire ~3 times
         assert!(
-            calls >= 1,
-            "Should have fired at least once when second == 0"
+            calls >= 2 && calls <= 4,
+            "Should have fired ~3 times in 6 seconds (every 2s), got {}",
+            calls
         );
     }
 

@@ -150,7 +150,7 @@ async function getStatus(): Promise<NasdaqResult<NasdaqMarketInfo>> {
 		}
 
 		// Path 3: Success
-		logger?.debug("[MarketStatus] Schema validated successfully");
+		logger?.trace("[MarketStatus] Schema validated successfully");
 		return {
 			status: "success",
 			value: data,

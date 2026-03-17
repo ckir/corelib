@@ -70,7 +70,7 @@ export class MarketMonitor extends EventEmitter {
 		if (this.isRunning) return;
 		this.isRunning = true;
 		this.failureCount = 0;
-		logger.debug("[MarketMonitor] Starting market status monitor");
+		logger.info("[MarketMonitor] Starting market status monitor");
 		this.poll(); // kick off the first poll immediately
 	}
 
@@ -82,7 +82,7 @@ export class MarketMonitor extends EventEmitter {
 			clearTimeout(this.timeoutId);
 			this.timeoutId = null;
 		}
-		logger.debug("[MarketMonitor] Monitor stopped");
+		logger.info("[MarketMonitor] Monitor stopped");
 		this.emit("stopped");
 	}
 

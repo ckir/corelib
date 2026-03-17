@@ -12,7 +12,6 @@ export * from "./core/result.js";
 export * from "./core/transaction-context.js";
 export type { Database } from "./core/types.js";
 export * from "./core/types.js";
-export * from "./core/utils.js";
 export * from "./postgres/index.js";
 export * from "./sqlite/index.js";
 

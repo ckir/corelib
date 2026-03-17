@@ -62,6 +62,8 @@ vi.mock("@ckir/corelib", async (importOriginal) => {
 			warn: vi.fn(),
 			error: vi.fn(),
 			fatal: vi.fn(),
+			trace: vi.fn(),
+			info: vi.fn(),
 			child: vi.fn().mockReturnThis(),
 		},
 	};
@@ -88,12 +90,16 @@ describe("MarketStatus", () => {
 		it("should return success with valid data", async () => {
 			const result = await MarketStatus.getStatus();
 
+			if (result.status === "error") {
+				console.error("DEBUG: MarketStatus.getStatus() returned error:", JSON.stringify(result.reason, null, 2));
+			}
+
 			expect(result.status).toBe("success");
 			if (result.status === "success") {
 				expect(result.value.mrktStatus).toBe("Open");
 				expect(result.value.isBusinessDay).toBe(true);
 			}
-			expect(logger?.debug).toHaveBeenCalledWith(
+			expect(logger?.trace).toHaveBeenCalledWith(
 				"[MarketStatus] Schema validated successfully",
 			);
 		});

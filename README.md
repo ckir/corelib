@@ -1,6 +1,6 @@
 # Corelib Monorepo
 
-A high-performance, resilient, and multi-runtime monorepo for TypeScript and Rust. This workspace provides foundational utilities, cloud extensions, and financial market tooling designed for Node.js, Bun, and Deno.
+A high-performance, resilient, and multi-runtime monorepo for TypeScript and Rust. This workspace provides foundational utilities, cloud extensions, and financial market tooling designed for **Node.js, Bun, and Deno**.
 
 ## 🚀 Overview
 
@@ -22,7 +22,7 @@ corelib/
 ├── ts-core/      # (@ckir/corelib) Base logic, FFI, logging, and resilient HTTP.
 ├── ts-cloud/     # (@ckir/corelib-cloud) Cloud-specific extensions.
 ├── ts-markets/   # (@ckir/corelib-markets) Market data tooling (Nasdaq, Yahoo).
-├── rust/         # (corelib-rust) Native Rust core exposed via N-API.
+├── rust/         # (corelib_rust) Native Rust core exposed via N-API.
 ├── .gemini/      # AI agent configuration and mandates.
 ├── biome.json    # Monorepo-wide linting and formatting (Biome).
 └── package.json  # Root workspace configuration.
@@ -73,23 +73,104 @@ node node_modules/@ckir/corelib/scripts/postinstall.js
 ## 🛠️ Getting Started
 
 ### Prerequisites
-- [Node.js](https://nodejs.org/) (latest LTS)
-- [pnpm](https://pnpm.io/) (for package management)
+- [Node.js](https://nodejs.org/) (v24+ recommended)
+- [pnpm](https://pnpm.io/) (v10+ required)
 - [Rust](https://rust-lang.org/) (for native module builds)
 
-### Installation & Build
-```powershell
-# Install all dependencies
-pnpm install
+### Common Commands
+All workspace-wide commands are managed through `pnpm`:
 
-# Build all packages using the Cockpit script
-./DevelopersCockpit.ps1 -Build -All
+| Command | Description |
+| :--- | :--- |
+| `pnpm install` | Install all dependencies and link packages |
+| `pnpm build-all` | Build all packages in correct order |
+| `pnpm test-all` | Run all unit and integration tests |
+| `pnpm lint-all` | Run Biome linting and formatting checks |
+| `pnpm format-all` | Apply Biome formatting automatically |
+| `pnpm docs-all` | Regenerate all API documentation |
+| `pnpm clean-all` | Wipe all `node_modules`, `dist`, and `target` folders |
+
+---
+
+## 📖 Usage Examples
+
+### 1. Core Utilities (`@ckir/corelib`)
+The core package provides the foundation for logging, HTTP, and system info.
+
+```typescript
+import { logger, endPoint, getSysInfo, ConfigManager } from '@ckir/corelib';
+
+// Structured Logging
+logger.info("Service initialized", { version: "0.1.13" });
+
+// Resilient Fetch (ky-powered with retries)
+const result = await endPoint('https://api.nasdaq.com/api/market-info');
+if (result.status === 'success') {
+  console.log(result.value.body); // JSON already parsed if Content-Type matches
+}
+
+// Configuration Management (CLI > Env > File > Default)
+const config = ConfigManager.getInstance();
+await config.initialize(); // Loads hierarchy and parses CLI/Env
+const port = config.get('server.port'); // Dot-notation support
+
+// Dynamic external config loading (Encrypted or Plain)
+await config.loadExternalConfig("https://example.com/config.json.enc");
 ```
 
-### Running Tests
-```powershell
-# Run all tests across the monorepo
-pnpm test-all
+### 2. Database Support (`@ckir/corelib`)
+Unified API for SQLite (LibSQL) and PostgreSQL with transaction support.
+
+```typescript
+import { createDatabase } from '@ckir/corelib';
+
+const db = await createDatabase({ 
+  dialect: 'sqlite', 
+  url: 'file:./local.db' 
+});
+
+// Query execution with safe parameter binding
+const users = await db.query('SELECT * FROM users WHERE active = ?', [true]);
+
+// Transaction management with automatic rollback on error
+await db.transaction(async () => {
+  await db.query('INSERT INTO logs (msg) VALUES (?)', ['Transaction started']);
+  return { status: 'success', value: true };
+});
+```
+
+### 3. Market Data (`@ckir/corelib-markets`)
+Advanced financial utilities, including Nasdaq APIs and Yahoo Streaming.
+
+```typescript
+import { ApiNasdaqUnlimited, MarketStatus, MarketMonitor, type MarketPhase } from '@ckir/corelib-markets';
+
+// 1. Resilient Status Poller (MarketMonitor)
+const monitor = new MarketMonitor({
+  liveIntervalSec: 15,      // Frequency when market is open
+  closedIntervalSec: 1800,  // Frequency when market is closed
+  warnIntervalSec: 60       // Warning throttle
+});
+
+monitor.on("status-change", (phase: MarketPhase, data, heuristic) => {
+  console.log(`Phase: ${phase} | Is Heuristic: ${!!heuristic}`);
+});
+monitor.start();
+
+// 2. CNN Fear & Greed Index
+import { CnnFearAndGreed, CnnFearAndGreedFilter } from '@ckir/corelib-markets';
+const cnn = await CnnFearAndGreed.getFearAndGreed();
+if (cnn.status === "success") {
+  console.log(`CNN Score: ${cnn.value.score} (${cnn.value.rating})`);
+}
+
+// 3. Real-Time Yahoo Streaming (Rust-powered FFI)
+const stream = new YahooStreaming();
+await stream.init({ silenceSeconds: 30 });
+await stream.start();
+stream.subscribe(["AAPL", "TSLA", "NVDA"]);
+
+stream.on("pricing", (data) => console.log("Price Update:", data));
 ```
 
 ---
@@ -103,130 +184,6 @@ Detailed API documentation is generated for each package and published via GitHu
 - **[Market Data Documentation](https://ckir.github.io/corelib/ts-markets/index.html)** (`@ckir/corelib-markets`)
 - **[Cloud Extensions Documentation](https://ckir.github.io/corelib/ts-cloud/index.html)** (`@ckir/corelib-cloud`)
 - **[Rust Native Core Documentation](https://ckir.github.io/corelib/rust/corelib_rust/index.html)** (`corelib-rust`)
-
----
-
-## 📖 Usage Examples
-
-### 1. Core Utilities (@ckir/corelib)
-The core package provides the foundation for logging, HTTP, and system info.
-
-```typescript
-import { logger, endPoint, getSysInfo, ConfigManager } from '@ckir/corelib';
-
-// Structured Logging with Telemetry
-logger.setTelemetry('on');
-logger.info("Service initialized", { version: "0.1.0" });
-
-// Resilient Fetch (ky wrapper)
-const result = await endPoint('https://api.github.com/repos/google/gemini-cli');
-if (result.status === 'success') {
-  console.log(result.value.body);
-}
-
-// System Information (Cross-Runtime)
-const stats = getSysInfo();
-console.log(`OS: ${stats.os.platform}, Memory Used: ${stats.memory.heapUsed} bytes`);
-
-// Configuration Management
-const config = ConfigManager.getInstance();
-await config.initialize();
-const dbUrl = config.getValue('database.url');
-```
-
-### 2. Database Support (@ckir/corelib)
-Unified API for SQLite and PostgreSQL with transaction support.
-
-```typescript
-import { createDatabase } from '@ckir/corelib';
-
-const db = await createDatabase({ 
-  dialect: 'sqlite', 
-  url: 'file:./local.db' 
-});
-
-// Query execution
-const users = await db.query('SELECT * FROM users WHERE active = ?', [true]);
-
-// Transaction management
-await db.transaction(async () => {
-  await db.query('INSERT INTO logs (msg) VALUES (?)', ['Transaction started']);
-  // ... more operations
-  return { status: 'success', value: true };
-});
-```
-
-### 3. Market Data (@ckir/corelib-markets)
-Advanced financial utilities, including Nasdaq APIs and Yahoo Streaming.
-
-```typescript
-import { ApiNasdaqUnlimited, MarketStatus, YahooStreaming } from '@ckir/corelib-markets';
-
-// 1. Nasdaq Resilient API
-const nasdaqData = await ApiNasdaqUnlimited.endPoint('https://api.nasdaq.com/api/quote/AAPL/info');
-
-// 2. Market Status & Scheduling
-const status = await MarketStatus.getStatus();
-if (status.status === 'success') {
-  const sleepMs = MarketStatus.getSleepDuration(status.value);
-  console.log(`Nasdaq is ${status.value.mrktStatus}. Sleeping ${sleepMs}ms until open.`);
-}
-
-// 3. CNN Fear & Greed Index
-import { CnnFearAndGreed, CnnFearAndGreedFilter } from '@ckir/corelib-markets';
-const cnn = await CnnFearAndGreed.getFearAndGreed("2026-03-15", CnnFearAndGreedFilter.FearAndGreed);
-if (cnn.status === "success") {
-  console.log(`CNN Fear & Greed Score: ${cnn.value.score} (${cnn.value.rating})`);
-}
-
-// 4. Real-Time Yahoo Streaming (Rust-powered)
-const stream = new YahooStreaming();
-await stream.init({ silenceSeconds: 45 });
-await stream.start();
-stream.subscribe(["AAPL", "TSLA", "NVDA"]);
-
-stream.on("pricing", (data) => console.log("Price Update:", data));
-```
-### MarketMonitor (Resilient Status Poller)
-
-Long-running adaptive poller that emits market phase changes with full data.  
-Automatically falls back to time-based heuristic during API outages.
-
-```typescript
-import { MarketMonitor } from '@ckir/corelib-markets';
-
-const monitor = new MarketMonitor({
-  liveIntervalSec: 15,      // during open/pre/after-hours
-  closedIntervalSec: 1800,  // during closed
-  warnIntervalSec: 30       // warning throttle
-});
-
-monitor.on("status-change", (phase, data, heuristic) => {
-  console.log(`Market is now ${phase} (heuristic=${!!heuristic})`, data);
-});
-
-monitor.on("stopped", () => console.log("Monitor stopped"));
-
-monitor.start();
-
-// Later
-monitor.stop();
-```
-
----
-
-## 🔧 Development Workflow
-
-### Tooling
-- **Orchestration**: Use `DevelopersCockpit.ps1` for all build, test, and maintenance tasks.
-- **Linting & Formatting**: [Biome](https://biomejs.dev/) is used for all TypeScript code. Run `pnpm lint-all`.
-- **Testing**: [Vitest](https://vitest.dev/) for unit and integration tests.
-- **Documentation**: [TypeDoc](https://typedoc.org/) for API documentation. Run `pnpm docs-all`.
-
-### Engineering Standards
-- **Surgical Edits**: Follow the `GEMINI.md` mandates for all changes.
-- **FFI Stability**: Always verify the Rust bridge (`corelib-rust.node`) when changing core logic.
-- **Type Safety**: Avoid `any`. Use `unknown` or specific interfaces. All public APIs must be documented.
 
 ---
 
