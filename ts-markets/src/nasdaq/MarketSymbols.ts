@@ -46,7 +46,8 @@ export class MarketSymbols {
 	private db: Database | null = null;
 	private readonly config: {
 		dialect: "sqlite";
-		localPath: string;
+		url: string;
+		mode: "stateful" | "stateless";
 		authToken?: string;
 	};
 
@@ -58,17 +59,27 @@ export class MarketSymbols {
 	 */
 	constructor(db?: string | { dbUrl: string; dbToken: string }) {
 		if (!db) {
+			const path = `${getTempDir()}/NasdaqSymbols.sqlite`;
 			this.config = {
 				dialect: "sqlite",
-				localPath: `${getTempDir()}/NasdaqSymbols.sqlite`,
+				url: `file:${path}`,
+				mode: "stateful",
 			};
 		} else if (typeof db === "string") {
-			this.config = { dialect: "sqlite", localPath: db };
+			this.config = {
+				dialect: "sqlite",
+				url:
+					db.startsWith("libsql://") || db.startsWith("file:")
+						? db
+						: `file:${db}`,
+				mode: "stateful",
+			};
 		} else {
 			this.config = {
 				dialect: "sqlite",
-				localPath: db.dbUrl,
+				url: db.dbUrl,
 				authToken: db.dbToken,
+				mode: "stateful",
 			};
 		}
 	}
@@ -179,7 +190,7 @@ export class MarketSymbols {
 	 */
 	private async performRefresh(): Promise<void> {
 		if (!(await this.needsRefresh())) return;
-		if (!this.db) return; // Should not happen after ensureInitialized
+		if (!this.db) return;
 
 		logger.info("[MarketSymbols] Starting full symbol directory refresh");
 
@@ -205,17 +216,30 @@ export class MarketSymbols {
 
 			await this.db.query("UPDATE nasdaq_symbols SET active = false");
 
-			for (const row of rowsArray) {
+			// Batch inserts to stay within SQLite parameter limits (max 999)
+			// We have 6 fields per row, so ~150 rows per batch
+			const BATCH_SIZE = 150;
+			for (let i = 0; i < rowsArray.length; i += BATCH_SIZE) {
+				const batch = rowsArray.slice(i, i + BATCH_SIZE);
+				const placeholders = batch.map(() => "(?, ?, ?, ?, ?, true)").join(", ");
+				const params = batch.flatMap((r) => [
+					r.symbol,
+					r.type,
+					r.class,
+					r.name,
+					r.ts,
+				]);
+
 				await this.db.query(
 					`INSERT INTO nasdaq_symbols (symbol, type, class, name, ts, active)
-					 VALUES (?, ?, ?, ?, ?, true)
+					 VALUES ${placeholders}
 					 ON CONFLICT(symbol) DO UPDATE SET
 						type   = excluded.type,
 						class  = excluded.class,
 						name   = excluded.name,
 						ts     = excluded.ts,
 						active = true`,
-					[row.symbol, row.type, row.class, row.name, row.ts],
+					params,
 				);
 			}
 
@@ -241,10 +265,16 @@ export class MarketSymbols {
 
 		while (true) {
 			try {
-				const results = await endPoints<string>([
-					NASDAQ_LISTED_URL,
-					OTHER_LISTED_URL,
-				]);
+				const results = await endPoints<string>(
+					[NASDAQ_LISTED_URL, OTHER_LISTED_URL],
+					{
+						headers: {
+							accept: "text/plain, */*",
+							"user-agent":
+								"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+						},
+					},
+				);
 
 				if (
 					results[0].status === "success" &&
@@ -261,12 +291,9 @@ export class MarketSymbols {
 					results[0].status === "error" ? results[0] : (results[1] as any);
 				const reason = errorResult.reason;
 
-				logger.warn(
-					"[MarketSymbols] Symbol directory fetch failed – retrying",
-					{
-						reason,
-					},
-				);
+				logger.warn("[MarketSymbols] Symbol directory fetch failed – retrying", {
+					reason,
+				});
 
 				const hasExistingData = await this.hasExistingData();
 				if (hasExistingData) {
@@ -298,7 +325,7 @@ export class MarketSymbols {
 	/**
 	 * Checks if there is existing data in the database.
 	 * Returns true if there is any existing data, false otherwise.
-	 * @returns {Promise<boolean>} true if there is existing data, false otherwise
+	 * @returns {Promise<boolean>} true if there is any existing data, false otherwise
 	 */
 	private async hasExistingData(): Promise<boolean> {
 		if (!this.db) return false;
@@ -324,7 +351,7 @@ export class MarketSymbols {
 	 */
 	private parseNasdaqListed(text: string): MarketSymbolRow[] {
 		const rows: MarketSymbolRow[] = [];
-		const lines = text.trim().split("\n");
+		const lines = text.trim().split(/\r?\n/);
 
 		for (const line of lines) {
 			if (
@@ -363,7 +390,7 @@ export class MarketSymbols {
 	 */
 	private parseOtherListed(text: string): MarketSymbolRow[] {
 		const rows: MarketSymbolRow[] = [];
-		const lines = text.trim().split("\n");
+		const lines = text.trim().split(/\r?\n/);
 
 		for (const line of lines) {
 			if (
