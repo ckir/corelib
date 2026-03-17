@@ -108,13 +108,18 @@ const port = config.get('server.port');
 
 ### 2. Market Data (`@ckir/corelib-markets`)
 ```typescript
-import { MarketMonitor, type MarketPhase } from '@ckir/corelib-markets';
+import { MarketMonitor, MarketSymbols, type MarketPhase } from '@ckir/corelib-markets';
 
+// 1. Resilient Status Poller
 const monitor = new MarketMonitor();
 monitor.on("status-change", (phase: MarketPhase) => {
   console.log(`Market phase changed to ${phase}`);
 });
 monitor.start();
+
+// 2. Persistent Symbol Database
+const symbols = new MarketSymbols();
+const aapl = await symbols.get("AAPL"); // Auto-refreshes if needed
 ```
 
 ---

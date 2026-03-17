@@ -108,7 +108,29 @@ stream.on("silence-reconnect", () => {
 });
 ```
 
-### 5. Resilient Nasdaq API
+### 5. Persistent Symbol Database (MarketSymbols)
+Automated local symbol directory with auto-refresh and historical tracking.
+
+```typescript
+import { MarketSymbols } from '@ckir/corelib-markets';
+
+// Initialize (defaults to temp SQLite file)
+const symbols = new MarketSymbols();
+
+// Get symbol details (auto-refreshes if outdated)
+const aapl = await symbols.get("AAPL");
+if (aapl) {
+  console.log(`Symbol: ${aapl.symbol}, Name: ${aapl.name}, Class: ${aapl.class}`);
+}
+
+// Force a full directory refresh
+await symbols.refresh();
+
+// Graceful shutdown
+await symbols.close();
+```
+
+### 6. Resilient Nasdaq API
 Low-level wrapper for custom Nasdaq API interactions.
 
 ```typescript
@@ -121,3 +143,22 @@ if (result.status === 'success') {
   console.log('AAPL Info:', result.value);
 }
 ```
+
+### 7. Integration with Core (Logging & Config)
+`ts-markets` is designed to seamlessly use the logging and configuration systems provided by `@ckir/corelib`.
+
+```typescript
+import { logger, ConfigManager } from '@ckir/corelib';
+import { MarketMonitor } from '@ckir/corelib-markets';
+
+// The monitor automatically uses the global logger
+const monitor = new MarketMonitor();
+
+// You can configure intervals via ConfigManager (if supported by your implementation)
+const config = ConfigManager.getInstance();
+await config.initialize();
+
+logger.info("Starting market services...");
+monitor.start();
+```
+

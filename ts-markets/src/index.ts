@@ -16,6 +16,8 @@ import {
 	type CnnResult,
 } from "./nasdaq/CnnFearAndGreed";
 
+import { MarketSymbols, type MarketSymbolRow } from "./nasdaq/MarketSymbols";
+
 export { ApiNasdaqUnlimited, type NasdaqResult };
 export {
 	CnnFearAndGreed,
@@ -25,9 +27,10 @@ export {
 };
 
 export const Markets = {
-	nasdaq: { ApiNasdaqUnlimited },
+	nasdaq: { ApiNasdaqUnlimited, MarketSymbols },
 };
 
 export { YahooStreaming } from "./nasdaq/datafeeds/streaming/yahoo/YahooStreaming";
 export { MarketMonitor, type MarketPhase } from "./nasdaq/MarketMonitor";
 export { MarketStatus, type NasdaqMarketInfo } from "./nasdaq/MarketStatus";
+export { MarketSymbols, type MarketSymbolRow };
