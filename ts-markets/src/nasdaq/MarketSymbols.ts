@@ -221,7 +221,9 @@ export class MarketSymbols {
 			const BATCH_SIZE = 150;
 			for (let i = 0; i < rowsArray.length; i += BATCH_SIZE) {
 				const batch = rowsArray.slice(i, i + BATCH_SIZE);
-				const placeholders = batch.map(() => "(?, ?, ?, ?, ?, true)").join(", ");
+				const placeholders = batch
+					.map(() => "(?, ?, ?, ?, ?, true)")
+					.join(", ");
 				const params = batch.flatMap((r) => [
 					r.symbol,
 					r.type,
@@ -291,9 +293,12 @@ export class MarketSymbols {
 					results[0].status === "error" ? results[0] : (results[1] as any);
 				const reason = errorResult.reason;
 
-				logger.warn("[MarketSymbols] Symbol directory fetch failed – retrying", {
-					reason,
-				});
+				logger.warn(
+					"[MarketSymbols] Symbol directory fetch failed – retrying",
+					{
+						reason,
+					},
+				);
 
 				const hasExistingData = await this.hasExistingData();
 				if (hasExistingData) {
