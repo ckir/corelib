@@ -1,11 +1,14 @@
 # @ckir/corelib-markets
 
-Market data and financial utilities for the Corelib monorepo.
+Financial market utilities and data providers for the Corelib monorepo, featuring high-resilience wrappers for Nasdaq and real-time streaming via Yahoo Finance.
 
 ## Features
 
-- **Market Data**: Tools for retrieving and processing financial data.
-- **Optional Dependency**: Built upon `@ckir/corelib`.
+- **Nasdaq API Wrapper**: Resilient requests with custom headers and error handling.
+- **Market Status & Scheduling**: Intelligent pollers and sleep-calculators based on market phases.
+- **Market Monitor**: Adaptive poller with heuristic fallback during API failures.
+- **CNN Fear & Greed Index**: Retrieval and filtering of the popular sentiment indicator.
+- **Yahoo Real-Time Streaming**: High-performance ticker streaming powered by Rust FFI.
 
 ## Installation
 
@@ -13,86 +16,108 @@ Market data and financial utilities for the Corelib monorepo.
 pnpm add @ckir/corelib-markets
 ```
 
-## Usage Example
+## Usage Examples
+
+### 1. Market Monitor (Resilient Status Poller)
+Intelligent long-running task that adapts to market hours and handles failures gracefully.
 
 ```typescript
-import { Markets } from '@ckir/corelib-markets';
+import { MarketMonitor, type MarketPhase } from '@ckir/corelib-markets';
+
+const monitor = new MarketMonitor({
+  liveIntervalSec: 15,      // Frequency when market is open
+  closedIntervalSec: 1800,  // Frequency when market is closed
+  warnIntervalSec: 60       // Warning throttle
+});
+
+monitor.on("status-change", (phase: MarketPhase, data, heuristic) => {
+  console.log(`Current phase: ${phase}`);
+  console.log(`Is heuristic (using fallback data): ${!!heuristic}`);
+  console.log('Full Market Data:', data);
+});
+
+monitor.on("stopped", () => {
+  console.log("Monitor gracefully stopped.");
+});
+
+monitor.start();
+
+// Later...
+// monitor.stop();
 ```
 
-## Nasdaq API Wrapper
-
-High-resilience wrapper for Nasdaq APIs with custom headers and response verification.
-
-```typescript
-import { ApiNasdaqUnlimited } from '@ckir/corelib-markets';
-
-// Single request
-const result = await ApiNasdaqUnlimited.endPoint('https://api.nasdaq.com/api/some/endpoint');
-
-if (result.status === 'success') {
-  console.log('Data:', result.value);
-} else {
-  console.error('Error:', result.reason.message);
-}
-
-// Parallel requests
-const results = await ApiNasdaqUnlimited.endPoints(['https://api.nasdaq.com/api/endpoint1', 'https://api.nasdaq.com/api/endpoint2']);
-```
-
-// Append to ts-markets/README.md
-
-### Market Status
-
-Fetch current Nasdaq market status and calculate sleep duration until next open.
+### 2. Nasdaq Market Status & Sleep Calculation
+Direct retrieval and wait-time calculation.
 
 ```typescript
 import { MarketStatus } from '@ckir/corelib-markets';
 
-const status = await MarketStatus.getStatus();
+const result = await MarketStatus.getStatus();
 
-if (status.status === 'success') {
-  console.log('Market Status:', status.value.mrktStatus);
-  const sleepMs = MarketStatus.getSleepDuration(status.value);
-  console.log('Sleep until next open (ms):', sleepMs);
-} else {
-  console.error('Error:', status.reason.message);
+if (result.status === 'success') {
+  const info = result.value;
+  console.log(`Nasdaq Status: ${info.mrktStatus}`);
+  
+  // Calculate milliseconds until next open or pre-market
+  const sleepMs = MarketStatus.getSleepDuration(info);
+  console.log(`Sleeping ${sleepMs}ms until next event.`);
 }
 ```
 
-### CNN Fear & Greed Index
-
-Retrieve the CNN Fear & Greed Index with optional date and client-side filtering.
+### 3. CNN Fear & Greed Index
+Retrieve sentiment data with optional historical filtering.
 
 ```typescript
 import { CnnFearAndGreed, CnnFearAndGreedFilter } from '@ckir/corelib-markets';
 
 // Fetch current Fear & Greed Index
-const result = await CnnFearAndGreed.getFearAndGreed();
+const current = await CnnFearAndGreed.getFearAndGreed();
 
-// Fetch for specific date with filter
-const historical = await CnnFearAndGreed.getFearAndGreed(
+// Fetch historical score for specific date with filter
+const voldata = await CnnFearAndGreed.getFearAndGreed(
   "2026-03-15", 
   CnnFearAndGreedFilter.MarketVolatilityVix
 );
 
-if (result.status === 'success') {
-  console.log('Fear & Greed:', result.value);
+if (current.status === 'success') {
+  console.log(`Score: ${current.value.score} (${current.value.rating})`);
 }
 ```
 
-### Yahoo Real-Time Streaming (Rust-powered)
+### 4. Yahoo Real-Time Streaming (FFI)
+High-performance ticker updates using the Rust bridge.
 
 ```ts
 import { YahooStreaming } from '@ckir/corelib-markets';
 
 const stream = new YahooStreaming();
 
+// Initialize with a 45s silence threshold before auto-reconnect
 await stream.init({ silenceSeconds: 45 });
 await stream.start();
 
-stream.subscribe(["AAPL", "TSLA"]);
+// Subscribe to multiple symbols
+stream.subscribe(["AAPL", "TSLA", "NVDA", "BTC-USD"]);
 
-stream.on("pricing", (data) => console.log("PRICE", data));
-stream.on("log", (r) => globalThis.logger?.info(r.msg, r.extras));
-stream.on("silence-reconnect", () => console.log("Reconnecting after silence"));
+stream.on("pricing", (data) => {
+  console.log(`Price Update: ${data.symbol} = ${data.price}`);
+});
+
+stream.on("silence-reconnect", () => {
+  console.log("Yahoo stream silent for too long, reconnecting...");
+});
+```
+
+### 5. Resilient Nasdaq API
+Low-level wrapper for custom Nasdaq API interactions.
+
+```typescript
+import { ApiNasdaqUnlimited } from '@ckir/corelib-markets';
+
+// Execute single high-resilience request
+const result = await ApiNasdaqUnlimited.endPoint('https://api.nasdaq.com/api/quote/AAPL/info');
+
+if (result.status === 'success') {
+  console.log('AAPL Info:', result.value);
+}
 ```

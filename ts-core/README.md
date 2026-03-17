@@ -1,198 +1,124 @@
-# Corelib Monorepo
+# @ckir/corelib
 
-A high-performance, resilient, and multi-runtime monorepo for TypeScript and Rust. This workspace provides foundational utilities, cloud extensions, and financial market tooling designed for Node.js, Bun, and Deno.
+The foundational package of the Corelib monorepo, providing essential utilities, resilient HTTP, structured logging, and database abstractions.
 
-## 🚀 Overview
+## Features
 
-This repository is structured as a pnpm monorepo, integrating TypeScript's flexibility with Rust's performance through FFI (Foreign Function Interface). It is built on principles of resilience, performance, and cross-runtime compatibility.
+- **Multi-Runtime Support**: Compatible with Node.js, Bun, and Deno.
+- **Resilient HTTP**: `RequestUnlimited` (based on `ky`) with automatic retries and consistent error serialization.
+- **Structured Logging**: Strict Logger API with telemetry and structured data support.
+- **Database Abstraction**: Unified interface for SQLite (via LibSQL) and PostgreSQL.
+- **Configuration Management**: `ConfigManager` with support for CLI, Environment Variables, and Local/Remote encrypted files.
+- **Native Core (FFI)**: High-performance logic implemented in Rust and exposed via N-API.
 
-### Key Features
-- **Isomorphic Core**: All foundational utilities in `ts-core` support Node.js, Bun, and Deno.
-- **Resilient HTTP**: Standardized fetch wrapper (`RequestUnlimited`) with automatic retries and consistent error serialization.
-- **Strict Logging**: Structured logging API with `(msg: string, extras?: object)` signature and telemetry support.
-- **Native Performance**: Performance-critical paths implemented in Rust via N-API/FFI.
-- **Unified Configuration**: Centralized `ConfigManager` supporting overrides via files, environment variables, and CLI.
-
----
-
-## 📂 Project Structure
-
-```text
-corelib/
-├── ts-core/      # (@ckir/corelib) Base logic, FFI, logging, and resilient HTTP.
-├── ts-cloud/     # (@ckir/corelib-cloud) Cloud-specific extensions.
-├── ts-markets/   # (@ckir/corelib-markets) Market data tooling (Nasdaq, Yahoo).
-├── rust/         # (corelib-rust) Native Rust core exposed via N-API.
-├── .gemini/      # AI agent configuration and mandates.
-├── biome.json    # Monorepo-wide linting and formatting (Biome).
-└── package.json  # Root workspace configuration.
-```
-
----
-
-## 📦 Installation for External Projects
-
-Since these packages are not published to the public NPM registry, you can install them directly from the GitHub Release assets.
-
-### 1. Install via Direct URL (Recommended)
-You can point your package manager directly to the `.tgz` file in the GitHub Release. Replace `v0.1.11` with the desired version.
+## Installation
 
 ```bash
-# Using pnpm
-pnpm add https://github.com/ckir/corelib/releases/download/v0.1.11/ckir-corelib-0.1.11.tgz
-pnpm add https://github.com/ckir/corelib/releases/download/v0.1.11/ckir-corelib-markets-0.1.11.tgz
-
-# Using npm
-npm install https://github.com/ckir/corelib/releases/download/v0.1.11/ckir-corelib-0.1.11.tgz
+pnpm add @ckir/corelib
 ```
 
-### ⚠️ Important: Handling Internal Dependencies
-Because `@ckir/corelib-markets` depends on `@ckir/corelib`, and neither is on NPM, your package manager might try to find `@ckir/corelib` on the public registry and fail (404). 
+## Usage Examples
 
-To fix this, add an **override** to your `package.json` so the manager knows to use the specific version for the sub-dependency:
-
-**For pnpm (`package.json`):**
-```json
-"pnpm": {
-  "overrides": {
-    "@ckir/corelib": "https://github.com/ckir/corelib/releases/download/v0.1.11/ckir-corelib-0.1.11.tgz"
-  }
-}
-```
-
-### 🦀 The Native Rust Binary
-The `@ckir/corelib` package includes a `postinstall` script that automatically downloads the correct prebuilt Rust binary (`corelib-rust-*.node`) for your OS (Windows, Linux, or macOS) from the GitHub Release.
-
-If the automatic download is blocked or fails, you can trigger it manually:
-```bash
-node node_modules/@ckir/corelib/scripts/postinstall.js
-```
-
----
-
-## 🛠️ Getting Started
-
-### Prerequisites
-- [Node.js](https://nodejs.org/) (latest LTS)
-- [pnpm](https://pnpm.io/) (for package management)
-- [Rust](https://rust-lang.org/) (for native module builds)
-
-### Installation & Build
-```powershell
-# Install all dependencies
-pnpm install
-
-# Build all packages using the Cockpit script
-./DevelopersCockpit.ps1 -Build -All
-```
-
-### Running Tests
-```powershell
-# Run all tests across the monorepo
-pnpm test-all
-```
-
----
-
-## 📖 Usage Examples
-
-### 1. Core Utilities (@ckir/corelib)
-The core package provides the foundation for logging, HTTP, and system info.
+### 1. Resilient HTTP Requests
+Use `endPoint` for single requests or `endPoints` for parallel requests.
 
 ```typescript
-import { logger, endPoint, getSysInfo, ConfigManager } from '@ckir/corelib';
+import { endPoint } from '@ckir/corelib';
 
-// Structured Logging with Telemetry
-logger.setTelemetry('on');
-logger.info("Service initialized", { version: "0.1.0" });
+const result = await endPoint('https://api.github.com/repos/ckir/corelib');
 
-// Resilient Fetch (ky wrapper)
-const result = await endPoint('https://api.github.com/repos/google/gemini-cli');
 if (result.status === 'success') {
-  console.log(result.value.body);
+  // result.value is a SerializedResponse object
+  console.log('Body:', result.value.body);
+  console.log('Status:', result.value.status);
+} else {
+  // result.reason contains the error details
+  console.error('Request failed:', result.reason.message);
 }
-
-// System Information (Cross-Runtime)
-const stats = getSysInfo();
-console.log(`OS: ${stats.os.platform}, Memory Used: ${stats.memory.heapUsed} bytes`);
-
-// Configuration Management
-const config = ConfigManager.getInstance();
-await config.initialize();
-const dbUrl = config.getValue('database.url');
 ```
 
-### 2. Database Support (@ckir/corelib)
-Unified API for SQLite and PostgreSQL with transaction support.
+### 2. Structured Logging
+The logger follows a strict `(msg: string, extras?: object)` signature.
+
+```typescript
+import { logger } from '@ckir/corelib';
+
+// Basic logging
+logger.info("Application started");
+
+// Logging with structured metadata
+logger.error("Database connection failed", { 
+  host: "localhost", 
+  port: 5432,
+  error: "Connection timeout" 
+});
+
+// Telemetry support (if configured)
+logger.setTelemetry('on');
+logger.info("Critical event", { telemetry: true });
+```
+
+### 3. Unified Database API
+Switch between SQLite and PostgreSQL with minimal configuration changes.
 
 ```typescript
 import { createDatabase } from '@ckir/corelib';
 
-const db = await createDatabase({ 
-  dialect: 'sqlite', 
-  url: 'file:./local.db' 
+// SQLite
+const db = await createDatabase({
+  dialect: 'sqlite',
+  url: 'file:./app.db'
 });
 
-// Query execution
+// PostgreSQL
+// const db = await createDatabase({
+//   dialect: 'postgres',
+//   url: 'postgres://user:pass@localhost:5432/dbname'
+// });
+
+// Querying
 const users = await db.query('SELECT * FROM users WHERE active = ?', [true]);
 
-// Transaction management
+// Transactions
 await db.transaction(async () => {
-  await db.query('INSERT INTO logs (msg) VALUES (?)', ['Transaction started']);
-  // ... more operations
+  await db.query('INSERT INTO logs (msg) VALUES (?)', ['Transaction step 1']);
+  await db.query('UPDATE status SET value = ?', ['processed']);
   return { status: 'success', value: true };
 });
 ```
 
-### 3. Market Data (@ckir/corelib-markets)
-Advanced financial utilities, including Nasdaq APIs and Yahoo Streaming.
+### 4. Configuration Management
+Manage complex configuration hierarchies with ease.
 
 ```typescript
-import { ApiNasdaqUnlimited, MarketStatus, YahooStreaming } from '@ckir/corelib-markets';
+import { ConfigManager } from '@ckir/corelib';
 
-// 1. Nasdaq Resilient API
-const nasdaqData = await ApiNasdaqUnlimited.endPoint('https://api.nasdaq.com/api/quote/AAPL/info');
+const config = ConfigManager.getInstance();
 
-// 2. Market Status & Scheduling
-const status = await MarketStatus.getStatus();
-if (status.status === 'success') {
-  const sleepMs = MarketStatus.getSleepDuration(status.value);
-  console.log(`Nasdaq is ${status.value.mrktStatus}. Sleeping ${sleepMs}ms until open.`);
-}
+// Initialize (parses CLI, Env, and local defaults)
+await config.initialize();
 
-// 3. CNN Fear & Greed Index
-import { CnnFearAndGreed, CnnFearAndGreedFilter } from '@ckir/corelib-markets';
-const cnn = await CnnFearAndGreed.getFearAndGreed("2026-03-15", CnnFearAndGreedFilter.FearAndGreed);
-if (cnn.status === "success") {
-  console.log(`CNN Fear & Greed Score: ${cnn.value.score} (${cnn.value.rating})`);
-}
+// Get nested value with dot-notation
+const dbPort = config.get('database.port');
 
-// 4. Real-Time Yahoo Streaming (Rust-powered)
-const stream = new YahooStreaming();
-await stream.init({ silenceSeconds: 45 });
-await stream.start();
-stream.subscribe(["AAPL", "TSLA", "NVDA"]);
+// Load external encrypted configuration
+await config.loadExternalConfig('https://remote-server.com/prod.json.enc');
 
-stream.on("pricing", (data) => console.log("Price Update:", data));
+// Reactive updates
+config.on('change:database.port', (newPort) => {
+  console.log(`Port changed to ${newPort}`);
+});
 ```
 
----
+### 5. Native Core FFI
+Access high-performance Rust logic directly from TypeScript.
 
-## 🔧 Development Workflow
+```typescript
+import { Core } from '@ckir/corelib';
 
-### Tooling
-- **Orchestration**: Use `DevelopersCockpit.ps1` for all build, test, and maintenance tasks.
-- **Linting & Formatting**: [Biome](https://biomejs.dev/) is used for all TypeScript code. Run `pnpm lint-all`.
-- **Testing**: [Vitest](https://vitest.dev/) for unit and integration tests.
-- **Documentation**: [TypeDoc](https://typedoc.org/) for API documentation. Run `pnpm docs-all`.
-
-### Engineering Standards
-- **Surgical Edits**: Follow the `GEMINI.md` mandates for all changes.
-- **FFI Stability**: Always verify the Rust bridge (`corelib-rust.node`) when changing core logic.
-- **Type Safety**: Avoid `any`. Use `unknown` or specific interfaces. All public APIs must be documented.
-
----
-
-## 📜 License
-
-Refer to the [LICENSE](./LICENSE) file for details.
+// Check if FFI is available in current runtime
+if (Core.isFfiAvailable()) {
+  const result = Core.run("some-task", { param: 123 });
+  console.log("FFI Result:", result);
+}
+```

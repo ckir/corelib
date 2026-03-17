@@ -15,18 +15,14 @@ This repository is structured as a pnpm monorepo, integrating TypeScript's flexi
 
 ---
 
-## 📂 Project Structure
+## 📂 Project Structure & Packages
 
-```text
-corelib/
-├── ts-core/      # (@ckir/corelib) Base logic, FFI, logging, and resilient HTTP.
-├── ts-cloud/     # (@ckir/corelib-cloud) Cloud-specific extensions.
-├── ts-markets/   # (@ckir/corelib-markets) Market data tooling (Nasdaq, Yahoo).
-├── rust/         # (corelib_rust) Native Rust core exposed via N-API.
-├── .gemini/      # AI agent configuration and mandates.
-├── biome.json    # Monorepo-wide linting and formatting (Biome).
-└── package.json  # Root workspace configuration.
-```
+| Package | Description | Documentation |
+| :--- | :--- | :--- |
+| **[`@ckir/corelib`](./ts-core/README.md)** | Core logic, FFI bridge, resilient HTTP, and database abstractions. | [README](./ts-core/README.md) |
+| **[`@ckir/corelib-markets`](./ts-markets/README.md)** | Market data tooling (Nasdaq, Yahoo) and financial indicators. | [README](./ts-markets/README.md) |
+| **[`@ckir/corelib-cloud`](./ts-cloud/README.md)** | Cloud-specific extensions for AWS, GCP, and Cloudflare. | [README](./ts-cloud/README.md) |
+| **[`corelib-rust`](./rust/README.md)** | Native Rust core exposed via N-API (FFI). | [README](./rust/README.md) |
 
 ---
 
@@ -95,87 +91,35 @@ All workspace-wide commands are managed through `pnpm`:
 ## 📖 Usage Examples
 
 ### 1. Core Utilities (`@ckir/corelib`)
-The core package provides the foundation for logging, HTTP, and system info.
-
 ```typescript
-import { logger, endPoint, getSysInfo, ConfigManager } from '@ckir/corelib';
+import { logger, endPoint, ConfigManager } from '@ckir/corelib';
 
-// Structured Logging
 logger.info("Service initialized", { version: "0.1.13" });
 
-// Resilient Fetch (ky-powered with retries)
 const result = await endPoint('https://api.nasdaq.com/api/market-info');
 if (result.status === 'success') {
-  console.log(result.value.body); // JSON already parsed if Content-Type matches
+  console.log(result.value.body);
 }
 
-// Configuration Management (CLI > Env > File > Default)
 const config = ConfigManager.getInstance();
-await config.initialize(); // Loads hierarchy and parses CLI/Env
-const port = config.get('server.port'); // Dot-notation support
-
-// Dynamic external config loading (Encrypted or Plain)
-await config.loadExternalConfig("https://example.com/config.json.enc");
+await config.initialize();
+const port = config.get('server.port');
 ```
 
-### 2. Database Support (`@ckir/corelib`)
-Unified API for SQLite (LibSQL) and PostgreSQL with transaction support.
-
+### 2. Market Data (`@ckir/corelib-markets`)
 ```typescript
-import { createDatabase } from '@ckir/corelib';
+import { MarketMonitor, type MarketPhase } from '@ckir/corelib-markets';
 
-const db = await createDatabase({ 
-  dialect: 'sqlite', 
-  url: 'file:./local.db' 
-});
-
-// Query execution with safe parameter binding
-const users = await db.query('SELECT * FROM users WHERE active = ?', [true]);
-
-// Transaction management with automatic rollback on error
-await db.transaction(async () => {
-  await db.query('INSERT INTO logs (msg) VALUES (?)', ['Transaction started']);
-  return { status: 'success', value: true };
-});
-```
-
-### 3. Market Data (`@ckir/corelib-markets`)
-Advanced financial utilities, including Nasdaq APIs and Yahoo Streaming.
-
-```typescript
-import { ApiNasdaqUnlimited, MarketStatus, MarketMonitor, type MarketPhase } from '@ckir/corelib-markets';
-
-// 1. Resilient Status Poller (MarketMonitor)
-const monitor = new MarketMonitor({
-  liveIntervalSec: 15,      // Frequency when market is open
-  closedIntervalSec: 1800,  // Frequency when market is closed
-  warnIntervalSec: 60       // Warning throttle
-});
-
-monitor.on("status-change", (phase: MarketPhase, data, heuristic) => {
-  console.log(`Phase: ${phase} | Is Heuristic: ${!!heuristic}`);
+const monitor = new MarketMonitor();
+monitor.on("status-change", (phase: MarketPhase) => {
+  console.log(`Market phase changed to ${phase}`);
 });
 monitor.start();
-
-// 2. CNN Fear & Greed Index
-import { CnnFearAndGreed, CnnFearAndGreedFilter } from '@ckir/corelib-markets';
-const cnn = await CnnFearAndGreed.getFearAndGreed();
-if (cnn.status === "success") {
-  console.log(`CNN Score: ${cnn.value.score} (${cnn.value.rating})`);
-}
-
-// 3. Real-Time Yahoo Streaming (Rust-powered FFI)
-const stream = new YahooStreaming();
-await stream.init({ silenceSeconds: 30 });
-await stream.start();
-stream.subscribe(["AAPL", "TSLA", "NVDA"]);
-
-stream.on("pricing", (data) => console.log("Price Update:", data));
 ```
 
 ---
 
-## 📖 Documentation
+## 📖 API Documentation
 
 Detailed API documentation is generated for each package and published via GitHub Pages:
 
