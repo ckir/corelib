@@ -91,7 +91,10 @@ describe("MarketStatus", () => {
 			const result = await MarketStatus.getStatus();
 
 			if (result.status === "error") {
-				console.error("DEBUG: MarketStatus.getStatus() returned error:", JSON.stringify(result.reason, null, 2));
+				console.error(
+					"DEBUG: MarketStatus.getStatus() returned error:",
+					JSON.stringify(result.reason, null, 2),
+				);
 			}
 
 			expect(result.status).toBe("success");

@@ -114,4 +114,4 @@ export const getTempDir = (): string => {
  * @param {number} ms - The number of milliseconds to wait.
  * @returns {Promise<void>} A promise that resolves after the delay.
  */
-export const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
+export const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));

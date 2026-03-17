@@ -96,7 +96,9 @@ where
             // ANY include matches?
             let included = include_schedules.iter().any(|schedule| {
                 let mut upcoming = schedule.after(&test_time);
-                upcoming.next().is_some_and(|next| next.timestamp() == now_ts)
+                upcoming
+                    .next()
+                    .is_some_and(|next| next.timestamp() == now_ts)
             });
 
             if !included {
@@ -109,7 +111,9 @@ where
             // ANY exclude matches?
             let excluded = exclude_schedules.iter().any(|schedule| {
                 let mut upcoming = schedule.after(&test_time);
-                upcoming.next().is_some_and(|next| next.timestamp() == now_ts)
+                upcoming
+                    .next()
+                    .is_some_and(|next| next.timestamp() == now_ts)
             });
 
             if !excluded {

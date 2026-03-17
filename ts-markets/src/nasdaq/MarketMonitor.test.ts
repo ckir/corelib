@@ -6,10 +6,10 @@
 // Uses vi.useFakeTimers + MSW-mocked MarketStatus.
 // =============================================
 
+import { logger } from "@ckir/corelib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MarketMonitor } from "./MarketMonitor";
 import { MarketStatus } from "./MarketStatus";
-import { logger } from "@ckir/corelib";
 
 // Helper base data used in all mocks - Moved up to avoid TDZ issues
 const baseData = {
@@ -199,7 +199,7 @@ describe("MarketMonitor (Exhaustive)", () => {
 			status: "success",
 			value: { mrktStatus: "Pre-Market", ...baseData } as any,
 		});
-		
+
 		monitor.start();
 		await vi.advanceTimersByTimeAsync(0);
 
