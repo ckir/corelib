@@ -92,18 +92,18 @@ All workspace-wide commands are managed through `pnpm`:
 
 ### 1. Core Utilities (`@ckir/corelib`)
 ```typescript
-import { logger, endPoint, ConfigManager } from '@ckir/corelib';
+import { logger, endPoint, RequestProxied, ConfigManager } from '@ckir/corelib';
 
-logger.info("Service initialized", { version: "0.1.13" });
-
+// 1. Resilient Fetch (ky-powered with retries)
 const result = await endPoint('https://api.nasdaq.com/api/market-info');
-if (result.status === 'success') {
-  console.log(result.value.body);
-}
 
+// 2. Proxied Fetch (Automatic rotation & fallback)
+const client = new RequestProxied(["https://proxy1.com", "https://proxy2.com"]);
+const proxiedResult = await client.endPoint("https://target.com");
+
+// 3. Configuration Management
 const config = ConfigManager.getInstance();
 await config.initialize();
-const port = config.get('server.port');
 ```
 
 ### 2. Market Data (`@ckir/corelib-markets`)

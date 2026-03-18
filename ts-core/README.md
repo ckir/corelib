@@ -30,14 +30,36 @@ const result = await endPoint('https://api.github.com/repos/ckir/corelib');
 if (result.status === 'success') {
   // result.value is a SerializedResponse object
   console.log('Body:', result.value.body);
-  console.log('Status:', result.value.status);
-} else {
-  // result.reason contains the error details
-  console.error('Request failed:', result.reason.message);
 }
 ```
 
-### 2. Structured Logging
+### 2. Proxied HTTP Requests (Rotation & Fallback)
+`RequestProxied` provides an identical API to `RequestUnlimited` but adds automatic rotation, full fallback, and automatic removal of dead proxies.
+
+```typescript
+import { RequestProxied } from '@ckir/corelib';
+
+const proxies = [
+  "https://proxy-us.example.com",
+  "https://proxy-eu.example.com",
+  "https://proxy-as.example.com"
+];
+
+const client = new RequestProxied(proxies);
+
+// Single request with automatic rotation and fallback
+// If proxy1 fails, it tries proxy2, then proxy3 before returning error.
+const result = await client.endPoint("https://api.nasdaq.com/api/market-info");
+
+// Parallel requests with round-robin load balancing
+const results = await client.endPoints([
+  "https://api.nasdaq.com/api/quote/AAPL/info",
+  "https://api.nasdaq.com/api/quote/TSLA/info",
+  "https://api.nasdaq.com/api/quote/NVDA/info"
+]);
+```
+
+### 3. Structured Logging
 The logger follows a strict `(msg: string, extras?: object)` signature.
 
 ```typescript

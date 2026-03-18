@@ -11,6 +11,7 @@ export const Retrieve = {
 	run: () => console.log(`[RETRIEVE] Running on ${detectRuntime()}`),
 };
 
+export { RequestProxied } from "./RequestProxied";
 export type { SerializedResponse } from "./RequestResponseSerialize";
 export { RequestResponseSerialize } from "./RequestResponseSerialize";
 export type { RequestResult } from "./RequestUnlimited";
