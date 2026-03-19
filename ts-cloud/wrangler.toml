@@ -1,0 +1,9 @@
+name = "ts-cloud"
+main = "src/platform/cloudflare/worker.ts"
+compatibility_date = "2024-03-14"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+PLATFORM = "cloudflare"
+# TURSO_URL = ""
+# TURSO_TOKEN = ""
