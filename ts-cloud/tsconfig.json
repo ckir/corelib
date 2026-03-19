@@ -1,7 +1,7 @@
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "types": ["bun-types", "deno", "node"]
+    "types": ["bun-types", "deno", "node", "@cloudflare/workers-types"]
   },
   "include": ["src", "tsup.config.ts"]
 }
