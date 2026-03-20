@@ -30,7 +30,52 @@ src/
 - **`GET /health`**: Returns system status and current platform.
 - **`ALL /proxy/*`**: Forwards the request to the specified URL using resilient fetching.
 - **`POST /sql/query`**: Executes a parameterized SQL query against a Turso/SQLite database.
-  - Body: `{ "sql": "SELECT...", "params": [...] }`
+
+## Usage Examples
+
+### Health Check
+```bash
+curl https://your-service-url/health
+```
+
+### RequestUnlimited (Edge Proxy)
+Expose corelib's resilient fetching logic via the `/api/v1/ky` endpoint. This endpoint mirrors status codes and serializes errors.
+
+#### Single Request
+```bash
+curl -X POST https://your-service-url/api/v1/ky \
+     -H "Content-Type: application/json" \
+     -d '{
+       "url": "https://api.external.com/data",
+       "options": {
+         "method": "POST",
+         "json": { "key": "value" }
+       }
+     }'
+```
+
+#### Bulk Parallel Requests
+```bash
+curl -X POST https://your-service-url/api/v1/ky \
+     -H "Content-Type: application/json" \
+     -d '{
+       "endPoints": [
+         { "url": "https://api.a.com/status" },
+         { "url": "https://api.b.com/data", "options": { "timeout": 2000 } }
+       ]
+     }'
+```
+
+### SQL Query (Turso)
+Execute a parameterized query against Turso:
+```bash
+curl -X POST https://your-service-url/api/v1/sql \
+     -H "Content-Type: application/json" \
+     -d '{
+       "sql": "SELECT * FROM users WHERE id = ?",
+       "params": [123]
+     }'
+```
 
 ## Development & Build
 
@@ -40,25 +85,52 @@ Ensure the Corelib monorepo dependencies are installed:
 pnpm install
 ```
 
+### Local Development (Cloudflare)
+Run the service locally using Wrangler and Vitest:
+```bash
+# Start local dev server
+pnpm run dev
+
+# Run worker-specific tests
+pnpm run test:worker
+```
+
 ### Building Platform Bundles
 Build all three platform-specific bundles into the `dist/` directory:
 ```bash
 pnpm run build
 ```
 
-This will generate:
+This generates:
 - `dist/cloudflare/worker.js`: Optimized ESM bundle for Cloudflare Workers.
 - `dist/aws/handler.js`: ESM bundle for AWS Lambda (Node 24+).
 - `dist/cloudrun/server.js`: ESM bundle for Google Cloud Run (Node 24+).
 
-### Linting
+## Deployment
+
+### Cloudflare Workers
 ```bash
-pnpm run lint
+pnpm exec wrangler deploy src/platform/cloudflare/worker.ts
+```
+
+### AWS Lambda
+1. Build the bundle: `pnpm run build`
+2. Zip the output: `cd dist/aws && zip -r function.zip handler.js`
+3. Update Lambda code: `aws lambda update-function-code --function-name YOUR_FUNC --zip-file fileb://function.zip`
+
+### Google Cloud Run
+Deploy from the generated bundle:
+```bash
+gcloud run deploy ts-cloud \
+  --source . \
+  --command "node" \
+  --args "dist/cloudrun/server.js" \
+  --set-env-vars "TURSO_URL=...,TURSO_TOKEN=..."
 ```
 
 ## Configuration
 
-The service expects the following environment variables (configured via platform-specific secrets/env):
+The service expects the following environment variables:
 - `TURSO_URL`: The URL of your Turso database.
 - `TURSO_TOKEN`: The authentication token for Turso.
 - `PORT`: (Cloud Run only) The port the server should listen on (defaults to 3000).

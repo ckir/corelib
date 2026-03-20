@@ -142,7 +142,7 @@ async function getStatus(): Promise<NasdaqResult<NasdaqMarketInfo>> {
 			const msg = "STRICT SCHEMA VALIDATION FAILED: Missing required fields";
 			const payload = serializeError(data);
 
-			logger?.fatal(msg, { payload });
+			logger?.warn(msg, { payload });
 			return {
 				status: "error",
 				reason: { message: msg, payload },

@@ -44,9 +44,17 @@ The monorepo uses a strictly staged GitHub Actions pipeline:
     - Rust FFI Nodes (Darwin x64/arm64, Linux x64, Win x64).
     - `yahoo_streamer` CLI Binaries (Darwin x64/arm64, Linux x64, Win x64).
 
-## 5. Gemini Operational Mandates
+## 5. Development Environment & Tools
 
-- **Validation**: Every implementation task **must** conclude with `pnpm build-all`, `pnpm lint-all`, `pnpm test-all`, and `pnpm docs-all`.
+The following tools are available in the development environment and should be used for relevant tasks:
+- **Cloud & Serverless**: `wrangler` (Cloudflare), `sam` (AWS), `gcloud` (GCP).
+- **Automation & Containers**: `act` (Local GitHub Actions), `docker` (Docker Desktop).
+- **Environment**: `wsl` (Ubuntu 24.04).
+- **CLI Utilities**: `fd` (Fast find), `sd` (Smart search/replace), `rip` (Safe rm).
+
+## 6. Gemini Operational Mandates
+
+- **Validation**: Every implementation task **must** conclude with `pnpm format-all`, `pnpm lint-all`, `pnpm test-all`, `pnpm build-all` and `pnpm docs-all`.
 - **Surgical Edits**: Prefer `replace` over `write_file` for large files to preserve structure.
 - **Usage Examples**: When adding new features, immediately update `README.md` with clear examples, specifically noting installation via release `.tgz` assets if applicable.
 - **No Regressions**: If a change causes a TypeDoc warning or a Lint violation, it is incomplete. Fix it before reporting success.

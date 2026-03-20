@@ -61,15 +61,23 @@ choices = [
 ]
 
 def get_health_cmd():
-    base = 'pnpm --version && cargo --version && python --version'
+    # Core tools
+    cmds = [
+        'pnpm --version', 'cargo --version', 'python --version', 'gh --version',
+        'pnpm -C ts-cloud exec wrangler --version', 'gcloud --version', 'sam --version', 'docker --version',
+        'act --version', 'wsl --version', 'fd --version', 'sd --version', 'rip --version'
+    ]
+    
+    # Runtime specific
     runtime = config.get('RUNTIME', 'node').lower()
     if runtime == 'bun':
-        base += ' && bun --version'
+        cmds.append('bun --version')
     elif runtime == 'deno':
-        base += ' && deno --version'
+        cmds.append('deno --version')
     elif runtime == 'node':
-        base += ' && node --version'
-    return base
+        cmds.append('node --version')
+        
+    return ' && '.join(cmds)
 
 def get_release_cmd():
     platform = config.get('PLATFORM', 'linux').lower()

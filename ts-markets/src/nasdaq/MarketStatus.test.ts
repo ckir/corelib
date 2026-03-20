@@ -164,7 +164,7 @@ describe("MarketStatus", () => {
 					"STRICT SCHEMA VALIDATION FAILED: Missing required fields",
 				);
 			}
-			expect(logger?.fatal).toHaveBeenCalled();
+			expect(logger?.warn).toHaveBeenCalled();
 		});
 
 		it("should handle unexpected exceptions", async () => {
