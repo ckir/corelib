@@ -7,60 +7,45 @@
 import { ApiNasdaqUnlimited, type NasdaqResult } from "@ckir/corelib-markets";
 import { Hono } from "hono";
 import type { Options as KyOptions } from "ky";
+import { serializeError } from "serialize-error";
 import type { AppEnv } from "../../core/types";
 
+/**
+ * Hono router for Nasdaq API proxying.
+ * Mounted at /api/v1/markets/nasdaq in the main application[cite: 6].
+ */
 export const nasdaqRouter = new Hono<AppEnv>();
 
 /**
  * POST /
- * Receives a request containing parameters for ApiNasdaqUnlimited.
- * Supports both single 'url' and bulk 'endPoints' arrays.
- * Clients can pass custom 'options' (KyOptions), but Nasdaq-specific headers
- * will always be enforced and merged by the underlying ApiNasdaqUnlimited wrapper.
- * * HTTP Status is always 200 OK. Errors are encapsulated in the NasdaqResult JSON body.
+ * Resilient proxy for Nasdaq API requests.
+ * Supports both single URL and bulk endpoint processing.
+ *
+ * @param {Request} c - Hono context object containing request body and environment variables.
+ * @returns {Promise<Response>} JSON response containing a single NasdaqResult or an array for bulk requests.
  */
 nasdaqRouter.post("/", async (c) => {
 	try {
-		const body = await c.req.json().catch(() => null);
+		const body = await c.req.json();
+		const { url, options, endPoints } = body;
 
-		if (!body || typeof body !== "object") {
-			const errorResult: NasdaqResult = {
-				status: "error",
-				reason: { message: "Missing or invalid request body" },
-			};
-			return c.json(errorResult, 200);
-		}
-
-		// Scenario 1: Multiple Endpoints (Bulk)
-		if (Array.isArray(body.endPoints)) {
-			const results: NasdaqResult[] = [];
-			for (const ep of body.endPoints) {
-				if (
-					typeof ep === "object" &&
-					ep !== null &&
-					typeof ep.url === "string"
-				) {
-					// Process sequentially to respect individual options, matching RequestUnlimitedCloud behavior
-					results.push(
-						await ApiNasdaqUnlimited.endPoint(
-							ep.url,
-							(ep.options as KyOptions) || {},
-						),
-					);
-				}
-			}
-			return c.json(results, 200);
-		}
-
-		// Scenario 2: Single Endpoint
-		if (typeof body.url === "string") {
-			const result = await ApiNasdaqUnlimited.endPoint(
-				body.url,
-				(body.options as KyOptions) || {},
-			);
+		// Path 1: Single URL request
+		if (url && typeof url === "string") {
+			const result = await ApiNasdaqUnlimited.endPoint(url, options || {});
 			return c.json(result, 200);
 		}
 
+		// Path 2: Bulk endPoints request
+		if (Array.isArray(endPoints)) {
+			const results = await Promise.all(
+				endPoints.map(async (ep: { url: string; options?: KyOptions }) => {
+					return ApiNasdaqUnlimited.endPoint(ep.url, ep.options || {});
+				}),
+			);
+			return c.json(results, 200);
+		}
+
+		// Path 3: Invalid Payload
 		const invalidPayloadResult: NasdaqResult = {
 			status: "error",
 			reason: {
@@ -70,13 +55,15 @@ nasdaqRouter.post("/", async (c) => {
 		};
 		return c.json(invalidPayloadResult, 200);
 	} catch (error) {
+		// Log the error using serialize-error for structured reporting [cite: 3, 20]
 		c.get("logger")?.error(
 			"ApiNasdaqUnlimitedCloud: Internal execution error",
 			{
-				error,
+				error: serializeError(error),
 			},
 		);
 
+		// Return a generic fatal error result to the client
 		const fatalResult: NasdaqResult = {
 			status: "error",
 			reason: { message: "Internal Edge Proxy Error" },

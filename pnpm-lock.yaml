@@ -44,6 +44,9 @@ importers:
       ky:
         specifier: ^1.14.3
         version: 1.14.3
+      serialize-error:
+        specifier: ^13.0.1
+        version: 13.0.1
     devDependencies:
       '@cloudflare/vite-plugin':
         specifier: ^1.29.1

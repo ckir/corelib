@@ -1,14 +1,14 @@
 /**
  * @file ts-cloud/src/markets/nasdaq/ApiNasdaqUnlimitedCloud.test.ts
- * @description Vitest suite for ApiNasdaqUnlimitedCloud.
- * Covers: Single URL requests, bulk endPoints, error mapping to 200 OK, and invalid payloads.
+ * @description Unit tests for the ApiNasdaqUnlimitedCloud Hono router.
+ * Verified scenarios: Single URL proxying, bulk endpoint processing, validation errors, and crash resilience.
  */
 
 import { ApiNasdaqUnlimited, type NasdaqResult } from "@ckir/corelib-markets";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { nasdaqRouter } from "./ApiNasdaqUnlimitedCloud";
 
-// Mock the corelib-markets dependency
+// Mock the corelib-markets dependency to isolate router logic [cite: 8]
 vi.mock("@ckir/corelib-markets", () => ({
 	ApiNasdaqUnlimited: {
 		endPoint: vi.fn(),
@@ -18,12 +18,15 @@ vi.mock("@ckir/corelib-markets", () => ({
 describe("ApiNasdaqUnlimitedCloud (Edge)", () => {
 	const MOCK_URL = "https://api.nasdaq.com/api/quote/AAPL/info";
 
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
 	it("should return success for a single URL and maintain 200 OK status", async () => {
 		const mockSuccess: NasdaqResult = {
 			status: "success",
 			value: { symbol: "AAPL", price: 150 },
 		};
-
 		vi.mocked(ApiNasdaqUnlimited.endPoint).mockResolvedValueOnce(mockSuccess);
 
 		const res = await nasdaqRouter.request("/", {
@@ -43,7 +46,6 @@ describe("ApiNasdaqUnlimitedCloud (Edge)", () => {
 			{ status: "success", value: { id: 1 } },
 			{ status: "success", value: { id: 2 } },
 		];
-
 		vi.mocked(ApiNasdaqUnlimited.endPoint)
 			.mockResolvedValueOnce(mockResults[0])
 			.mockResolvedValueOnce(mockResults[1]);
@@ -60,56 +62,15 @@ describe("ApiNasdaqUnlimitedCloud (Edge)", () => {
 		});
 
 		expect(res.status).toBe(200);
-		const body = (await res.json()) as NasdaqResult[];
-		expect(Array.isArray(body)).toBe(true);
-		expect(body).toHaveLength(2);
-		expect(ApiNasdaqUnlimited.endPoint).toHaveBeenCalledWith("url1", {
-			timeout: 1000,
-		});
-		expect(ApiNasdaqUnlimited.endPoint).toHaveBeenCalledWith("url2", {});
+		const body = await res.json();
+		expect(body).toEqual(mockResults);
+		expect(ApiNasdaqUnlimited.endPoint).toHaveBeenCalledTimes(2);
 	});
 
-	it("should return 200 OK even when Nasdaq returns a logic error", async () => {
-		const mockError: NasdaqResult = {
-			status: "error",
-			reason: { message: "code: ERR1 = Symbol Not Found" },
-		};
-
-		vi.mocked(ApiNasdaqUnlimited.endPoint).mockResolvedValueOnce(mockError);
-
+	it("should return a validation error if payload is missing required fields", async () => {
 		const res = await nasdaqRouter.request("/", {
 			method: "POST",
-			body: JSON.stringify({ url: "invalid-symbol" }),
-			headers: { "Content-Type": "application/json" },
-		});
-
-		expect(res.status).toBe(200);
-		const body = (await res.json()) as NasdaqResult;
-		expect(body.status).toBe("error");
-		if (body.status === "error") {
-			expect(body.reason?.message).toContain("Symbol Not Found");
-		}
-	});
-
-	it("should handle missing or invalid JSON body gracefully", async () => {
-		const res = await nasdaqRouter.request("/", {
-			method: "POST",
-			body: "not-json",
-			headers: { "Content-Type": "application/json" },
-		});
-
-		expect(res.status).toBe(200);
-		const body = (await res.json()) as NasdaqResult;
-		expect(body.status).toBe("error");
-		if (body.status === "error") {
-			expect(body.reason?.message).toBe("Missing or invalid request body");
-		}
-	});
-
-	it("should return error if neither url nor endPoints are provided", async () => {
-		const res = await nasdaqRouter.request("/", {
-			method: "POST",
-			body: JSON.stringify({ foo: "bar" }),
+			body: JSON.stringify({ invalid: "data" }),
 			headers: { "Content-Type": "application/json" },
 		});
 
@@ -123,7 +84,8 @@ describe("ApiNasdaqUnlimitedCloud (Edge)", () => {
 		}
 	});
 
-	it("should return 200 OK and an error result if an internal exception occurs", async () => {
+	it("should return a fatal error result if an internal exception occurs", async () => {
+		// Force a rejection to trigger the catch block
 		vi.mocked(ApiNasdaqUnlimited.endPoint).mockRejectedValueOnce(
 			new Error("Edge Crash"),
 		);

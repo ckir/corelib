@@ -23,7 +23,8 @@
         "@ckir/corelib-markets": "workspace:*",
         "@hono/node-server": "^1.13.8",
         "hono": "^4.7.4",
-        "ky": "^1.14.3"
+        "ky": "^1.14.3",
+        "serialize-error": "^13.0.1"
     },
     "devDependencies": {
         "@cloudflare/vite-plugin": "^1.29.1",

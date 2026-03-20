@@ -8,13 +8,14 @@
 import { Hono } from "hono";
 import { sqlRouter } from "../database/SqlCloud";
 import { nasdaqRouter } from "../markets/nasdaq/ApiNasdaqUnlimitedCloud";
+import { marketStatusRouter } from "../markets/nasdaq/MarketStatusCloud";
 import { kyRouter } from "../retrieve/RequestUnlimitedCloud";
 import type { AppEnv } from "./types";
 
 /**
  * Factory function to create and configure the main Hono application.
  * This setup includes health checks and versioned routing for corelib modules.
- * * @returns {Hono<AppEnv>} The configured Hono application instance.
+ * @returns {Hono<AppEnv>} The configured Hono application instance.
  */
 export const createRouter = (): Hono<AppEnv> => {
 	const app = new Hono<AppEnv>();
@@ -44,10 +45,13 @@ export const createRouter = (): Hono<AppEnv> => {
 	apiV1.route("/ky", kyRouter);
 
 	/**
-	 * Nasdaq Market Data Endpoint
+	 * Nasdaq Market Data Endpoints
 	 * Exposes corelib-markets' resilient Nasdaq API fetching logic.
+	 * /markets/nasdaq (POST) handles proxy requests.
+	 * /markets/nasdaq/status (GET) handles market status fetching.
 	 */
 	apiV1.route("/markets/nasdaq", nasdaqRouter);
+	apiV1.route("/markets/nasdaq/status", marketStatusRouter);
 
 	/**
 	 * SQL Query (Turso) Endpoint
