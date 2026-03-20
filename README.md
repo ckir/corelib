@@ -122,6 +122,18 @@ const symbols = new MarketSymbols();
 const aapl = await symbols.get("AAPL"); // Auto-refreshes if needed
 ```
 
+### 3. Edge Proxy Services (`@ckir/corelib-cloud`)
+A portable TypeScript service exposing corelib logic on **Cloudflare Workers**, **AWS Lambda**, and **Cloud Run**.
+
+```bash
+# Example: Fetching market data via the Edge Proxy
+curl -X POST https://your-edge-service/api/v1/markets/nasdaq \
+     -H "Content-Type: application/json" \
+     -d '{
+       "url": "https://api.nasdaq.com/api/quote/AAPL/info?assetclass=stocks"
+     }'
+```
+
 ---
 
 ## 📖 API Documentation

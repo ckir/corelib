@@ -7,6 +7,7 @@
 
 import type { StrictLogger } from "@ckir/corelib";
 import { Hono } from "hono";
+import { nasdaqRouter } from "../markets/nasdaq/ApiNasdaqUnlimitedCloud";
 import { kyRouter } from "../retrieve/RequestUnlimitedCloud";
 
 /**
@@ -58,7 +59,13 @@ export const createRouter = (): Hono<AppEnv> => {
 	apiV1.route("/ky", kyRouter);
 
 	/**
-	 * Future API v1 modules (e.g., /sql, /markets) can be mounted here.
+	 * Nasdaq Market Data Endpoint
+	 * Exposes corelib-markets' resilient Nasdaq API fetching logic.
+	 */
+	apiV1.route("/markets/nasdaq", nasdaqRouter);
+
+	/**
+	 * Future API v1 modules (e.g., /sql) can be mounted here.
 	 */
 
 	// Mount the versioned API to the main application

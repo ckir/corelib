@@ -38,6 +38,9 @@ importers:
       hono:
         specifier: ^4.7.4
         version: 4.12.8
+      ky:
+        specifier: ^1.14.3
+        version: 1.14.3
     devDependencies:
       '@cloudflare/vite-plugin':
         specifier: ^1.29.1

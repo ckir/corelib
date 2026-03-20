@@ -2,13 +2,13 @@
 
 A portable TypeScript service exposing identical HTTP endpoints across **Cloudflare Workers**, **AWS Lambda**, and **Google Cloud Run**. 
 
-This project is part of the Corelib monorepo and is tightly coupled with `@ckir/corelib`, utilizing its core abstractions for database connectivity, resilient HTTP requests, and structured logging.
+This project is part of the Corelib monorepo and is tightly coupled with `@ckir/corelib` and `@ckir/corelib-markets`, utilizing their core abstractions for database connectivity, resilient HTTP requests, and structured logging.
 
 ## Core Features
 
 - **Shared Routing (Hono)**: A single, config-agnostic `Hono` application instance shared across all platforms.
-- **Turso / SQLite Integration**: Uses `@ckir/corelib`'s `createDatabase` in `stateless` mode for edge-compatible database operations.
 - **Resilient Proxying**: Leverages `@ckir/corelib`'s `endPoint` utility for proxied requests with built-in retries and timeouts.
+- **Nasdaq Market Data**: Specialized edge proxy for the Nasdaq API, enforcing required headers and providing high-resilience fetching via `@ckir/corelib-markets`.
 - **Structured Edge Logging**: Implements a custom `StrictLogger` for edge environments that outputs structured JSON to `console.log`.
 - **Platform Adapters**: Thin entry points for Cloudflare, AWS Lambda, and Cloud Run that handle environment extraction and context injection.
 
@@ -19,6 +19,11 @@ src/
 ├── core/
 │   ├── router.ts      # Shared Hono application logic and routes
 │   └── logger.ts      # Edge-optimized structured logger
+├── retrieve/
+│   └── RequestUnlimitedCloud.ts  # Generic HTTP proxy router
+├── markets/
+│   └── nasdaq/
+│       └── ApiNasdaqUnlimitedCloud.ts # Nasdaq-specific proxy router
 └── platform/
     ├── cloudflare/    # Cloudflare Worker entry point
     ├── aws/           # AWS Lambda (ESM) handler
@@ -28,8 +33,8 @@ src/
 ## API Endpoints
 
 - **`GET /health`**: Returns system status and current platform.
-- **`ALL /proxy/*`**: Forwards the request to the specified URL using resilient fetching.
-- **`POST /sql/query`**: Executes a parameterized SQL query against a Turso/SQLite database.
+- **`POST /api/v1/ky`**: Generic resilient HTTP proxy.
+- **`POST /api/v1/markets/nasdaq`**: Nasdaq-specific resilient market data proxy.
 
 ## Usage Examples
 
@@ -38,19 +43,15 @@ src/
 curl https://your-service-url/health
 ```
 
-### RequestUnlimited (Edge Proxy)
-Expose corelib's resilient fetching logic via the `/api/v1/ky` endpoint. This endpoint mirrors status codes and serializes errors.
+### RequestUnlimited (Generic Edge Proxy)
+Expose corelib's resilient fetching logic via the `/api/v1/ky` endpoint.
 
 #### Single Request
 ```bash
 curl -X POST https://your-service-url/api/v1/ky \
      -H "Content-Type: application/json" \
      -d '{
-       "url": "https://api.external.com/data",
-       "options": {
-         "method": "POST",
-         "json": { "key": "value" }
-       }
+       "url": "https://api.github.com/zen"
      }'
 ```
 
@@ -66,14 +67,27 @@ curl -X POST https://your-service-url/api/v1/ky \
      }'
 ```
 
-### SQL Query (Turso)
-Execute a parameterized query against Turso:
+### Nasdaq Market Data (ApiNasdaqUnlimitedCloud)
+Specialized proxy for Nasdaq API calls. Enforces correct browser-like headers and provides automatic retries.
+
+#### Single Quote Info
 ```bash
-curl -X POST https://your-service-url/api/v1/sql \
+curl -X POST https://your-service-url/api/v1/markets/nasdaq \
      -H "Content-Type: application/json" \
      -d '{
-       "sql": "SELECT * FROM users WHERE id = ?",
-       "params": [123]
+       "url": "https://api.nasdaq.com/api/quote/AAPL/info?assetclass=stocks"
+     }'
+```
+
+#### Bulk Nasdaq Requests
+```bash
+curl -X POST https://your-service-url/api/v1/markets/nasdaq \
+     -H "Content-Type: application/json" \
+     -d '{
+       "endPoints": [
+         { "url": "https://api.nasdaq.com/api/quote/AAPL/info?assetclass=stocks" },
+         { "url": "https://api.nasdaq.com/api/quote/MSFT/info?assetclass=stocks" }
+       ]
      }'
 ```
 
@@ -124,13 +138,12 @@ Deploy from the generated bundle:
 gcloud run deploy ts-cloud \
   --source . \
   --command "node" \
-  --args "dist/cloudrun/server.js" \
-  --set-env-vars "TURSO_URL=...,TURSO_TOKEN=..."
+  --args "dist/cloudrun/server.js"
 ```
 
 ## Configuration
 
-The service expects the following environment variables:
+The service expects the following environment variables (where applicable):
 - `TURSO_URL`: The URL of your Turso database.
 - `TURSO_TOKEN`: The authentication token for Turso.
 - `PORT`: (Cloud Run only) The port the server should listen on (defaults to 3000).
