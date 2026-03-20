@@ -32,6 +32,9 @@ importers:
       '@ckir/corelib':
         specifier: workspace:*
         version: link:../ts-core
+      '@ckir/corelib-markets':
+        specifier: workspace:*
+        version: link:../ts-markets
       '@hono/node-server':
         specifier: ^1.13.8
         version: 1.19.11(hono@4.12.8)
@@ -73,7 +76,7 @@ importers:
         specifier: ^0.28.17
         version: 0.28.17(typescript@5.9.3)
       typescript:
-        specifier: ^5.8.2
+        specifier: ^5.9.3
         version: 5.9.3
       vite:
         specifier: ^8.0.1
