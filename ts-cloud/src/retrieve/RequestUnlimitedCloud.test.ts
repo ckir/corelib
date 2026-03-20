@@ -6,7 +6,7 @@
 import { endPoint, type RequestResult } from "@ckir/corelib";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
-import type { AppEnv } from "../core/router";
+import type { AppEnv } from "../core/types";
 import { kyRouter } from "./RequestUnlimitedCloud";
 
 // Mock the corelib endPoint utility

@@ -7,7 +7,7 @@
 import { endPoint, type RequestResult } from "@ckir/corelib";
 import { Hono } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
-import type { AppEnv } from "../core/router";
+import type { AppEnv } from "../core/types";
 
 export const kyRouter = new Hono<AppEnv>();
 

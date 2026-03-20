@@ -5,25 +5,11 @@
  * Optimized for deployment on edge environments (Cloudflare Workers, AWS Lambda, etc.).
  */
 
-import type { StrictLogger } from "@ckir/corelib";
 import { Hono } from "hono";
+import { sqlRouter } from "../database/SqlCloud";
 import { nasdaqRouter } from "../markets/nasdaq/ApiNasdaqUnlimitedCloud";
 import { kyRouter } from "../retrieve/RequestUnlimitedCloud";
-
-/**
- * Environment configuration and variables for the Hono instance.
- * @property {Variables} Variables - Context variables injected by middleware (e.g., logger).
- */
-export type AppEnv = {
-	Bindings: {
-		TURSO_URL: string;
-		TURSO_TOKEN: string;
-		PLATFORM: string;
-	};
-	Variables: {
-		logger: StrictLogger;
-	};
-};
+import type { AppEnv } from "./types";
 
 /**
  * Factory function to create and configure the main Hono application.
@@ -54,7 +40,6 @@ export const createRouter = (): Hono<AppEnv> => {
 	/**
 	 * RequestUnlimited (ky) Endpoint
 	 * Exposes corelib's resilient fetching logic.
-	 * Handled by: ts-cloud/src/retrieve/RequestUnlimitedCloud.ts
 	 */
 	apiV1.route("/ky", kyRouter);
 
@@ -65,8 +50,10 @@ export const createRouter = (): Hono<AppEnv> => {
 	apiV1.route("/markets/nasdaq", nasdaqRouter);
 
 	/**
-	 * Future API v1 modules (e.g., /sql) can be mounted here.
+	 * SQL Query (Turso) Endpoint
+	 * Executes a parametrized query using createDatabase from @ckir/corelib.
 	 */
+	apiV1.route("/sql", sqlRouter);
 
 	// Mount the versioned API to the main application
 	app.route("/api/v1", apiV1);

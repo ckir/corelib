@@ -7,8 +7,8 @@ const logger = createEdgeLogger({ platform: "cloudrun" });
 
 app.use("*", async (c, next) => {
 	c.set("logger", logger);
-	c.env.TURSO_URL = process.env.TURSO_URL || "";
-	c.env.TURSO_TOKEN = process.env.TURSO_TOKEN || "";
+	c.env.CORELIB_TURSO_URL = process.env.CORELIB_TURSO_URL || "";
+	c.env.CORELIB_TURSO_TOKEN = process.env.CORELIB_TURSO_TOKEN || "";
 	c.env.PLATFORM = "cloudrun";
 	await next();
 });

@@ -7,7 +7,7 @@
 import { ApiNasdaqUnlimited, type NasdaqResult } from "@ckir/corelib-markets";
 import { Hono } from "hono";
 import type { Options as KyOptions } from "ky";
-import type { AppEnv } from "../../core/router";
+import type { AppEnv } from "../../core/types";
 
 export const nasdaqRouter = new Hono<AppEnv>();
 

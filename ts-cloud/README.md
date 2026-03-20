@@ -144,6 +144,6 @@ gcloud run deploy ts-cloud \
 ## Configuration
 
 The service expects the following environment variables (where applicable):
-- `TURSO_URL`: The URL of your Turso database.
-- `TURSO_TOKEN`: The authentication token for Turso.
+- `CORELIB_TURSO_URL`: The URL of your Turso database.
+- `CORELIB_TURSO_TOKEN`: The authentication token for Turso.
 - `PORT`: (Cloud Run only) The port the server should listen on (defaults to 3000).

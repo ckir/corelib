@@ -8,8 +8,8 @@ const logger = createEdgeLogger({ platform: "aws-lambda" });
 app.use("*", async (c, next) => {
 	c.set("logger", logger);
 	// Inject process.env into c.env if not already there
-	c.env.TURSO_URL = process.env.TURSO_URL || "";
-	c.env.TURSO_TOKEN = process.env.TURSO_TOKEN || "";
+	c.env.CORELIB_TURSO_URL = process.env.CORELIB_TURSO_URL || "";
+	c.env.CORELIB_TURSO_TOKEN = process.env.CORELIB_TURSO_TOKEN || "";
 	c.env.PLATFORM = "aws-lambda";
 	await next();
 });

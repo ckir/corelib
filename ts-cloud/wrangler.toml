@@ -5,5 +5,5 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 PLATFORM = "cloudflare"
-# TURSO_URL = ""
-# TURSO_TOKEN = ""
+# CORELIB_TURSO_URL = ""
+# CORELIB_TURSO_TOKEN = ""
