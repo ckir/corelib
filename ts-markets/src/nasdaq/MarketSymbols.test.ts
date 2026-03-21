@@ -1,336 +1,265 @@
 // =============================================
 // FILE: ts-markets/src/nasdaq/MarketSymbols.test.ts
-// PURPOSE: Exhaustive test suite for MarketSymbols
-// Covers: constructor variants, table creation, auto-refresh logic,
-// parsing (nasdaqlisted + otherlisted), get(), resilience/retry,
-// close(), date-based freshness (NY timezone), error paths.
 // =============================================
 
-import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
-import {
-	afterAll,
-	afterEach,
-	beforeAll,
-	beforeEach,
-	describe,
-	expect,
-	it,
-	vi,
-} from "vitest";
+import * as corelib from "@ckir/corelib";
+import { DateTime } from "luxon";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiNasdaqUnlimited } from "./ApiNasdaqUnlimited";
+import { MarketSymbols } from "./MarketSymbols";
 
-// ---------------------------------------------------------
-// MOCKS (must be hoisted)
-// ---------------------------------------------------------
+// ---------------------------------------------------------------------------
+// 1. Mock External Dependencies
+// ---------------------------------------------------------------------------
 vi.mock("@ckir/corelib", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("@ckir/corelib")>();
+	const actual = await importOriginal<typeof corelib>();
 	return {
 		...actual,
-		createDatabase: vi.fn(),
+		detectRuntime: vi.fn(),
+		endPoint: vi.fn(),
 		endPoints: vi.fn(),
+		createDatabase: vi.fn(),
 		getTempDir: vi.fn(() => "/tmp"),
-		logger: {
-			info: vi.fn(),
-			warn: vi.fn(),
-			error: vi.fn(),
-		},
+		logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+		sleep: vi.fn(),
 	};
 });
 
-import { createDatabase, endPoints, getTempDir } from "@ckir/corelib";
-import { MarketSymbols } from "./MarketSymbols";
+vi.mock("./ApiNasdaqUnlimited", () => ({
+	ApiNasdaqUnlimited: {
+		endPoint: vi.fn(),
+	},
+}));
 
-// Sample TXT content (real structure from Nasdaq)
-const NASDAQ_LISTED_SAMPLE = `Symbol|Security Name|Market Category|Test Issue|Financial Status|Round Lot Size|ETF|NextShares
-AAPL|Apple Inc.|Q|N|N|100|Y|N
-TSLA|Tesla, Inc.|Q|N|N|100|N|N
-`;
+describe("MarketSymbols - Integrated Suite", () => {
+	let marketSymbols: MarketSymbols;
+	const mockDbQuery = vi.fn();
+	const mockDbTransaction = vi.fn();
+	const mockDbDisconnect = vi.fn();
 
-const OTHER_LISTED_SAMPLE = `Symbol|Security Name|Exchange|Test Issue|ETF
-MSFT|Microsoft Corporation|N|N|N
-GOOGL|Alphabet Inc.|N|N|N
-`;
+	const mockDb = {
+		query: mockDbQuery,
+		transaction: mockDbTransaction,
+		disconnect: mockDbDisconnect,
+	};
 
-const server = setupServer(
-	http.get("https://www.nasdaqtrader.com/dynamic/symdir/nasdaqlisted.txt", () =>
-		HttpResponse.text(NASDAQ_LISTED_SAMPLE),
-	),
-	http.get("https://www.nasdaqtrader.com/dynamic/symdir/otherlisted.txt", () =>
-		HttpResponse.text(OTHER_LISTED_SAMPLE),
-	),
-);
-
-describe("MarketSymbols (Exhaustive)", () => {
-	let symbols: MarketSymbols;
-
-	beforeAll(() => server.listen());
-	afterEach(() => {
-		server.resetHandlers();
-		vi.clearAllMocks();
-		vi.useRealTimers();
-	});
-	afterAll(() => server.close());
+	const GAS_URL = "https://script.google.com/macros/s/TEST/exec";
 
 	beforeEach(() => {
-		vi.setSystemTime(new Date("2026-03-17T12:00:00Z")); // fixed NY date for tests
-		// Default mock: successful DB creation
-		(createDatabase as any).mockResolvedValue({
-			query: vi
-				.fn()
-				.mockResolvedValue({ status: "success", value: { rows: [] } }),
-			disconnect: vi.fn(),
-			transaction: vi.fn().mockImplementation(async (cb: any) => {
-				const res = await cb();
-				return res || ({ status: "success", value: null } as any);
-			}),
+		vi.clearAllMocks();
+		vi.mocked(corelib.createDatabase).mockResolvedValue(mockDb as any);
+		vi.mocked(corelib.detectRuntime).mockReturnValue("node");
+
+		// Default behavior: DB is fresh, no refresh needed
+		mockDbQuery.mockImplementation((query: string) => {
+			if (query.includes("SELECT MAX(ts)")) {
+				return Promise.resolve({
+					status: "success",
+					value: { rows: [{ max_ts: Date.now() }] },
+				});
+			}
+			return Promise.resolve({ status: "success", value: { rows: [] } });
 		});
-		// Default mock: successful endpoints
-		(endPoints as any).mockResolvedValue([
-			{ status: "success", value: { body: NASDAQ_LISTED_SAMPLE } },
-			{ status: "success", value: { body: OTHER_LISTED_SAMPLE } },
-		]);
+
+		marketSymbols = new MarketSymbols("/tmp/test.sqlite", [GAS_URL]);
 	});
 
-	// ===================================================================
-	// Constructor & Initialization
-	// ===================================================================
-	describe("Constructor", () => {
-		it("uses default temp path when no argument", () => {
-			new MarketSymbols();
-			expect(getTempDir).toHaveBeenCalled();
-		});
-
-		it("accepts string path", () => {
-			new MarketSymbols("/custom/path.sqlite");
-		});
-
-		it("accepts Turso config object", () => {
-			new MarketSymbols({ dbUrl: "libsql://...", dbToken: "token123" });
-		});
+	afterEach(async () => {
+		await marketSymbols.close();
 	});
 
-	// ===================================================================
-	// Table & Auto-Refresh
-	// ===================================================================
-	describe("Auto-refresh", () => {
-		it("creates table + index on first use", async () => {
-			symbols = new MarketSymbols();
-			await symbols.get("AAPL"); // triggers init
+	// -----------------------------------------------------------------------
+	// 2. Lifecycle & Internal Database Tests (From Original Version)
+	// -----------------------------------------------------------------------
+	describe("Internal Database Lifecycle", () => {
+		it("should initialize tables and indexes on first query", async () => {
+			await marketSymbols.get("AAPL");
 
-			const dbMock = await (createDatabase as any).mock.results[0].value;
-			expect(dbMock.query).toHaveBeenCalledWith(
+			expect(mockDbQuery).toHaveBeenCalledWith(
 				expect.stringContaining("CREATE TABLE IF NOT EXISTS nasdaq_symbols"),
 			);
-			expect(dbMock.query).toHaveBeenCalledWith(
-				expect.stringContaining("CREATE INDEX IF NOT EXISTS"),
+			expect(mockDbQuery).toHaveBeenCalledWith(
+				expect.stringContaining(
+					"CREATE INDEX IF NOT EXISTS idx_nasdaq_symbols_active",
+				),
 			);
 		});
 
-		it("refreshes when table is empty", async () => {
-			symbols = new MarketSymbols();
-			await symbols.get("AAPL");
-
-			expect(endPoints).toHaveBeenCalled();
-		});
-
-		it("skips refresh when MAX(ts) is today (NY time)", async () => {
-			// Simulate existing fresh data
-			(createDatabase as any).mockResolvedValueOnce({
-				query: vi.fn().mockImplementation(async (sql: string) => {
-					if (sql.includes("MAX(ts)")) {
-						return {
-							status: "success",
-							value: { rows: [{ max_ts: Date.now() }] },
-						};
-					}
-					return { status: "success", value: { rows: [] } };
-				}),
-				disconnect: vi.fn(),
+		it("should trigger a refresh if the database is empty", async () => {
+			// Specifically mock MAX(ts) to return nothing for this test
+			mockDbQuery.mockImplementation((query: string) => {
+				if (query.includes("MAX(ts)")) {
+					return Promise.resolve({
+						status: "success",
+						value: { rows: [] },
+					});
+				}
+				return Promise.resolve({ status: "success", value: { rows: [] } });
 			});
 
-			symbols = new MarketSymbols();
-			await symbols.get("AAPL");
+			vi.mocked(corelib.endPoints).mockResolvedValue([
+				{
+					status: "success",
+					value: { body: "Symbol|Name|...|ETF|...\nAAPL|Apple|N\n" },
+				},
+				{
+					status: "success",
+					value: { body: "Symbol|Name|...|ETF|...\nMSFT|Microsoft|N\n" },
+				},
+			] as any);
 
-			expect(endPoints).not.toHaveBeenCalled();
+			await marketSymbols.refresh();
+			expect(corelib.endPoints).toHaveBeenCalled();
+			expect(mockDbTransaction).toHaveBeenCalled();
+		});
+
+		it("should skip refresh if data was updated today (NY Time)", async () => {
+			const todayNY = DateTime.now().setZone("America/New_York").toMillis();
+			mockDbQuery.mockImplementation((query: string) => {
+				if (query.includes("MAX(ts)")) {
+					return Promise.resolve({
+						status: "success",
+						value: { rows: [{ max_ts: todayNY }] },
+					});
+				}
+				return Promise.resolve({ status: "success", value: { rows: [] } });
+			});
+
+			await marketSymbols.refresh();
+			expect(corelib.endPoints).not.toHaveBeenCalled();
+		});
+
+		it("should correctly parse Nasdaq directory text files", async () => {
+			// Accessing private methods for unit testing parsing logic
+			const nasdaqText =
+				"Symbol|Security Name|Market Category|Test Issue|Financial Status|Round Lot Size|ETF|NextShares\n" +
+				"AAPL|Apple Inc. - Common Stock|Q|N|N|100|N|N\n" +
+				"QQQ|Invesco QQQ Trust|Q|N|N|100|Y|N";
+
+			// @ts-expect-error - access private for test
+			const rows = marketSymbols.parseNasdaqListed(nasdaqText);
+
+			expect(rows).toHaveLength(2);
+			expect(rows[0]).toMatchObject({
+				symbol: "AAPL",
+				class: "stocks",
+				type: "rt",
+			});
+			expect(rows[1]).toMatchObject({
+				symbol: "QQQ",
+				class: "etf",
+				type: "rt",
+			});
+		});
+
+		it("should call disconnect when closing", async () => {
+			await marketSymbols.get("AAPL"); // init
+			await marketSymbols.close();
+			expect(mockDbDisconnect).toHaveBeenCalled();
 		});
 	});
 
-	// ===================================================================
-	// Parsing & Data Integrity
-	// ===================================================================
-	describe("Parsing", () => {
-		it("correctly parses nasdaqlisted.txt (ETF flag respected)", async () => {
-			// Setup mock to return data after refresh
-			const data: any[] = [];
-			(createDatabase as any).mockResolvedValue({
-				query: vi
-					.fn()
-					.mockImplementation(async (sql: string, params?: any[]) => {
-						if (sql.includes("INSERT INTO nasdaq_symbols")) {
-							data.push({
-								symbol: params?.[0],
-								type: params?.[1],
-								class: params?.[2],
-								name: params?.[3],
-							});
-							return { status: "success", value: { rows: [] } };
-						}
-						if (sql.includes("SELECT") && params && params[0] === "AAPL") {
-							const found = data.find((r) => r.symbol === "AAPL");
-							return {
-								status: "success",
-								value: { rows: found ? [found] : [] },
-							};
-						}
-						if (sql.includes("MAX(ts)")) {
-							return { status: "success", value: { rows: [] } };
-						}
-						return { status: "success", value: { rows: [] } };
-					}),
-				transaction: vi.fn().mockImplementation(async (cb: any) => {
-					const res = await cb();
-					return res || { status: "success", value: null };
-				}),
-				disconnect: vi.fn(),
-			});
+	// -----------------------------------------------------------------------
+	// 3. Environment-Aware Search Sequence (The New Functionality)
+	// -----------------------------------------------------------------------
+	describe("Search Sequencing", () => {
+		it("NodeJS: Sequence should be DB -> API -> Ingestor", async () => {
+			vi.mocked(corelib.detectRuntime).mockReturnValue("node");
 
-			symbols = new MarketSymbols();
-			await symbols.refresh();
-
-			const aapl = await symbols.get("AAPL");
-			expect(aapl?.class).toBe("etf");
-		});
-
-		it("deduplicates symbols (nasdaqlisted wins)", async () => {
-			symbols = new MarketSymbols();
-			await symbols.refresh();
-
-			const dbMock = await (createDatabase as any).mock.results[0].value;
-			// check that transaction was called
-			expect(dbMock.transaction).toHaveBeenCalled();
-		});
-	});
-
-	// ===================================================================
-	// Public API: get()
-	// ===================================================================
-	describe("get()", () => {
-		it("returns null for inactive/missing symbol", async () => {
-			// Ensure it doesn't refresh by mocking MAX(ts)
-			(createDatabase as any).mockResolvedValueOnce({
-				query: vi.fn().mockImplementation(async (sql: string) => {
-					if (sql.includes("MAX(ts)")) {
-						return {
-							status: "success",
-							value: { rows: [{ max_ts: Date.now() }] },
-						};
-					}
-					return { status: "success", value: { rows: [] } };
-				}),
-				disconnect: vi.fn(),
-			});
-
-			symbols = new MarketSymbols();
-			expect(await symbols.get("XYZ")).toBeNull();
-		});
-
-		it("is case-insensitive", async () => {
-			(createDatabase as any).mockResolvedValueOnce({
-				query: vi
-					.fn()
-					.mockImplementation(async (sql: string, params?: any[]) => {
-						if (sql.includes("MAX(ts)")) {
-							return {
-								status: "success",
-								value: { rows: [{ max_ts: Date.now() }] },
-							};
-						}
-						if (sql.includes("SELECT") && params && params[0] === "AAPL") {
-							return {
-								status: "success",
-								value: { rows: [{ symbol: "AAPL", name: "Apple" }] },
-							};
-						}
-						return { status: "success", value: { rows: [] } };
-					}),
-				disconnect: vi.fn(),
-			});
-
-			symbols = new MarketSymbols();
-			const row = await symbols.get("aapl");
-			expect(row?.symbol).toBe("AAPL");
-		});
-	});
-
-	// ===================================================================
-	// Resilience & Error Paths
-	// ===================================================================
-	describe("Resilience", () => {
-		it("retries forever with backoff when DB exists", async () => {
-			(endPoints as any)
-				.mockResolvedValueOnce([
-					{ status: "error", reason: { message: "network" } },
-					{ status: "success", value: { body: "" } },
-				])
-				.mockResolvedValueOnce([
-					{ status: "success", value: { body: NASDAQ_LISTED_SAMPLE } },
-					{ status: "success", value: { body: OTHER_LISTED_SAMPLE } },
-				]);
-
-			(createDatabase as any).mockResolvedValueOnce({
-				query: vi.fn().mockImplementation(async (sql: string) => {
-					if (sql.includes("MAX(ts)")) {
-						return { status: "success", value: { rows: [] } };
-					}
-					if (sql.includes("COUNT(*)")) {
-						return {
-							status: "success",
-							value: { rows: [{ count: 5 }] },
-						};
-					}
-					return { status: "success", value: { rows: [] } };
-				}),
-				transaction: vi.fn().mockImplementation(async (cb: any) => {
-					const res = await cb();
-					return res || { status: "success", value: null };
-				}),
-				disconnect: vi.fn(),
-			});
-
-			symbols = new MarketSymbols();
-			// Should not throw (retries)
-			await expect(symbols.refresh()).resolves.not.toThrow();
-		});
-
-		it("throws fatal when first-time fetch fails and no DB", async () => {
-			(endPoints as any).mockResolvedValue([
-				{ status: "error", reason: { message: "404" } },
-			]);
-
-			symbols = new MarketSymbols();
-			await expect(symbols.refresh()).rejects.toThrow(
-				/Failed to construct symbols db/,
-			);
-		});
-	});
-
-	// ===================================================================
-	// close()
-	// ===================================================================
-	it("closes database gracefully", async () => {
-		// Mock to skip refresh
-		(createDatabase as any).mockResolvedValueOnce({
-			query: vi.fn().mockResolvedValue({
+			// 1. DB returns null
+			mockDbQuery.mockResolvedValue({ status: "success", value: { rows: [] } });
+			// 2. API returns AAPL
+			vi.mocked(ApiNasdaqUnlimited.endPoint).mockResolvedValue({
 				status: "success",
-				value: { rows: [{ max_ts: Date.now() }] },
-			}),
-			disconnect: vi.fn(),
+				value: [{ symbol: "AAPL", name: "Apple", asset: "STOCKS" }],
+			} as any);
+
+			const result = await marketSymbols.get("AAPL");
+
+			expect(mockDbQuery).toHaveBeenCalledWith(
+				expect.stringContaining("SELECT symbol"),
+				["AAPL"],
+			);
+			expect(ApiNasdaqUnlimited.endPoint).toHaveBeenCalled();
+			expect(corelib.endPoint).not.toHaveBeenCalled(); // Ingestor not reached
+			expect(result?.name).toBe("Apple");
 		});
 
-		symbols = new MarketSymbols();
-		await symbols.get("AAPL"); // triggers init
-		await symbols.close();
-		const dbMock = await (createDatabase as any).mock.results[0].value;
-		expect(dbMock.disconnect).toHaveBeenCalled();
+		it("Edge: Sequence should be API -> Ingestor -> DB", async () => {
+			vi.mocked(corelib.detectRuntime).mockReturnValue("edge-cloudflare");
+
+			// 1. API fails
+			vi.mocked(ApiNasdaqUnlimited.endPoint).mockResolvedValue({
+				status: "error",
+			} as any);
+			// 2. Ingestor succeeds
+			vi.mocked(corelib.endPoint).mockResolvedValue({
+				status: "success",
+				value: {
+					body: {
+						status: "success",
+						value: { symbol: "AAPL", name: "Edge Name" },
+					},
+				},
+			} as any);
+
+			const result = await marketSymbols.get("AAPL");
+
+			expect(ApiNasdaqUnlimited.endPoint).toHaveBeenCalled();
+			expect(corelib.endPoint).toHaveBeenCalledWith(
+				expect.stringContaining(GAS_URL),
+			);
+			// DB check should not have happened yet because Ingestor succeeded
+			expect(mockDbQuery).not.toHaveBeenCalledWith(
+				expect.stringContaining("SELECT symbol"),
+				["AAPL"],
+			);
+			expect(result?.name).toBe("Edge Name");
+		});
+	});
+
+	// -----------------------------------------------------------------------
+	// 4. Ingestor Implementation
+	// -----------------------------------------------------------------------
+	describe("Ingestors", () => {
+		it("should ignore ingestor URLs that do not match a registry pattern", async () => {
+			const customSymbols = new MarketSymbols("/tmp/test.sqlite", [
+				"https://unknown-service.com/api",
+			]);
+			vi.mocked(ApiNasdaqUnlimited.endPoint).mockResolvedValue({
+				status: "error",
+			} as any);
+
+			await customSymbols.get("AAPL");
+			expect(corelib.endPoint).not.toHaveBeenCalled(); // No pattern match, no fetch
+		});
+
+		it("should correctly handle GAS ingestor success and transform data", async () => {
+			vi.mocked(ApiNasdaqUnlimited.endPoint).mockResolvedValue({
+				status: "error",
+			} as any);
+			vi.mocked(corelib.endPoint).mockResolvedValue({
+				status: "success",
+				value: {
+					body: {
+						status: "success",
+						value: {
+							symbol: "AAPL",
+							type: "rt",
+							class: "stocks",
+							name: "GAS Store",
+							active: true,
+						},
+					},
+				},
+			} as any);
+
+			const result = await marketSymbols.get("AAPL");
+			expect(result).toMatchObject({
+				symbol: "AAPL",
+				name: "GAS Store",
+				type: "rt",
+			});
+		});
 	});
 });

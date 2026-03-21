@@ -11,6 +11,7 @@
 import { EventEmitter } from "node:events";
 import { logger } from "@ckir/corelib";
 import { DateTime } from "luxon";
+import { serializeError } from "serialize-error";
 import { MarketStatus, type NasdaqMarketInfo } from "./MarketStatus";
 
 export type MarketPhase = "open" | "pre-market" | "after-hours" | "closed";
@@ -118,7 +119,9 @@ export class MarketMonitor extends EventEmitter {
 				this.handleFailure();
 			}
 		} catch (err) {
-			logger.error("[MarketMonitor] Unexpected poll error", { error: err });
+			logger.error("[MarketMonitor] Unexpected poll error", {
+				error: serializeError(err),
+			});
 			this.handleFailure();
 		}
 

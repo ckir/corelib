@@ -1,25 +1,27 @@
 // =============================================
 // FILE: ts-markets/src/nasdaq/MarketSymbols.ts
-// PURPOSE: Persistent Nasdaq symbol database (SQLite or Turso).
+// PURPOSE: Persistent Nasdaq symbol database (SQLite or Turso) with fallback sources.
 // • Auto-creates table + indexes
 // • Auto-refreshes from official Nasdaq symbol directories if empty or outdated
 // • Uses MAX(ts) vs today (America/New_York) for freshness
-// • nasdaqlisted.txt + otherlisted.txt → realtime symbols
-// • Inactive symbols kept (active=false) for history
-// • Resilient fetch (infinite retry with 1h cap backoff when DB exists)
-// • Constructor: undefined (temp file), string (path), or {dbUrl, dbToken} (Turso)
+// • Supports edge environments with optimized API/Ingestor fallback sequences
+// • Open ingestor registry for extended symbol data sources
 // =============================================
 
 import {
 	createDatabase,
 	type Database,
 	type DatabaseResult,
+	detectRuntime,
+	endPoint,
 	endPoints,
 	getTempDir,
 	logger,
 	sleep,
 } from "@ckir/corelib";
 import { DateTime } from "luxon";
+import { serializeError } from "serialize-error";
+import { ApiNasdaqUnlimited } from "./ApiNasdaqUnlimited";
 import { Realtime } from "./AssetClass";
 
 const NASDAQ_LISTED_URL =
@@ -37,10 +39,21 @@ export interface MarketSymbolRow {
 }
 
 /**
- * Nasdaq symbol database using ts-core SQLite (local or Turso).
+ * Interface for an external ingestor processor.
+ */
+interface IngestorEntry {
+	pattern: RegExp;
+	processor: (
+		baseUrl: string,
+		symbol: string,
+	) => Promise<MarketSymbolRow | null>;
+}
+
+/**
+ * Nasdaq symbol database using ts-core SQLite (local or Turso) alongside API & Ingestor fallbacks.
  *
  * Automatically refreshes on first use or when data is older than today (NY time).
- * Uses the exact Database API from ts-core (QueryResponse has .rows, transaction must return DatabaseResult).
+ * Modifies search hierarchy (DB vs API) dynamically based on edge vs non-edge runtimes.
  */
 export class MarketSymbols {
 	private db: Database | null = null;
@@ -52,12 +65,27 @@ export class MarketSymbols {
 	};
 
 	/**
-	 * @param db - Optional database configuration:
-	 *   - `undefined` → uses `${getTempDir()}/NasdaqSymbols.sqlite`
-	 *   - `string` → local SQLite file path
-	 *   - `{ dbUrl: string; dbToken: string }` → Turso/LibSQL remote
+	 * Registry mapping URL patterns to specific ingestor methods.
+	 * Designed to be "open" for additional ingestors in future releases.
 	 */
-	constructor(db?: string | { dbUrl: string; dbToken: string }) {
+	private readonly ingestorRegistry: IngestorEntry[] = [
+		{
+			pattern: /script\.google\.com/i,
+			processor: this.ingestorGAS.bind(this),
+		},
+	];
+
+	/**
+	 * @param db - Optional database configuration:
+	 * - `undefined` → uses `${getTempDir()}/NasdaqSymbols.sqlite`
+	 * - `string` → local SQLite file path
+	 * - `{ dbUrl: string; dbToken: string }` → Turso/LibSQL remote
+	 * @param ingestors - Array of ingestor URLs (e.g., Google App Script endpoints) to query for missing symbols.
+	 */
+	constructor(
+		db?: string | { dbUrl: string; dbToken: string },
+		private readonly ingestors: string[] = [],
+	) {
 		if (!db) {
 			const path = `${getTempDir()}/NasdaqSymbols.sqlite`;
 			this.config = {
@@ -95,20 +123,35 @@ export class MarketSymbols {
 
 	/**
 	 * Get symbol data.
-	 * Returns `null` if the symbol is not found or is inactive.
+	 * Searches Nasdaq API, external ingestors, and the DB. The sequence order is
+	 * optimized dynamically based on whether it is running in an Edge environment.
+	 * @returns `null` if the symbol is not found or is inactive.
 	 */
 	public async get(symbol: string): Promise<MarketSymbolRow | null> {
-		const db = await this.ensureInitialized();
-
-		const result = await db.query<MarketSymbolRow>(
-			"SELECT symbol, type, class, name, ts, active FROM nasdaq_symbols WHERE symbol = ? AND active = true LIMIT 1",
-			[symbol.toUpperCase()],
+		const runtime = detectRuntime();
+		const isEdge = ["edge-cloudflare", "edge-vercel", "lambda"].includes(
+			runtime,
 		);
 
-		if (result.status === "success" && result.value.rows.length > 0) {
-			return result.value.rows[0];
+		if (isEdge) {
+			// Edge Sequence: Nasdaq API -> Ingestors -> SQLite
+			let res = await this.searchNasdaqApi(symbol);
+			if (res) return res;
+
+			res = await this.searchIngestors(symbol);
+			if (res) return res;
+
+			return await this.searchDb(symbol);
 		}
-		return null;
+
+		// Non-Edge Sequence: SQLite -> Nasdaq API -> Ingestors
+		let res = await this.searchDb(symbol);
+		if (res) return res;
+
+		res = await this.searchNasdaqApi(symbol);
+		if (res) return res;
+
+		return await this.searchIngestors(symbol);
 	}
 
 	/**
@@ -122,7 +165,138 @@ export class MarketSymbols {
 	}
 
 	// -----------------------------------------------------------------------
-	// Private
+	// Search Sequences
+	// -----------------------------------------------------------------------
+
+	/**
+	 * Queries the official Nasdaq autocomplete API for a symbol.
+	 * Filters for an exact match.
+	 */
+	private async searchNasdaqApi(
+		symbol: string,
+	): Promise<MarketSymbolRow | null> {
+		try {
+			const url = `https://api.nasdaq.com/api/autocomplete/slookup/10?search=${encodeURIComponent(symbol)}`;
+			// ApiNasdaqUnlimited already extracts the .data wrapper into result.value
+			const result =
+				await ApiNasdaqUnlimited.endPoint<Array<Record<string, unknown>>>(url);
+
+			if (result.status === "success" && Array.isArray(result.value)) {
+				const match = result.value.find(
+					(item) => String(item.symbol).toUpperCase() === symbol.toUpperCase(),
+				);
+
+				if (match) {
+					const assetLower = match.asset
+						? String(match.asset).toLowerCase()
+						: "";
+					let type: "rt" | "eod" = "eod";
+
+					// Check if it belongs to a realtime AssetClass
+					if (Object.values(Realtime).includes(assetLower as Realtime)) {
+						type = "rt";
+					}
+
+					return {
+						symbol: String(match.symbol),
+						name: String(match.name ?? "").trim(),
+						type,
+						class: assetLower,
+						ts: Date.now(),
+						active: true,
+					};
+				}
+			}
+		} catch (e) {
+			logger.warn(`[MarketSymbols] searchNasdaqApi failed for ${symbol}`, {
+				error: serializeError(e),
+			});
+		}
+		return null;
+	}
+
+	/**
+	 * Queries external ingestors defined in the constructor based on the internal registry pattern.
+	 */
+	private async searchIngestors(
+		symbol: string,
+	): Promise<MarketSymbolRow | null> {
+		if (!this.ingestors || this.ingestors.length === 0) return null;
+
+		for (const url of this.ingestors) {
+			for (const entry of this.ingestorRegistry) {
+				if (entry.pattern.test(url)) {
+					try {
+						const result = await entry.processor(url, symbol);
+						if (result) return result;
+					} catch (e) {
+						logger.warn(`[MarketSymbols] Ingestor failed for ${url}`, {
+							error: serializeError(e),
+						});
+					}
+				}
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Specifically processes Google Apps Script (GAS) ingestor URLs.
+	 */
+	private async ingestorGAS(
+		baseUrl: string,
+		symbol: string,
+	): Promise<MarketSymbolRow | null> {
+		const url = new URL(baseUrl);
+		url.searchParams.set("symbol", symbol);
+
+		const result = await endPoint<Record<string, unknown>>(url.toString());
+
+		if (result.status === "success" && result.value?.body) {
+			const body = result.value.body as Record<string, unknown>;
+
+			if (body.status === "success" && body.value) {
+				const data = body.value as Record<string, unknown>;
+
+				if (String(data.symbol).toUpperCase() === symbol.toUpperCase()) {
+					return {
+						symbol: String(data.symbol),
+						name: String(data.name || ""),
+						type: (data.type as "rt" | "eod") || "eod",
+						class: String(data.class || ""),
+						ts: Number(data.ts) || Date.now(),
+						active: typeof data.active === "boolean" ? data.active : true,
+					};
+				}
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Searches the local or remote SQLite database.
+	 */
+	private async searchDb(symbol: string): Promise<MarketSymbolRow | null> {
+		try {
+			const db = await this.ensureInitialized();
+			const result = await db.query<MarketSymbolRow>(
+				"SELECT symbol, type, class, name, ts, active FROM nasdaq_symbols WHERE symbol = ? AND active = true LIMIT 1",
+				[symbol.toUpperCase()],
+			);
+
+			if (result.status === "success" && result.value.rows.length > 0) {
+				return result.value.rows[0];
+			}
+		} catch (e) {
+			logger.warn(`[MarketSymbols] searchDb query failed for ${symbol}`, {
+				error: serializeError(e),
+			});
+		}
+		return null;
+	}
+
+	// -----------------------------------------------------------------------
+	// Private Database Management
 	// -----------------------------------------------------------------------
 
 	/**
@@ -177,6 +351,7 @@ export class MarketSymbols {
 		const lastDate = DateTime.fromMillis(maxTs)
 			.setZone("America/New_York")
 			.startOf("day");
+
 		const today = DateTime.now().setZone("America/New_York").startOf("day");
 
 		return !lastDate.equals(today);
@@ -201,6 +376,7 @@ export class MarketSymbols {
 
 		const allRows = new Map<string, MarketSymbolRow>();
 		for (const r of nasdaqRows) allRows.set(r.symbol, r);
+
 		for (const r of otherRows) {
 			if (!allRows.has(r.symbol)) allRows.set(r.symbol, r);
 		}
@@ -296,7 +472,7 @@ export class MarketSymbols {
 				logger.warn(
 					"[MarketSymbols] Symbol directory fetch failed – retrying",
 					{
-						reason,
+						reason: serializeError(reason),
 					},
 				);
 
@@ -309,14 +485,14 @@ export class MarketSymbols {
 
 				// Fatal on first-time failure
 				throw new Error(
-					`Failed to construct symbols db - ${reason.message || JSON.stringify(reason)}`,
+					`Failed to construct symbols db - ${reason.message || JSON.stringify(serializeError(reason))}`,
 				);
 			} catch (err: any) {
 				const hasExistingData = await this.hasExistingData();
 				if (hasExistingData) {
 					logger.warn(
 						"[MarketSymbols] Symbol directory fetch thrown – retrying",
-						{ error: err.message },
+						{ error: serializeError(err) },
 					);
 					await sleep(backoffMs);
 					backoffMs = Math.min(backoffMs * 2, 3_600_000);
@@ -366,6 +542,7 @@ export class MarketSymbols {
 			)
 				continue;
 			const fields = line.split("|");
+
 			if (fields.length < 8) continue;
 
 			const symbol = fields[0].trim();
@@ -405,6 +582,7 @@ export class MarketSymbols {
 			)
 				continue;
 			const fields = line.split("|");
+
 			if (fields.length < 5) continue;
 
 			const symbol = fields[0].trim();
