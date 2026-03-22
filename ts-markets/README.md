@@ -109,21 +109,45 @@ stream.on("silence-reconnect", () => {
 ```
 
 ### 5. Persistent Symbol Database (MarketSymbols)
-Automated local symbol directory with auto-refresh and historical tracking.
+Automated Nasdaq symbol directory with auto-refresh, environment-aware search sequencing, and cloud integration.
 
+#### Features
+- **Auto-Refresh**: Synchronizes with official Nasdaq directories if data is missing or outdated (older than today NY time).
+- **Environment-Aware**: Automatically optimizes search sequence (DB vs API) based on whether it is running on the Edge.
+- **Turso Support**: Supports both local SQLite and remote Turso/LibSQL databases.
+- **Custom Ingestors**: Extensible registry for querying additional symbol data sources (e.g., Google Apps Script).
+
+#### Basic Usage (Local SQLite)
 ```typescript
 import { MarketSymbols } from '@ckir/corelib-markets';
 
-// Initialize (defaults to temp SQLite file)
+// Initialize (defaults to local SQLite file)
 const symbols = new MarketSymbols();
 
-// Get symbol details (auto-refreshes if outdated)
+// Get details (Sequence: DB -> Nasdaq API -> Ingestors)
 const aapl = await symbols.get("AAPL");
-if (aapl) {
-  console.log(`Symbol: ${aapl.symbol}, Name: ${aapl.name}, Class: ${aapl.class}`);
-}
+```
 
-// Force a full directory refresh
+#### Cloud Usage (Turso)
+```typescript
+const symbols = new MarketSymbols({
+  dbUrl: "libsql://your-db.turso.io",
+  dbToken: "your-auth-token"
+});
+```
+
+#### Custom Ingestors (e.g., Google Apps Script)
+```typescript
+const ingestorUrl = "https://script.google.com/macros/s/.../exec";
+const symbols = new MarketSymbols(undefined, [ingestorUrl]);
+
+// If not in DB or Nasdaq API, it will query your script
+const custom = await symbols.get("MY_PRIVATE_SYMBOL");
+```
+
+#### Manual Maintenance
+```typescript
+// Force a full directory refresh from Nasdaq sources
 await symbols.refresh();
 
 // Graceful shutdown

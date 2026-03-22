@@ -1,0 +1,37 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Corelib - Resilient Nasdaq Market Data Proxy
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 1024
+    Runtime: nodejs24.x
+    Architectures: [arm64]
+
+Resources:
+  CorelibFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: corelib
+      CodeUri: ../ts-cloud/dist/aws
+      Handler: handler.handler
+      Environment:
+        Variables:
+          MODE: production
+          LOG_LEVEL: info
+      FunctionUrlConfig:
+        AuthType: NONE
+        InvokeMode: BUFFERED
+        Cors:
+          AllowOrigins:
+            - '*'
+          AllowMethods:
+            - '*'               # ← This fixes the lint error (covers POST + OPTIONS)
+          AllowHeaders:
+            - '*'
+
+Outputs:
+  CorelibFunctionUrl:
+    Description: "Public HTTPS endpoint"
+    Value: !GetAtt CorelibFunctionUrl.FunctionUrl

@@ -10,3 +10,15 @@ lint-output.txt
 *.node
 *.tgz
 
+# ──────────────────────────────────────────────
+# AWS SAM deployment folder
+# Keep ONLY template.yaml, ignore everything else
+# ──────────────────────────────────────────────
+sam-corelib/*
+!sam-corelib/template.yaml
+
+# SAM build output (always ignore)
+sam-corelib/.aws-sam/
+sam-corelib/*.js
+sam-corelib/*.zip
+sam-corelib/*.tgz
