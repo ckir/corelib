@@ -218,12 +218,22 @@ mod tests {
             c.fetch_add(1, Ordering::SeqCst);
         });
 
-        thread::sleep(Duration::from_secs(2));
+        // Wait until it has fired at least once so we know it's running
+        let start = std::time::Instant::now();
+        while counter.load(Ordering::SeqCst) == 0 && start.elapsed() < Duration::from_secs(5) {
+            thread::sleep(Duration::from_millis(100));
+        }
+
         handle.stop();
         let before = counter.load(Ordering::SeqCst);
+        assert!(before > 0, "Cron should have fired at least once before stopping");
 
-        thread::sleep(Duration::from_secs(3));
-        assert_eq!(before, counter.load(Ordering::SeqCst));
+        thread::sleep(Duration::from_secs(2));
+        assert_eq!(
+            before,
+            counter.load(Ordering::SeqCst),
+            "Counter should not increase after stop()"
+        );
     }
 
     #[test]
