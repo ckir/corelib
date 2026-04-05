@@ -10,7 +10,6 @@
         "corelib-rust.node"
     ],
     "scripts": {
-        "install": "pnpm install",
         "postinstall": "node scripts/postinstall.js",
         "build": "tsup",
         "watch": "tsup --watch",

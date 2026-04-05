@@ -8,7 +8,6 @@
         "dist"
     ],
     "scripts": {
-        "install": "pnpm install",
         "dev": "wrangler dev",
         "build": "tsup",
         "postbuild": "node -e \"const fs=require('fs');const path=require('path');const d=path.join('dist','aws');const nm=path.join(d,'node_modules','@libsql','linux-x64-gnu');if(!fs.existsSync(nm))fs.mkdirSync(nm,{recursive:true});const src=path.join('..','node_modules','.pnpm','@libsql+linux-x64-gnu@0.5.28','node_modules','@libsql','linux-x64-gnu');if(fs.existsSync(src)){fs.cpSync(src,nm,{recursive:true});console.log('✅ Copied @libsql/linux-x64-gnu to dist/aws');}const rust=path.join('..','ts-core','corelib-rust.node');if(fs.existsSync(rust)){fs.copyFileSync(rust,path.join(d,'corelib-rust.node'));console.log('✅ Copied corelib-rust.node to dist/aws');}\"",

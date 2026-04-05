@@ -8,7 +8,6 @@
         "dist"
     ],
     "scripts": {
-        "install": "pnpm install",
         "build": "tsup",
         "watch": "tsup --watch",
         "test": "vitest",
