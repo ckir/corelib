@@ -8,12 +8,14 @@
         "dist"
     ],
     "scripts": {
+        "install": "pnpm install",
         "dev": "wrangler dev",
         "build": "tsup",
+        "postbuild": "node -e \"const fs=require('fs');const path=require('path');const d=path.join('dist','aws');const nm=path.join(d,'node_modules','@libsql','linux-x64-gnu');if(!fs.existsSync(nm))fs.mkdirSync(nm,{recursive:true});const src=path.join('..','node_modules','.pnpm','@libsql+linux-x64-gnu@0.5.28','node_modules','@libsql','linux-x64-gnu');if(fs.existsSync(src)){fs.cpSync(src,nm,{recursive:true});console.log('✅ Copied @libsql/linux-x64-gnu to dist/aws');}const rust=path.join('..','ts-core','corelib-rust.node');if(fs.existsSync(rust)){fs.copyFileSync(rust,path.join(d,'corelib-rust.node'));console.log('✅ Copied corelib-rust.node to dist/aws');}\"",
         "watch": "tsup --watch",
         "test": "vitest",
         "test:worker": "vitest --config vitest.config.ts",
-        "lint": "biome check . --max-diagnostics=100",
+        "lint": "biome check . --write --unsafe --max-diagnostics=100",
         "format": "biome format . --write",
         "docs": "typedoc",
         "clean": "del dist"
@@ -28,7 +30,7 @@
     },
     "devDependencies": {
         "@cloudflare/vite-plugin": "^1.29.1",
-        "@cloudflare/vitest-pool-workers": "^0.13.2",
+        "@cloudflare/vitest-pool-workers": "^0.14.1",
         "@cloudflare/workers-types": "^4.20250224.0",
         "@types/aws-lambda": "^8.10.147",
         "@types/deno": "^2.5.0",
@@ -37,7 +39,7 @@
         "miniflare": "^4.20260317.0",
         "tsup": "^8.4.0",
         "typedoc": "^0.28.17",
-        "typescript": "^5.9.3",
+        "typescript": "^6.0.2",
         "vite": "^8.0.1",
         "vitest": "^4.1.0",
         "wrangler": "^4.75.0"

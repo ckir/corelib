@@ -9,6 +9,7 @@ corelib.txt
 lint-output.txt
 *.node
 *.tgz
+.pnpm-store
 
 # ──────────────────────────────────────────────
 # AWS SAM deployment folder
@@ -16,6 +17,9 @@ lint-output.txt
 # ──────────────────────────────────────────────
 sam-corelib/*
 !sam-corelib/template.yaml
+!sam-corelib/samconfig.toml
+!sam-corelib/event.json
+!sam-corelib/events
 
 # SAM build output (always ignore)
 sam-corelib/.aws-sam/

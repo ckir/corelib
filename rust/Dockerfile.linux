@@ -1,0 +1,44 @@
+# Use a stable Rust + Node environment
+FROM rust:1.93-slim-bookworm
+
+# Install Node.js and build essentials
+RUN apt-get update && apt-get install -y \
+    curl \
+    gnupg \
+    build-essential \
+    python3 \
+    libssl-dev \
+    pkg-config \
+    && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
+    && apt-get install -y nodejs \
+    && npm install -g pnpm@10.33.0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Set environment variables
+ENV CI=true
+
+# Copy workspace configuration
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY rust/package.json ./rust/
+COPY ts-core/package.json ./ts-core/
+COPY ts-cloud/package.json ./ts-cloud/
+COPY ts-markets/package.json ./ts-markets/
+
+# Install dependencies (cached layer)
+RUN pnpm install --frozen-lockfile --ignore-scripts
+
+# Copy source code
+COPY rust/src ./rust/src
+COPY rust/Cargo.toml rust/Cargo.lock ./rust/
+COPY ts-core/src ./ts-core/src
+
+# Build both the FFI Node module and the CLI binary
+RUN cd rust && \
+    pnpm exec napi build --release && \
+    cargo build --release --bin yahoo_streamer --features clap
+
+# Default command just keeps the container alive if run directly
+CMD ["ls", "-l", "rust/corelib-rust.node"]

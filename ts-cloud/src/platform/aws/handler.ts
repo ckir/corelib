@@ -2,16 +2,10 @@ import { handle } from "hono/aws-lambda";
 import { createEdgeLogger } from "../../core/logger";
 import { createRouter } from "../../core/router";
 
-const app = createRouter();
-const logger = createEdgeLogger({ platform: "aws-lambda" });
+// Bypass @libsql/client precompile checks for bundled environments
+process.env.LIBSQL_SKIP_PRECOMPILE_CHECK = "1";
 
-app.use("*", async (c, next) => {
-	c.set("logger", logger);
-	// Inject process.env into c.env if not already there
-	c.env.CORELIB_TURSO_URL = process.env.CORELIB_TURSO_URL || "";
-	c.env.CORELIB_TURSO_TOKEN = process.env.CORELIB_TURSO_TOKEN || "";
-	c.env.PLATFORM = "aws-lambda";
-	await next();
-});
+const logger = createEdgeLogger({ platform: "aws-lambda" });
+const app = createRouter(logger);
 
 export const handler = handle(app);

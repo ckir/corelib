@@ -4,7 +4,7 @@
     "main": "index.js",
     "types": "index.d.ts",
     "napi": {
-        "name": "corelib-rust",
+        "binaryName": "corelib-rust",
         "package": {
             "name": "corelib-rust"
         }
@@ -14,6 +14,7 @@
         "@napi-rs/cli": "^3.0.0"
     },
     "scripts": {
+        "install": "pnpm install",
         "build": "napi build --release --platform",
         "build:local": "napi build --release",
         "docs": "cargo doc --no-deps && node -e \"const fs=require('fs');const path=require('path');const t=path.join('target','doc');const d='docs';if(fs.existsSync(d))fs.rmSync(d,{recursive:true,force:true});fs.mkdirSync(d,{recursive:true});fs.cpSync(t,d,{recursive:true});fs.rmSync(t,{recursive:true,force:true});console.log('✅ Rust docs moved to ./rust/docs')\"",

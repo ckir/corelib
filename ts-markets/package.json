@@ -8,10 +8,11 @@
         "dist"
     ],
     "scripts": {
+        "install": "pnpm install",
         "build": "tsup",
         "watch": "tsup --watch",
         "test": "vitest",
-        "lint": "biome check . --max-diagnostics=100",
+        "lint": "biome check . --write --unsafe --max-diagnostics=100",
         "format": "biome format . --write",
         "docs": "typedoc",
         "clean": "del dist"

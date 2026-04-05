@@ -1,0 +1,14 @@
+{
+  "body": "{\"sql\":\"SELECT 1 + 1 as result\"}",
+  "resource": "/{proxy+}",
+  "path": "/api/v1/sql",
+  "httpMethod": "POST",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "requestContext": {
+    "resourcePath": "/{proxy+}",
+    "httpMethod": "POST",
+    "path": "/api/v1/sql"
+  }
+}

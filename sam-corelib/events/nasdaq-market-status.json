@@ -1,0 +1,11 @@
+{
+  "body": null,
+  "resource": "/{proxy+}",
+  "path": "/api/v1/markets/nasdaq/status",
+  "httpMethod": "GET",
+  "requestContext": {
+    "resourcePath": "/{proxy+}",
+    "httpMethod": "GET",
+    "path": "/api/v1/markets/nasdaq/status"
+  }
+}

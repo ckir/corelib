@@ -1,0 +1,14 @@
+{
+  "body": "{\"url\":\"https://api.nasdaq.com/api/quote/AAPL/info?assetclass=stocks\",\"options\":{\"method\":\"GET\"}}",
+  "resource": "/{proxy+}",
+  "path": "/api/v1/markets/nasdaq",
+  "httpMethod": "POST",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "requestContext": {
+    "resourcePath": "/{proxy+}",
+    "httpMethod": "POST",
+    "path": "/api/v1/markets/nasdaq"
+  }
+}

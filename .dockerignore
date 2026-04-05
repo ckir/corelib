@@ -1,0 +1,45 @@
+# Node & pnpm
+node_modules
+# pnpm-lock.yaml
+# pnpm-workspace.yaml
+
+# Rust build artifacts
+target
+rust/target
+corelib-rust.node
+*.node
+
+# TypeScript build artifacts
+dist
+ts-core/dist
+ts-cloud/dist
+ts-markets/dist
+*.tsbuildinfo
+
+# IDEs and OS files
+.idea
+.vscode
+.DS_Store
+*.swp
+*.log
+
+# Git
+.git
+.github
+
+# SAM & Cloud
+.aws-sam
+sam-corelib/.aws-sam
+.wrangler
+
+# Local environment
+.env
+.env.example
+*.txt
+*.ps1
+*.py
+nx.json
+target.yaml
+cleanup-*.sh
+docs
+**/docs

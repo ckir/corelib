@@ -8,3 +8,5 @@ onlyBuiltDependencies:
   - esbuild
   - msw
   - protobufjs
+  - sharp
+  - workerd

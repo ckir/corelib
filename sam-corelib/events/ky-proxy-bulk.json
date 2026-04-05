@@ -1,0 +1,14 @@
+{
+  "body": "{\"endPoints\":[{\"url\":\"https://jsonplaceholder.typicode.com/posts/1\"},{\"url\":\"https://jsonplaceholder.typicode.com/posts/2\"}]}",
+  "resource": "/{proxy+}",
+  "path": "/api/v1/ky",
+  "httpMethod": "POST",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "requestContext": {
+    "resourcePath": "/{proxy+}",
+    "httpMethod": "POST",
+    "path": "/api/v1/ky"
+  }
+}

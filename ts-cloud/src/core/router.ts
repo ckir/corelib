@@ -5,6 +5,7 @@
  * Optimized for deployment on edge environments (Cloudflare Workers, AWS Lambda, etc.).
  */
 
+import type { StrictLogger } from "@ckir/corelib";
 import { Hono } from "hono";
 import { sqlRouter } from "../database/SqlCloud";
 import { nasdaqRouter } from "../markets/nasdaq/ApiNasdaqUnlimitedCloud";
@@ -15,10 +16,38 @@ import type { AppEnv } from "./types";
 /**
  * Factory function to create and configure the main Hono application.
  * This setup includes health checks and versioned routing for corelib modules.
+ * @param {StrictLogger} [logger] Optional logger instance to use for request logging.
  * @returns {Hono<AppEnv>} The configured Hono application instance.
  */
-export const createRouter = (): Hono<AppEnv> => {
+export const createRouter = (logger?: StrictLogger): Hono<AppEnv> => {
 	const app = new Hono<AppEnv>();
+
+	/**
+	 * Inject environment variables and set logger
+	 */
+	app.use("*", async (c, next) => {
+		if (logger) {
+			c.set("logger", logger);
+		}
+
+		// Inject process.env into c.env if not already there
+		c.env.CORELIB_TURSO_URL =
+			c.env.CORELIB_TURSO_URL || process.env.CORELIB_TURSO_URL || "";
+		c.env.CORELIB_TURSO_TOKEN =
+			c.env.CORELIB_TURSO_TOKEN || process.env.CORELIB_TURSO_TOKEN || "";
+		c.env.PLATFORM = c.env.PLATFORM || "aws-lambda";
+
+		// Optional: Console log for debugging local SAM runs
+		if (process.env.MODE === "development") {
+			console.log("DEBUG ENV URL:", c.env.CORELIB_TURSO_URL);
+			console.log(
+				"DEBUG ENV TOKEN:",
+				c.env.CORELIB_TURSO_TOKEN ? "present" : "missing",
+			);
+		}
+
+		await next();
+	});
 
 	/**
 	 * Health Check
@@ -39,8 +68,19 @@ export const createRouter = (): Hono<AppEnv> => {
 	const apiV1 = new Hono<AppEnv>();
 
 	/**
+	 * Health Check (v1)
+	 */
+	apiV1.get("/health", (c) => {
+		return c.json({
+			status: "ok",
+			timestamp: new Date().toISOString(),
+			service: "ts-cloud",
+			version: "v1",
+		});
+	});
+
+	/**
 	 * RequestUnlimited (ky) Endpoint
-	 * Exposes corelib's resilient fetching logic.
 	 */
 	apiV1.route("/ky", kyRouter);
 

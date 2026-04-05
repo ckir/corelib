@@ -14,7 +14,14 @@ export default defineConfig([
 	},
 	{
 		entry: { handler: "src/platform/aws/handler.ts" },
-		format: ["esm"], // Changed from cjs to esm
+		format: ["esm"],
+		shims: true,
+		outExtension() {
+			return { js: ".mjs" };
+		},
+		banner: {
+			js: "import { createRequire } from 'module'; const require = createRequire(import.meta.url);",
+		},
 		target: "node24",
 		noExternal: [/.*/],
 		minify: true,

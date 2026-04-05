@@ -137,11 +137,17 @@ class StrictLoggerWrapper implements StrictLogger {
 	}
 }
 
-const transport = pino.transport({
-	targets: [{ level: "trace", target: "pino-pretty" }],
-});
+const isLambda = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
 
-const basePino = pino({ level: process.env.LOG_LEVEL || "info" }, transport);
+const transport = isLambda
+	? undefined
+	: pino.transport({
+			targets: [{ level: "trace", target: "pino-pretty" }],
+		});
+
+const basePino = transport
+	? pino({ level: process.env.LOG_LEVEL || "info" }, transport)
+	: pino({ level: process.env.LOG_LEVEL || "info" });
 
 const loggerInstance: StrictLogger = new StrictLoggerWrapper(basePino);
 globalThis.logger = loggerInstance;
