@@ -37,7 +37,7 @@
         "bun-types": "^1.1.0",
         "miniflare": "^4.20260317.0",
         "tsup": "^8.4.0",
-        "typedoc": "^0.28.17",
+        "typedoc": "^0.28.18",
         "typescript": "^6.0.2",
         "vite": "^8.0.1",
         "vitest": "^4.1.0",

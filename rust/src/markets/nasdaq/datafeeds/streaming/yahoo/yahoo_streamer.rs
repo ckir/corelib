@@ -452,12 +452,14 @@ impl YahooStreaming {
 mod tests {
     use super::*;
 
+    /*
     struct MockCallbacks;
     impl YahooCallbacks for MockCallbacks {
         fn on_log(&self, _: LogRecord) {}
         fn on_pricing(&self, _: JsPricingData) {}
         fn on_event(&self, _: EventRecord) {}
     }
+    */
 
     #[tokio::test]
     async fn test_load_subscriptions_empty() {
