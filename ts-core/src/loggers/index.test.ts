@@ -9,9 +9,9 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 
 // Mock GCP logger config to avoid metadata lookup warnings in CI/non-GCP environments
 vi.mock("@google-cloud/pino-logging-gcp-config", () => ({
-	createGcpLoggingPinoConfig: (opts: any, pinoOpts: any) => pinoOpts,
+	createGcpLoggingPinoConfig: (_opts: any, pinoOpts: any) => pinoOpts,
 	default: {
-		createGcpLoggingPinoConfig: (opts: any, pinoOpts: any) => pinoOpts,
+		createGcpLoggingPinoConfig: (_opts: any, pinoOpts: any) => pinoOpts,
 	},
 }));
 
