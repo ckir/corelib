@@ -11,16 +11,24 @@
 // - Child loggers are fully independent
 // =============================================
 
+// ts-core/src/loggers/common/index.ts
+
 import type { Logger as PinoLogger } from "pino";
-import pino from "pino";
 import { SysInfo } from "../../utils/SysInfo";
 
 declare global {
 	var logger: StrictLogger | undefined;
 }
 
+/**
+ * Method signature for all log levels.
+ */
 export type LogMethod = (msg: string, extras?: Record<string, unknown>) => void;
 
+/**
+ * StrictLogger Interface
+ * Defines a consistent API across all runtimes (Node, Bun, Deno, Cloudflare, etc.)
+ */
 export interface StrictLogger {
 	trace: LogMethod;
 	debug: LogMethod;
@@ -33,10 +41,15 @@ export interface StrictLogger {
 	level: string;
 	levelVal: number;
 	bindings: () => Record<string, unknown>;
-	silent: (...args: unknown[]) => void;
+	silent: () => void;
 }
 
-class StrictLoggerWrapper implements StrictLogger {
+/**
+ * StrictLoggerWrapper
+ * Wraps a standard Pino instance to enforce the StrictLogger interface
+ * and inject system telemetry when enabled.
+ */
+export class StrictLoggerWrapper implements StrictLogger {
 	private pinoInstance: PinoLogger;
 	private telemetryEnabled = false;
 
@@ -45,7 +58,11 @@ class StrictLoggerWrapper implements StrictLogger {
 		this.telemetryEnabled = inheritTelemetry;
 	}
 
-	private enforceStrict(msg: unknown, extras?: unknown): void {
+	private getTelemetry() {
+		return this.telemetryEnabled ? SysInfo.get() : undefined;
+	}
+
+	private validate(msg: unknown, extras?: unknown) {
 		if (typeof msg !== "string") {
 			throw new Error(
 				"Logger requires string message first, optional object second",
@@ -61,95 +78,63 @@ class StrictLoggerWrapper implements StrictLogger {
 		}
 	}
 
-	private getTelemetry() {
-		if (!this.telemetryEnabled) return undefined;
-		return SysInfo.get(); // refreshed every single log call
-	}
-
-	private log(
-		level: keyof PinoLogger,
-		msg: string,
-		extras?: Record<string, unknown>,
-	) {
-		this.enforceStrict(msg, extras);
-
-		const telemetry = this.getTelemetry();
-		const logObj: Record<string, unknown> = {};
-
-		if (extras) logObj.extras = extras;
-		if (telemetry) logObj.telemetry = telemetry;
-
-		// @ts-expect-error - pino method access
-		this.pinoInstance[level](msg, logObj);
-	}
-
 	trace(msg: string, extras?: Record<string, unknown>) {
-		this.log("trace", msg, extras);
+		this.validate(msg, extras);
+		this.pinoInstance.trace({ ...extras, telemetry: this.getTelemetry() }, msg);
 	}
 	debug(msg: string, extras?: Record<string, unknown>) {
-		this.log("debug", msg, extras);
+		this.validate(msg, extras);
+		this.pinoInstance.debug({ ...extras, telemetry: this.getTelemetry() }, msg);
 	}
 	info(msg: string, extras?: Record<string, unknown>) {
-		this.log("info", msg, extras);
+		this.validate(msg, extras);
+		this.pinoInstance.info({ ...extras, telemetry: this.getTelemetry() }, msg);
 	}
 	warn(msg: string, extras?: Record<string, unknown>) {
-		this.log("warn", msg, extras);
+		this.validate(msg, extras);
+		this.pinoInstance.warn({ ...extras, telemetry: this.getTelemetry() }, msg);
 	}
 	error(msg: string, extras?: Record<string, unknown>) {
-		this.log("error", msg, extras);
+		this.validate(msg, extras);
+		this.pinoInstance.error({ ...extras, telemetry: this.getTelemetry() }, msg);
 	}
 	fatal(msg: string, extras?: Record<string, unknown>) {
-		this.log("fatal", msg, extras);
+		this.validate(msg, extras);
+		this.pinoInstance.fatal({ ...extras, telemetry: this.getTelemetry() }, msg);
 	}
 
 	child(bindings: Record<string, unknown>): StrictLogger {
-		const childPino = this.pinoInstance.child(bindings);
-		const childWrapper = new StrictLoggerWrapper(
-			childPino,
+		return new StrictLoggerWrapper(
+			this.pinoInstance.child(bindings),
 			this.telemetryEnabled,
 		);
-		return childWrapper;
 	}
 
-	setTelemetry(mode: "on" | "off") {
+	setTelemetry(mode: "on" | "off"): void {
 		if (mode !== "on" && mode !== "off") {
-			throw new Error(`setTelemetry accepts only 'on' or 'off', got: ${mode}`);
+			throw new Error("setTelemetry accepts only 'on' or 'off'");
 		}
 		this.telemetryEnabled = mode === "on";
 	}
 
-	// Expose Pino properties required by tests
 	get level() {
 		return this.pinoInstance.level;
 	}
-	set level(v: string) {
-		this.pinoInstance.level = v;
+	set level(val: string) {
+		this.pinoInstance.level = val;
 	}
 	get levelVal() {
-		return (this.pinoInstance as any).levelVal;
+		return this.pinoInstance.levelVal;
 	}
-	bindings() {
-		return this.pinoInstance.bindings() as Record<string, unknown>;
+
+	bindings(): Record<string, unknown> {
+		return this.pinoInstance.bindings();
 	}
-	silent(...args: unknown[]) {
-		// @ts-expect-error - pino internal
-		return this.pinoInstance.silent(...args);
+
+	silent(): void {
+		this.pinoInstance.level = "silent";
 	}
 }
 
-const isLambda = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
-
-const transport = isLambda
-	? undefined
-	: pino.transport({
-			targets: [{ level: "trace", target: "pino-pretty" }],
-		});
-
-const basePino = transport
-	? pino({ level: process.env.LOG_LEVEL || "info" }, transport)
-	: pino({ level: process.env.LOG_LEVEL || "info" });
-
-const loggerInstance: StrictLogger = new StrictLoggerWrapper(basePino);
-globalThis.logger = loggerInstance;
-
-export default loggerInstance;
+// FIX: Added default export so 'import logger from "../common"' works in implementations
+export default StrictLoggerWrapper;

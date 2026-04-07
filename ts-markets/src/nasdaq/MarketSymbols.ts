@@ -129,7 +129,7 @@ export class MarketSymbols {
 	 */
 	public async get(symbol: string): Promise<MarketSymbolRow | null> {
 		const runtime = detectRuntime();
-		const isEdge = ["edge-cloudflare", "edge-vercel", "lambda"].includes(
+		const isEdge = ["cloudflare", "aws-lambda", "gcp-cloudrun"].includes(
 			runtime,
 		);
 

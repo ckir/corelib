@@ -50,6 +50,7 @@ The following tools are available in the development environment and should be u
 - **Cloud & Serverless**: `wrangler` (Cloudflare), `sam` (AWS), `gcloud` (GCP).
 - **Automation & Containers**: `act` (Local GitHub Actions), `docker` (Docker Desktop), `gh` (GitHub CLI).
 - **Environment**: `wsl` (Ubuntu 24.04).
+- **Security & Secrets**: `sops` (Mozilla SOPS).
 - **CLI Utilities**: `fd` (Fast find), `sd` (Smart search/replace), `rip` (Safe rm).
 
 ## 6. Gemini Operational Mandates

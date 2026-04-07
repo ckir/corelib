@@ -32,6 +32,10 @@ export default defineConfig([
 	{
 		entry: { server: "src/platform/cloudrun/server.ts" },
 		format: ["esm"],
+		shims: true,
+		banner: {
+			js: "import { createRequire } from 'module'; const require = createRequire(import.meta.url);",
+		},
 		target: "node24",
 		noExternal: [/.*/],
 		minify: true,

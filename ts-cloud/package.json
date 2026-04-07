@@ -10,7 +10,7 @@
     "scripts": {
         "dev": "wrangler dev",
         "build": "tsup",
-        "postbuild": "node -e \"const fs=require('fs');const path=require('path');const d=path.join('dist','aws');const nm=path.join(d,'node_modules','@libsql','linux-x64-gnu');if(!fs.existsSync(nm))fs.mkdirSync(nm,{recursive:true});const src=path.join('..','node_modules','.pnpm','@libsql+linux-x64-gnu@0.5.28','node_modules','@libsql','linux-x64-gnu');if(fs.existsSync(src)){fs.cpSync(src,nm,{recursive:true});console.log('✅ Copied @libsql/linux-x64-gnu to dist/aws');}const rust=path.join('..','ts-core','corelib-rust.node');if(fs.existsSync(rust)){fs.copyFileSync(rust,path.join(d,'corelib-rust.node'));console.log('✅ Copied corelib-rust.node to dist/aws');}\"",
+        "postbuild": "node -e \"const fs=require('fs');const path=require('path');const awsDir=path.join('dist','aws');const crDir=path.join('dist','cloudrun');[awsDir, crDir].forEach(d => { if(!fs.existsSync(d)) fs.mkdirSync(d, {recursive:true}); const rust=path.join('..','ts-core','corelib-rust.node'); if(fs.existsSync(rust)) { fs.copyFileSync(rust, path.join(d,'corelib-rust.node')); console.log('✅ Copied corelib-rust.node to ' + d); } });\"",
         "watch": "tsup --watch",
         "test": "vitest",
         "test:worker": "vitest --config vitest.config.ts",
@@ -24,7 +24,7 @@
         "@ckir/corelib-markets": "workspace:*",
         "@hono/node-server": "^1.13.8",
         "hono": "^4.7.4",
-        "ky": "^1.14.3",
+        "ky": "^2.0.0",
         "serialize-error": "^13.0.1"
     },
     "devDependencies": {
@@ -41,6 +41,6 @@
         "typescript": "^6.0.2",
         "vite": "^8.0.1",
         "vitest": "^4.1.0",
-        "wrangler": "^4.75.0"
+        "wrangler": "^4.80.0"
     }
 }

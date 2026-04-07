@@ -2,10 +2,15 @@
 // FILE: ts-core/src/loggers/index.test.ts
 // PURPOSE: Comprehensive test suite for loggers/index.ts
 // Verifies strict API, telemetry, child independence, levels, and pino properties.
+// Includes validation for edge-specific logger implementations (Cloudflare, AWS, GCP).
 // =============================================
 
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { SysInfo } from "../utils/SysInfo";
+// Import edge environment implementations for explicit testing
+import createCloudflareLogger from "./implementations/cloudflare";
+import createGcpLogger from "./implementations/gcp";
+import createLambdaLogger from "./implementations/lambda";
 import logger from "./index";
 
 const testMessage = "Test message";
@@ -149,7 +154,6 @@ describe("Logger Implementation (StrictLoggerWrapper)", () => {
 		it("child telemetry is independent from parent after creation", () => {
 			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
 			const child = logger!.child({ module: "independent-test" });
-
 			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
 			logger!.setTelemetry("on");
 			child.setTelemetry("off");
@@ -194,7 +198,51 @@ describe("Logger Implementation (StrictLoggerWrapper)", () => {
 			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
 			expect(typeof logger!.silent).toBe("function");
 			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
-			expect(() => logger!.silent("nothing")).not.toThrow();
+			expect(() => logger!.silent()).not.toThrow();
+		});
+	});
+
+	// ===================================================================
+	// Edge Environment Implementations
+	// ===================================================================
+	describe("Edge Environment Implementations", () => {
+		it("Cloudflare logger should conform to StrictLogger and use console.log", () => {
+			// Intercept console.log to prevent test noise and verify payload
+			const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+			const cfLogger = createCloudflareLogger();
+
+			expect(cfLogger.info).toBeDefined();
+			expect(cfLogger.child).toBeDefined();
+
+			// Test the custom edge serialization structure
+			cfLogger.info("Edge test message", { edgeMode: true });
+
+			expect(consoleSpy).toHaveBeenCalledTimes(1);
+			const logOutput = JSON.parse(consoleSpy.mock.calls[0][0]);
+
+			expect(logOutput.msg).toBe("Edge test message");
+			expect(logOutput.level).toBe("info");
+			expect(logOutput.extras.edgeMode).toBe(true);
+
+			consoleSpy.mockRestore();
+		});
+
+		it("AWS Lambda logger should instantiate and conform to StrictLogger", () => {
+			// Verifies that pino-lambda initializes correctly within the wrapper without crashing
+			const lambdaLogger = createLambdaLogger();
+
+			expect(lambdaLogger.info).toBeDefined();
+			expect(lambdaLogger.child).toBeDefined();
+			expect(() => lambdaLogger.info("Lambda init test")).not.toThrow();
+		});
+
+		it("GCP CloudRun logger should instantiate and conform to StrictLogger", () => {
+			// Verifies that @google-cloud/pino-logging-gcp-config resolves and initializes correctly
+			const gcpLogger = createGcpLogger();
+
+			expect(gcpLogger.info).toBeDefined();
+			expect(gcpLogger.child).toBeDefined();
+			expect(() => gcpLogger.info("GCP init test")).not.toThrow();
 		});
 	});
 });

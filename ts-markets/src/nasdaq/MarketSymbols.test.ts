@@ -186,7 +186,7 @@ describe("MarketSymbols - Integrated Suite", () => {
 		});
 
 		it("Edge: Sequence should be API -> Ingestor -> DB", async () => {
-			vi.mocked(corelib.detectRuntime).mockReturnValue("edge-cloudflare");
+			vi.mocked(corelib.detectRuntime).mockReturnValue("cloudflare");
 
 			// 1. API fails
 			vi.mocked(ApiNasdaqUnlimited.endPoint).mockResolvedValue({
@@ -209,11 +209,18 @@ describe("MarketSymbols - Integrated Suite", () => {
 			expect(corelib.endPoint).toHaveBeenCalledWith(
 				expect.stringContaining(GAS_URL),
 			);
-			// DB check should not have happened yet because Ingestor succeeded
-			expect(mockDbQuery).not.toHaveBeenCalledWith(
-				expect.stringContaining("SELECT symbol"),
-				["AAPL"],
+
+			// DB check for the actual symbol search should not have happened
+			// because Ingestor succeeded.
+			// Initialization queries (CREATE TABLE, CREATE INDEX, SELECT MAX(ts)) are expected.
+			const symbolSearchCalls = mockDbQuery.mock.calls.filter(
+				(call) =>
+					typeof call[0] === "string" &&
+					call[0].includes("SELECT symbol, type") &&
+					call[0].includes("FROM nasdaq_symbols"),
 			);
+			expect(symbolSearchCalls.length).toBe(0);
+
 			expect(result?.name).toBe("Edge Name");
 		});
 	});

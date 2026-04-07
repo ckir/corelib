@@ -30,7 +30,7 @@
     "dependencies": {
         "@bufbuild/protobuf": "^2.11.0",
         "@ckir/corelib": "workspace:*",
-        "ky": "^1.14.3",
+        "ky": "^2.0.0",
         "luxon": "^3.7.2",
         "protobufjs": "^8.0.0",
         "serialize-error": "^13.0.1",

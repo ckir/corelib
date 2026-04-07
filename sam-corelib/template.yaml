@@ -22,6 +22,17 @@ Resources:
           LOG_LEVEL: info
           CORELIB_TURSO_URL: "libsql://:memory:"
           CORELIB_TURSO_TOKEN: "local-dev-token"
+      Events:
+        HttpApiEvent:
+          Type: HttpApi
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+        HttpApiRootEvent:
+          Type: HttpApi
+          Properties:
+            Path: /
+            Method: ANY
       FunctionUrlConfig:
         AuthType: NONE
         InvokeMode: BUFFERED

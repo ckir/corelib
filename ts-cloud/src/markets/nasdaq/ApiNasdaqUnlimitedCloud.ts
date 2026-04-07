@@ -12,7 +12,7 @@ import type { AppEnv } from "../../core/types";
 
 /**
  * Hono router for Nasdaq API proxying.
- * Mounted at /api/v1/markets/nasdaq in the main application[cite: 6].
+ * Mounted at /api/v1/markets/nasdaq in the main application.
  */
 export const nasdaqRouter = new Hono<AppEnv>();
 
@@ -55,7 +55,7 @@ nasdaqRouter.post("/", async (c) => {
 		};
 		return c.json(invalidPayloadResult, 200);
 	} catch (error) {
-		// Log the error using serialize-error for structured reporting [cite: 3, 20]
+		// Log the error using serialize-error for structured reporting 
 		c.get("logger")?.error(
 			"ApiNasdaqUnlimitedCloud: Internal execution error",
 			{

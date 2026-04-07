@@ -226,7 +226,10 @@ mod tests {
 
         handle.stop();
         let before = counter.load(Ordering::SeqCst);
-        assert!(before > 0, "Cron should have fired at least once before stopping");
+        assert!(
+            before > 0,
+            "Cron should have fired at least once before stopping"
+        );
 
         thread::sleep(Duration::from_secs(2));
         assert_eq!(

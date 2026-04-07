@@ -102,7 +102,7 @@ def get_health_cmd():
     cmds = [
         'pnpm --version', 'cargo --version', 'python --version', 'gh --version',
         'pnpm -C ts-cloud exec wrangler --version', 'gcloud --version', 'sam --version', 'docker --version',
-        'act --version', 'wsl --version', 'fd --version', 'sd --version', 'rip --version'
+        'act --version', 'wsl --version', 'fd --version', 'sd --version', 'rip --version', 'sops --version --check-for-updates'
     ]
     runtime = config.get('RUNTIME', 'node').lower()
     if runtime == 'bun': cmds.append('bun --version')

@@ -7,28 +7,39 @@
 //   • Added declarations for EdgeRuntime and __CFW__ to avoid any
 // =============================================
 export type Runtime =
-	| "bun"
 	| "node"
+	| "bun"
 	| "deno"
-	| "edge-cloudflare"
-	| "edge-vercel"
-	| "lambda"
-	| "unknown";
-
-declare var EdgeRuntime: unknown | undefined;
-declare var __CFW__: unknown | undefined;
+	| "cloudflare" // Cloudflare Workers
+	| "aws-lambda" // AWS Lambda
+	| "gcp-cloudrun"; // Google Cloud Run
 
 export function detectRuntime(): Runtime {
-	// Developers Cockpit: honour RUNTIME=windows/bun/etc from root .env
-	if (typeof process !== "undefined" && process.env?.RUNTIME) {
-		const r = process.env.RUNTIME.toLowerCase().trim();
-		if (["bun", "node", "deno"].includes(r)) return r as Runtime;
+	// Cloudflare Workers
+	if (typeof globalThis !== "undefined" && "cloudflare" in globalThis) {
+		return "cloudflare";
 	}
 
+	// AWS Lambda
+	if (process.env.AWS_LAMBDA_FUNCTION_NAME) {
+		return "aws-lambda";
+	}
+
+	// Google Cloud Run
+	if (
+		process.env.K_SERVICE ||
+		process.env.K_REVISION ||
+		process.env.GOOGLE_CLOUD_PROJECT
+	) {
+		return "gcp-cloudrun";
+	}
+
+	// Bun
 	if (typeof Bun !== "undefined") return "bun";
+
+	// Deno
 	if (typeof Deno !== "undefined") return "deno";
-	if (typeof EdgeRuntime !== "undefined" || typeof __CFW__ !== "undefined")
-		return "edge-cloudflare";
-	if (process.env.AWS_LAMBDA_FUNCTION_NAME) return "lambda";
+
+	// Default = Node.js
 	return "node";
 }

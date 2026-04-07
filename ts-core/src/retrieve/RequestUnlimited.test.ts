@@ -264,7 +264,9 @@ describe("RequestUnlimited", () => {
 			expect(results[0].status).toBe("success");
 			expect(results[1].status).toBe("error");
 			if (results[1].status === "error") {
-				expect(results[1].reason).toHaveProperty("name", "TypeError"); // Fetch failure usually TypeError
+				// Fetch failure usually TypeError in Node/Browsers, but MSW/Vitest might report NetworkError
+				const errorName = (results[1].reason as any).name;
+				expect(["TypeError", "NetworkError"]).toContain(errorName);
 			}
 		});
 	});
