@@ -8,7 +8,7 @@ import { ApiNasdaqUnlimited, type NasdaqResult } from "@ckir/corelib-markets";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { nasdaqRouter } from "./ApiNasdaqUnlimitedCloud";
 
-// Mock the corelib-markets dependency to isolate router logic 
+// Mock the corelib-markets dependency to isolate router logic
 vi.mock("@ckir/corelib-markets", () => ({
 	ApiNasdaqUnlimited: {
 		endPoint: vi.fn(),

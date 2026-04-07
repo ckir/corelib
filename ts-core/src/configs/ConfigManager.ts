@@ -7,17 +7,18 @@
 // =============================================
 
 import { EventEmitter } from "node:events";
-import { join } from "node:path";
 import { Command } from "commander";
 import { deepmergeCustom } from "deepmerge-ts";
 import { serializeError } from "serialize-error";
 import {
+	detectRuntime,
 	existsSync,
 	getAllEnv,
 	getCwd,
 	getDirname,
 	getMode,
 	getPlatform,
+	getRequire,
 	readTextFileSync,
 } from "../utils";
 import { decryptConfig } from "./ConfigUtils";
@@ -44,7 +45,17 @@ export class ConfigManager extends EventEmitter {
 	private constructor() {
 		super();
 		const __dirname = getDirname();
-		this._defaultsPath = join(__dirname, "ConfigManager.json");
+		let defaultsPath = __dirname;
+
+		try {
+			const { join } = getRequire()("node:path");
+			defaultsPath = join(__dirname, "ConfigManager.json");
+		} catch (_e) {
+			// In edge, we can't join paths or load files anyway
+			defaultsPath = `${__dirname}/ConfigManager.json`;
+		}
+
+		this._defaultsPath = defaultsPath;
 
 		// Initialize the Global Active Object if not already present
 		if (!(globalThis as any).sysconfig) {
@@ -378,8 +389,18 @@ export class ConfigManager extends EventEmitter {
 
 	private getAppName(): string {
 		try {
-			const { basename } = require("node:path");
-			return basename(getCwd());
+			const runtime = detectRuntime();
+			if (
+				runtime === "node" ||
+				runtime === "bun" ||
+				(typeof import.meta !== "undefined" &&
+					import.meta.url &&
+					import.meta.url.startsWith("file:"))
+			) {
+				const { basename } = getRequire()("node:path");
+				return basename(getCwd());
+			}
+			return "edge-app";
 		} catch (e) {
 			this.logError(
 				"Failed to get app name from cwd. Falling back to default-app",

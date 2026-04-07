@@ -8,14 +8,20 @@
 import { EventEmitter } from "node:events";
 import { coreFFI, getMode, getTempDir } from "@ckir/corelib";
 
-const { YahooStreaming: RustYahoo } = coreFFI as any; // napi class
+const RustYahoo = (coreFFI as any)?.YahooStreaming;
 
 export class YahooStreaming extends EventEmitter {
-	private rust: InstanceType<typeof RustYahoo>;
+	private rust: any;
 	private initialized = false;
 
 	constructor() {
 		super();
+
+		if (!RustYahoo) {
+			throw new Error(
+				"YahooStreaming (Native) is not supported in this runtime (no FFI available).",
+			);
+		}
 
 		this.rust = new RustYahoo(
 			(_err: any, record: any) => this.emit("log", record),

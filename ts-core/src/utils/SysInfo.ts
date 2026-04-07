@@ -9,8 +9,28 @@
 // =============================================
 
 import { createRequire } from "node:module";
-
 import { detectRuntime } from "./runtime";
+
+let _require: any;
+const getRequire = () => {
+	if (!_require) {
+		const runtime = detectRuntime();
+		if (
+			(runtime === "node" || runtime === "bun") &&
+			typeof import.meta !== "undefined" &&
+			import.meta.url
+		) {
+			_require = createRequire(import.meta.url);
+		} else {
+			_require = (path: string) => {
+				throw new Error(
+					`require("${path}") is not available in this runtime (${runtime}).`,
+				);
+			};
+		}
+	}
+	return _require;
+};
 
 function redactEnv(
 	env: Record<string, string | undefined>,
@@ -38,8 +58,7 @@ function redactEnv(
 }
 
 function fromNodeLike(runtime: "node" | "bun") {
-	const require = createRequire(import.meta.url);
-	const os = require("node:os");
+	const os = getRequire()("node:os");
 
 	const mem: any =
 		typeof process.memoryUsage === "function" ? process.memoryUsage() : {};

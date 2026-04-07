@@ -5,25 +5,67 @@
 // FIXED (2026-03-07): Replaced 'any' type for ffi with 'unknown' to avoid noExplicitAny lint error (safer than any while maintaining dynamic nature). Organized imports alphabetically per Biome assist/source/organizeImports. Added type guards for coreFFI accesses to fix 'unknown' type errors. All unrelated features (e.g., runtime detection, FFI loading logic) remain fully maintained and unchanged.
 // =============================================
 
-import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
-import path from "node:path"; // For node/bun
 import { detectRuntime } from "../utils/runtime";
 
 const runtime = detectRuntime();
-const require = createRequire(import.meta.url);
-let ffi: unknown;
+let _require: any;
+
+const getRequire = () => {
+	if (!_require) {
+		// createRequire(import.meta.url) crashes in Cloudflare Workers if import.meta.url is undefined
+		if (
+			(runtime === "node" || runtime === "bun") &&
+			typeof import.meta !== "undefined" &&
+			import.meta.url
+		) {
+			_require = createRequire(import.meta.url);
+		} else {
+			_require = (path: string) => {
+				throw new Error(
+					`require("${path}") is not available in this runtime (${runtime}).`,
+				);
+			};
+		}
+	}
+	return _require;
+};
 
 async function loadFFI() {
+	if (runtime === "cloudflare") {
+		return null; // FFI not supported/needed on Cloudflare Workers for now
+	}
+
 	const binaryName = "corelib-rust.node";
 
 	// We try paths relative to this file's location (src/core/index.ts or dist/index.js)
-	const pathsToTry = [
-		path.resolve(import.meta.dirname, binaryName), // same dir (unlikely but possible)
-		path.resolve(import.meta.dirname, "..", binaryName), // parent dir (standard for dist/ -> root)
-		path.resolve(import.meta.dirname, "..", "..", binaryName), // grandparent dir (standard for src/core/ -> root)
-	];
+	const pathsToTry: string[] = [];
+	if (typeof import.meta !== "undefined" && import.meta.url) {
+		try {
+			pathsToTry.push(new URL(`./${binaryName}`, import.meta.url).pathname);
+		} catch (_e) {
+			// Ignore if URL is invalid (e.g. in some bundled environments)
+		}
+	}
 
+	if (runtime !== "deno") {
+		const path = getRequire()("node:path");
+		const dirname = (import.meta as any).dirname;
+		if (dirname) {
+			pathsToTry.push(
+				path.resolve(dirname, binaryName),
+				path.resolve(dirname, "..", binaryName),
+				path.resolve(dirname, "..", "..", binaryName),
+			);
+		}
+		pathsToTry.push(
+			path.resolve(process.cwd(), binaryName), // same dir (unlikely but possible)
+			path.resolve(process.cwd(), "..", binaryName), // parent dir (standard for dist/ -> root)
+			path.resolve(process.cwd(), "..", "..", binaryName), // grandparent dir (standard for src/core/ -> root)
+		);
+	}
+
+	const { existsSync } = getRequire()("node:fs");
 	const libPath = pathsToTry.find((p) => existsSync(p));
 
 	if (!libPath) {
@@ -32,6 +74,7 @@ async function loadFFI() {
 		);
 	}
 
+	let ffi: unknown;
 	if (runtime === "deno") {
 		// Deno: Try dlopen on .node (may need --allow-ffi --unstable)
 		// If fails, build plain cdylib and adjust symbols
@@ -41,7 +84,7 @@ async function loadFFI() {
 		});
 	} else {
 		// Node/Bun: napi-rs via bindings
-		ffi = require(libPath); // Or bindings('corelib-rust')
+		ffi = getRequire()(libPath); // Or bindings('corelib-rust')
 	}
 	return ffi;
 }

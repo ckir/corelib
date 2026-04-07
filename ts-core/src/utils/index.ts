@@ -10,7 +10,26 @@
 import { createRequire } from "node:module";
 import { detectRuntime } from "./runtime";
 
-const require = createRequire(import.meta.url);
+let _require: any;
+export const getRequire = () => {
+	if (!_require) {
+		const runtime = detectRuntime();
+		if (
+			(runtime === "node" || runtime === "bun") &&
+			typeof import.meta !== "undefined" &&
+			import.meta.url
+		) {
+			_require = createRequire(import.meta.url);
+		} else {
+			_require = (path: string) => {
+				throw new Error(
+					`require("${path}") is not available in this runtime (${runtime}).`,
+				);
+			};
+		}
+	}
+	return _require;
+};
 
 export { includeExcludeCron } from "./cron";
 export { detectRuntime, type Runtime } from "./runtime";
@@ -40,7 +59,7 @@ export const readTextFileSync = (file: string): string => {
 	if (detectRuntime() === "deno") {
 		return Deno.readTextFileSync(file);
 	} else {
-		const { readFileSync } = require("node:fs");
+		const { readFileSync } = getRequire()("node:fs");
 		return readFileSync(file, "utf8");
 	}
 };
@@ -54,7 +73,7 @@ export const existsSync = (file: string): boolean => {
 			return false;
 		}
 	} else {
-		const { existsSync } = require("node:fs");
+		const { existsSync } = getRequire()("node:fs");
 		return existsSync(file);
 	}
 };
@@ -68,13 +87,27 @@ export const getCwd = (): string => {
 };
 
 export const getDirname = () => {
-	if (detectRuntime() === "deno") {
+	const runtime = detectRuntime();
+	if (runtime === "deno") {
 		return new URL(".", import.meta.url).pathname;
-	} else {
-		const { dirname } = require("node:path");
-		const { fileURLToPath } = require("node:url");
-		return dirname(fileURLToPath(import.meta.url));
 	}
+
+	// Edge-safe getDirname for Node, Bun, Cloudflare, etc.
+	if (typeof import.meta !== "undefined" && import.meta.url) {
+		const url = new URL(import.meta.url);
+		if (url.protocol === "file:") {
+			// Node/Bun/Local
+			const { dirname } = getRequire()("node:path");
+			const { fileURLToPath } = getRequire()("node:url");
+			return dirname(fileURLToPath(import.meta.url));
+		}
+		// Remote/Edge (Cloudflare, etc.)
+		// Strip the filename from the URL path
+		const path = url.pathname;
+		return path.substring(0, path.lastIndexOf("/"));
+	}
+
+	return "";
 };
 
 /**
@@ -103,7 +136,7 @@ export const getTempDir = (): string => {
 	if (detectRuntime() === "deno") {
 		return Deno.env.get("TMPDIR") || Deno.env.get("TEMP") || "/tmp";
 	} else {
-		const os = require("node:os");
+		const os = getRequire()("node:os");
 		return os.tmpdir();
 	}
 };

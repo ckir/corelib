@@ -1,15 +1,19 @@
-import { createEdgeLogger } from "../../core/logger";
+import { logger } from "@ckir/corelib";
 import { createRouter } from "../../core/router";
 
-const app = createRouter();
-const logger = createEdgeLogger({ platform: "cloudflare" });
+const app = createRouter(logger);
 
 app.use("*", async (c, next) => {
-	c.set("logger", logger);
+	const logger = c.get("logger");
+	logger?.info(`Incoming request: ${c.req.method} ${c.req.url}`);
+
+	(c as any).env = c.env || {};
 	c.env.PLATFORM = "cloudflare";
 	await next();
 });
 
 export default {
-	fetch: app.fetch,
+	fetch: (request: Request, env: any, ctx: any) => {
+		return app.fetch(request, env, ctx);
+	},
 };

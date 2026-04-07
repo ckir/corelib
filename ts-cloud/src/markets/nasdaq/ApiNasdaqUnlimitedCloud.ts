@@ -55,7 +55,7 @@ nasdaqRouter.post("/", async (c) => {
 		};
 		return c.json(invalidPayloadResult, 200);
 	} catch (error) {
-		// Log the error using serialize-error for structured reporting 
+		// Log the error using serialize-error for structured reporting
 		c.get("logger")?.error(
 			"ApiNasdaqUnlimitedCloud: Internal execution error",
 			{

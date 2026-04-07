@@ -19,5 +19,9 @@ COPY dist/cloudrun/ ./
 EXPOSE 3000
 ENV PORT=3000
 
+# Simulate GCP Cloud Run environment variables to trigger gcp-cloudrun detection
+ENV K_SERVICE=ts-cloud
+ENV GOOGLE_CLOUD_PROJECT=local-simulation
+
 # Run the server
 CMD ["node", "server.js"]

@@ -15,13 +15,8 @@ const runtime = detectRuntime();
 
 async function loadLogger() {
 	let impl: any;
+
 	switch (runtime) {
-		case "bun":
-			impl = await import("./implementations/bun.js");
-			break;
-		case "deno":
-			impl = await import("./implementations/deno.js");
-			break;
 		case "cloudflare":
 			impl = await import("./implementations/cloudflare.js");
 			break;
@@ -31,8 +26,15 @@ async function loadLogger() {
 		case "gcp-cloudrun":
 			impl = await import("./implementations/gcp.js");
 			break;
+		case "bun":
+			impl = await import("./implementations/bun.js");
+			break;
+		case "deno":
+			impl = await import("./implementations/deno.js");
+			break;
 		default:
 			impl = await import("./implementations/node.js");
+			break;
 	}
 
 	const loggerRaw = impl.default;

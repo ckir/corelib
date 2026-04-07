@@ -30,6 +30,9 @@ export const createRouter = (logger?: StrictLogger): Hono<AppEnv> => {
 			c.set("logger", logger);
 		}
 
+		// Ensure c.env exists (Hono Context.env can be undefined in Node if not passed)
+		(c as any).env = c.env || {};
+
 		// Inject process.env into c.env if not already there
 		c.env.CORELIB_TURSO_URL =
 			c.env.CORELIB_TURSO_URL || process.env.CORELIB_TURSO_URL || "";
