@@ -13,9 +13,16 @@ let _require: any;
 
 const getRequire = () => {
 	if (!_require) {
+		const isNodeLike = [
+			"node",
+			"bun",
+			"aws-lambda",
+			"gcp-cloudrun",
+		].includes(runtime);
+
 		// createRequire(import.meta.url) crashes in Cloudflare Workers if import.meta.url is undefined
 		if (
-			(runtime === "node" || runtime === "bun") &&
+			isNodeLike &&
 			typeof import.meta !== "undefined" &&
 			import.meta.url
 		) {

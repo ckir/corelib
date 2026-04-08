@@ -3,6 +3,9 @@ main = "src/platform/cloudflare/worker.ts"
 compatibility_date = "2025-02-04"
 compatibility_flags = ["nodejs_compat"]
 
+[dev]
+port = 3000
+
 [vars]
 PLATFORM = "cloudflare"
 # CORELIB_TURSO_URL = ""
