@@ -2,6 +2,7 @@
  * @file ts-cloud/src/retrieve/RequestUnlimitedCloud.ts
  * @description Edge-compatible Hono sub-router exposing corelib's RequestUnlimited logic.
  * Purpose: Expose corelib functionality on edge environments via /api/v1/ky.
+ * Note: This proxy is transparent for single requests but returns RequestResult for bulk/error scenarios.
  */
 
 import { endPoint, type RequestResult } from "@ckir/corelib";
@@ -13,8 +14,6 @@ export const kyRouter = new Hono<AppEnv>();
 
 /**
  * Maps an arbitrary status code to a Hono-compatible ContentfulStatusCode.
- * If the status code prohibits a response body (e.g., 204, 304, 1xx),
- * it defaults to 200 to allow the JSON metadata to be sent.
  */
 function toContentfulStatus(code: number): ContentfulStatusCode {
 	const isNonContentful =
@@ -25,25 +24,6 @@ function toContentfulStatus(code: number): ContentfulStatusCode {
 	}
 
 	return code as ContentfulStatusCode;
-}
-
-/**
- * Extracts the underlying HTTP status code from a corelib RequestResult.
- */
-function getInnerStatus(result: RequestResult): number {
-	if (result.status === "success") {
-		return result.value.status;
-	}
-	if (
-		result.status === "error" &&
-		result.reason &&
-		typeof result.reason === "object" &&
-		"status" in result.reason &&
-		typeof (result.reason as { status?: number }).status === "number"
-	) {
-		return (result.reason as { status: number }).status;
-	}
-	return 500;
 }
 
 /**
@@ -75,17 +55,17 @@ kyRouter.post("/", async (c) => {
 					};
 				}),
 			);
-			// Outer status is 200 to allow the array of results in the body
 			return c.json(results, 200);
 		}
 
 		// Scenario 2: Single Endpoint
 		if (typeof body.url === "string") {
 			const result = await endPoint(body.url, body.options || {});
-			const innerStatus = getInnerStatus(result);
-			const finalStatus = toContentfulStatus(innerStatus);
-
-			return c.json(result, finalStatus);
+			if (result.status === "success") {
+				const finalStatus = toContentfulStatus(result.value.status);
+				return c.json(result.value.body, finalStatus);
+			}
+			return c.json(result, (result.reason as any)?.status || 500);
 		}
 
 		return c.json(
@@ -100,6 +80,44 @@ kyRouter.post("/", async (c) => {
 		);
 	} catch (error) {
 		c.get("logger")?.error("RequestUnlimitedCloud: Internal execution error", {
+			error,
+		});
+
+		return c.json(
+			{
+				status: "error",
+				reason: { message: "Internal Edge Proxy Error" },
+			},
+			500,
+		);
+	}
+});
+
+/**
+ * GET /
+ * Support for proxied requests via query parameter (e.g. ?url=...).
+ * Used by RequestProxied.
+ */
+kyRouter.get("/", async (c) => {
+	try {
+		const url = c.req.query("url");
+
+		if (!url) {
+			return c.json(
+				{ status: "error", reason: { message: "Missing 'url' query parameter" } },
+				400,
+			);
+		}
+
+		const result = await endPoint(url, {});
+
+		if (result.status === "success") {
+			const finalStatus = toContentfulStatus(result.value.status);
+			return c.json(result.value.body, finalStatus);
+		}
+		return c.json(result, (result.reason as any)?.status || 500);
+	} catch (error) {
+		c.get("logger")?.error("RequestUnlimitedCloud: Internal execution error (GET)", {
 			error,
 		});
 

@@ -14,18 +14,11 @@ let _require: any;
 export const getRequire = () => {
 	if (!_require) {
 		const runtime = detectRuntime();
-		const isNodeLike = [
-			"node",
-			"bun",
-			"aws-lambda",
-			"gcp-cloudrun",
-		].includes(runtime);
+		const isNodeLike = ["node", "bun", "aws-lambda", "gcp-cloudrun"].includes(
+			runtime,
+		);
 
-		if (
-			isNodeLike &&
-			typeof import.meta !== "undefined" &&
-			import.meta.url
-		) {
+		if (isNodeLike && typeof import.meta !== "undefined" && import.meta.url) {
 			_require = createRequire(import.meta.url);
 		} else {
 			_require = (path: string) => {

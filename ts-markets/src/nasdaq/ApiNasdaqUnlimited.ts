@@ -47,7 +47,10 @@ function log(
 	}
 }
 
-function getHeaders(url: string): Record<string, string> {
+/**
+ * Generates spoofed headers for Nasdaq API requests.
+ */
+export function getNasdaqHeaders(url: string): Record<string, string> {
 	const isCharting = url.includes("charting");
 	const headers: Record<string, string> = isCharting
 		? {
@@ -87,7 +90,7 @@ async function nasdaqEndPoint<T = unknown>(
 	options: Options = {},
 ): Promise<NasdaqResult<T>> {
 	const urlStr = typeof url === "string" ? url : url.toString();
-	const headers = { ...getHeaders(urlStr), ...(options.headers ?? {}) };
+	const headers = { ...getNasdaqHeaders(urlStr), ...(options.headers ?? {}) };
 	const result: RequestResult = await endPoint(url, { ...options, headers });
 
 	if (result.status === "error") {

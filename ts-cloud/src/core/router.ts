@@ -20,7 +20,7 @@ import type { AppEnv } from "./types";
  * @returns {Hono<AppEnv>} The configured Hono application instance.
  */
 export const createRouter = (logger?: StrictLogger): Hono<AppEnv> => {
-	const app = new Hono<AppEnv>();
+	const app = new Hono<AppEnv>({ strict: false });
 
 	/**
 	 * Inject environment variables and set logger

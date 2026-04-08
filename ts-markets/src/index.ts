@@ -5,7 +5,12 @@
 // =============================================
 
 import {
+	ApiNasdaqQuotes,
+	type ApiNasdaqQuotesOptions,
+} from "./nasdaq/ApiNasdaqQuotes";
+import {
 	ApiNasdaqUnlimited,
+	getNasdaqHeaders,
 	type NasdaqResult,
 } from "./nasdaq/ApiNasdaqUnlimited";
 
@@ -19,7 +24,10 @@ import {
 import { type MarketSymbolRow, MarketSymbols } from "./nasdaq/MarketSymbols";
 
 export {
+	ApiNasdaqQuotes,
+	type ApiNasdaqQuotesOptions,
 	ApiNasdaqUnlimited,
+	getNasdaqHeaders,
 	CnnFearAndGreed,
 	CnnFearAndGreedFilter,
 	type CnnFilterInput,
@@ -28,7 +36,7 @@ export {
 };
 
 export const Markets = {
-	nasdaq: { ApiNasdaqUnlimited, MarketSymbols },
+	nasdaq: { ApiNasdaqUnlimited, ApiNasdaqQuotes, MarketSymbols },
 };
 
 export * as Luxon from "luxon";

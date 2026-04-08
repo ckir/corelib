@@ -40,7 +40,7 @@ Resources:
           AllowOrigins:
             - '*'
           AllowMethods:
-            - '*'               # ← This fixes the lint error (covers POST + OPTIONS)
+            - '*'               # - This fixes the lint error (covers POST + OPTIONS)
           AllowHeaders:
             - '*'
 
