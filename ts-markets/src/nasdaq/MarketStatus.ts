@@ -133,8 +133,7 @@ async function getStatus(): Promise<NasdaqResult<NasdaqMarketInfo>> {
 
 		// Path 2: API succeeded but data is malformed (Schema Validation)
 		if (
-			!data ||
-			!data.mrktStatus ||
+			!data?.mrktStatus ||
 			!data.nextTradeDate ||
 			!data.pmOpenRaw ||
 			!data.openRaw

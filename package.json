@@ -3,7 +3,7 @@
     "version": "0.1.13",
     "packageManager": "pnpm@10.33.0",
     "devDependencies": {
-        "@biomejs/biome": "^2.4.5",
+        "@biomejs/biome": "^2.4.10",
         "del-cli": "^7.0.0",
         "tsup": "^8.5.1",
         "typescript": "^6.0.2"
