@@ -64,12 +64,17 @@ kyRouter.post("/", async (c) => {
 
 		// Scenario 1: Multiple Endpoints (Bulk)
 		if (Array.isArray(body.endPoints)) {
-			const results: RequestResult[] = [];
-			for (const ep of body.endPoints) {
-				if (ep.url) {
-					results.push(await endPoint(ep.url, ep.options || {}));
-				}
-			}
+			const results: RequestResult[] = await Promise.all(
+				body.endPoints.map(async (ep: { url: string; options?: any }) => {
+					if (ep.url) {
+						return await endPoint(ep.url, ep.options || {});
+					}
+					return {
+						status: "error",
+						reason: { message: "Missing URL in bulk request" },
+					};
+				}),
+			);
 			// Outer status is 200 to allow the array of results in the body
 			return c.json(results, 200);
 		}

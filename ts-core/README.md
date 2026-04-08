@@ -10,6 +10,7 @@ The foundational package of the Corelib monorepo, providing essential utilities,
 - **Database Abstraction**: Unified interface for SQLite (via LibSQL) and PostgreSQL.
 - **Configuration Management**: `ConfigManager` with support for CLI, Environment Variables, and Local/Remote encrypted files.
 - **Native Core (FFI)**: High-performance logic implemented in Rust and exposed via N-API.
+- **Runtime Utilities**: Platform-agnostic helpers for environment, file system, and telemetry.
 
 ## Installation
 
@@ -48,19 +49,17 @@ const proxies = [
 const client = new RequestProxied(proxies);
 
 // Single request with automatic rotation and fallback
-// If proxy1 fails, it tries proxy2, then proxy3 before returning error.
 const result = await client.endPoint("https://api.nasdaq.com/api/market-info");
 
 // Parallel requests with round-robin load balancing
 const results = await client.endPoints([
   "https://api.nasdaq.com/api/quote/AAPL/info",
-  "https://api.nasdaq.com/api/quote/TSLA/info",
-  "https://api.nasdaq.com/api/quote/NVDA/info"
+  "https://api.nasdaq.com/api/quote/TSLA/info"
 ]);
 ```
 
 ### 3. Structured Logging
-The logger follows a strict `(msg: string, extras?: object)` signature.
+The logger follows a strict `(msg: string, extras?: object)` signature and handles runtime differences automatically.
 
 ```typescript
 import { logger } from '@ckir/corelib';
@@ -80,7 +79,7 @@ logger.setTelemetry('on');
 logger.info("Critical event", { telemetry: true });
 ```
 
-### 3. Unified Database API
+### 4. Unified Database API
 Switch between SQLite and PostgreSQL with minimal configuration changes.
 
 ```typescript
@@ -98,18 +97,28 @@ const db = await createDatabase({
 //   url: 'postgres://user:pass@localhost:5432/dbname'
 // });
 
-// Querying
-const users = await db.query('SELECT * FROM users WHERE active = ?', [true]);
+// Querying (Returns a DatabaseResult discriminated union)
+const result = await db.query('SELECT * FROM users WHERE active = ?', [true]);
+
+if (result.status === 'success') {
+  // result.value is a QueryResponse object containing .rows
+  const users = result.value.rows;
+  console.log(`Found ${users.length} users`);
+} else {
+  console.error('Query failed:', result.reason.message);
+}
 
 // Transactions
 await db.transaction(async () => {
   await db.query('INSERT INTO logs (msg) VALUES (?)', ['Transaction step 1']);
   await db.query('UPDATE status SET value = ?', ['processed']);
+  // Return success from the callback to commit the transaction
   return { status: 'success', value: true };
 });
 ```
 
-### 4. Configuration Management
+
+### 5. Configuration Management
 Manage complex configuration hierarchies with ease.
 
 ```typescript
@@ -132,15 +141,40 @@ config.on('change:database.port', (newPort) => {
 });
 ```
 
-### 5. Native Core FFI
-Access high-performance Rust logic directly from TypeScript.
+### 6. Native Core FFI
+Access high-performance Rust logic directly from TypeScript. The implementation is resilient and will disable FFI features if the native binary is missing rather than crashing the module.
 
 ```typescript
 import { Core } from '@ckir/corelib';
 
 // Check if FFI is available in current runtime
 if (Core.isFfiAvailable()) {
-  const result = Core.run("some-task", { param: 123 });
-  console.log("FFI Result:", result);
+  console.log('Rust Version:', Core.getVersion());
+  const doubled = Core.logAndDouble("Double me", 21);
+  console.log('Result:', doubled); // 42
 }
+
+// Safe run method that includes runtime info
+Core.run("maintenance-task", { verbose: true });
 ```
+
+### 7. Runtime Utilities
+Platform-agnostic helpers for common tasks.
+
+```typescript
+import { detectRuntime, sleep, getEnv, getSysInfo } from '@ckir/corelib';
+
+// Detect where we are (node, bun, deno, cloudflare, aws-lambda, etc.)
+const runtime = detectRuntime();
+
+// Resilient sleep
+await sleep(1000);
+
+// Platform-agnostic env access
+const apiKey = getEnv('API_KEY');
+
+// Detailed system and process telemetry (auto-redacts secrets)
+const sysInfo = getSysInfo();
+console.log('Memory Usage:', sysInfo.memory.rss);
+```
+

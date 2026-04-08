@@ -9,6 +9,7 @@ This project is part of the Corelib monorepo and is tightly coupled with `@ckir/
 - **Shared Routing (Hono)**: A single, config-agnostic `Hono` application instance shared across all platforms.
 - **Resilient Proxying**: Leverages `@ckir/corelib`'s `endPoint` utility for proxied requests with built-in retries and timeouts.
 - **Nasdaq Market Data**: Specialized edge proxy for the Nasdaq API, enforcing required headers and providing high-resilience fetching via `@ckir/corelib-markets`.
+- **SQL on the Edge**: Executes parameterized SQLite/Turso queries directly from the edge via the central SQL endpoint.
 - **Structured Edge Logging**: Implements a custom `StrictLogger` for edge environments that outputs structured JSON to `console.log`.
 - **Platform Adapters**: Thin entry points for Cloudflare, AWS Lambda, and Cloud Run that handle environment extraction and context injection.
 
@@ -19,11 +20,14 @@ src/
 ├── core/
 │   ├── router.ts      # Shared Hono application logic and routes
 │   └── logger.ts      # Edge-optimized structured logger
+├── database/
+│   └── SqlCloud.ts    # SQL query router (Turso)
 ├── retrieve/
 │   └── RequestUnlimitedCloud.ts  # Generic HTTP proxy router
 ├── markets/
 │   └── nasdaq/
-│       └── ApiNasdaqUnlimitedCloud.ts # Nasdaq-specific proxy router
+│       ├── ApiNasdaqUnlimitedCloud.ts # Nasdaq-specific proxy router
+│       └── MarketStatusCloud.ts       # Nasdaq Market Status proxy router
 └── platform/
     ├── cloudflare/    # Cloudflare Worker entry point
     ├── aws/           # AWS Lambda (ESM) handler
@@ -32,9 +36,15 @@ src/
 
 ## API Endpoints
 
+### Core Endpoints
 - **`GET /health`**: Returns system status and current platform.
-- **`POST /api/v1/ky`**: Generic resilient HTTP proxy.
+- **`GET /api/v1/health`**: Versioned health check.
+
+### Data & Proxy Endpoints
+- **`POST /api/v1/ky`**: Generic resilient HTTP proxy (supports single or bulk parallel requests).
 - **`POST /api/v1/markets/nasdaq`**: Nasdaq-specific resilient market data proxy.
+- **`GET /api/v1/markets/nasdaq/status`**: Fetches current Nasdaq market status (Open/Closed/Pre/After).
+- **`POST /api/v1/sql`**: Executes a parameterized SQL query on Turso/LibSQL.
 
 ## Usage Examples
 
@@ -79,15 +89,20 @@ curl -X POST https://your-service-url/api/v1/markets/nasdaq \
      }'
 ```
 
-#### Bulk Nasdaq Requests
+#### Market Status
 ```bash
-curl -X POST https://your-service-url/api/v1/markets/nasdaq \
+curl https://your-service-url/api/v1/markets/nasdaq/status
+```
+
+### SQL Query (Turso)
+Execute SQL queries directly via the edge service.
+
+```bash
+curl -X POST https://your-service-url/api/v1/sql \
      -H "Content-Type: application/json" \
      -d '{
-       "endPoints": [
-         { "url": "https://api.nasdaq.com/api/quote/AAPL/info?assetclass=stocks" },
-         { "url": "https://api.nasdaq.com/api/quote/MSFT/info?assetclass=stocks" }
-       ]
+       "sql": "SELECT * FROM users WHERE active = ?",
+       "params": [true]
      }'
 ```
 

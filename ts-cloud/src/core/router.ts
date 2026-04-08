@@ -57,10 +57,12 @@ export const createRouter = (logger?: StrictLogger): Hono<AppEnv> => {
 	 * Simple endpoint to verify the service is running on the edge.
 	 */
 	app.get("/health", (c) => {
+		const bindings = c.env as AppEnv["Bindings"];
 		return c.json({
 			status: "ok",
 			timestamp: new Date().toISOString(),
 			service: "ts-cloud",
+			platform: bindings.PLATFORM || "unknown",
 		});
 	});
 

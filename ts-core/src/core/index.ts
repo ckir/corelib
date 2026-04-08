@@ -49,44 +49,60 @@ async function loadFFI() {
 	}
 
 	if (runtime !== "deno") {
-		const path = getRequire()("node:path");
-		const dirname = (import.meta as any).dirname;
-		if (dirname) {
+		try {
+			const path = getRequire()("node:path");
+			const dirname = (import.meta as any).dirname;
+			if (dirname) {
+				pathsToTry.push(
+					path.resolve(dirname, binaryName),
+					path.resolve(dirname, "..", binaryName),
+					path.resolve(dirname, "..", "..", binaryName),
+				);
+			}
 			pathsToTry.push(
-				path.resolve(dirname, binaryName),
-				path.resolve(dirname, "..", binaryName),
-				path.resolve(dirname, "..", "..", binaryName),
+				path.resolve(process.cwd(), binaryName), // same dir (unlikely but possible)
+				path.resolve(process.cwd(), "..", binaryName), // parent dir (standard for dist/ -> root)
+				path.resolve(process.cwd(), "..", "..", binaryName), // grandparent dir (standard for src/core/ -> root)
 			);
+		} catch (_e) {
+			// Ignore if path/fs/os can't be required (e.g. in edge runtimes)
 		}
-		pathsToTry.push(
-			path.resolve(process.cwd(), binaryName), // same dir (unlikely but possible)
-			path.resolve(process.cwd(), "..", binaryName), // parent dir (standard for dist/ -> root)
-			path.resolve(process.cwd(), "..", "..", binaryName), // grandparent dir (standard for src/core/ -> root)
-		);
 	}
 
-	const { existsSync } = getRequire()("node:fs");
-	const libPath = pathsToTry.find((p) => existsSync(p));
+	let libPath: string | undefined;
+	try {
+		const { existsSync } = getRequire()("node:fs");
+		libPath = pathsToTry.find((p) => existsSync(p));
+	} catch (_e) {
+		// Ignore
+	}
 
 	if (!libPath) {
-		throw new Error(
-			`Could not find ${binaryName} in any of: ${pathsToTry.join(", ")}`,
+		// Instead of throwing, we return null so the package can still be used without FFI features
+		console.warn(
+			`[CORE] Could not find ${binaryName}. FFI features will be disabled.`,
 		);
+		return null;
 	}
 
-	let ffi: unknown;
-	if (runtime === "deno") {
-		// Deno: Try dlopen on .node (may need --allow-ffi --unstable)
-		// If fails, build plain cdylib and adjust symbols
-		ffi = Deno.dlopen(libPath, {
-			log_and_double: { parameters: ["buffer", "i32"], result: "i32" },
-			get_version: { parameters: [], result: "buffer" },
-		});
-	} else {
-		// Node/Bun: napi-rs via bindings
-		ffi = getRequire()(libPath); // Or bindings('corelib-rust')
+	try {
+		let ffi: unknown;
+		if (runtime === "deno") {
+			// Deno: Try dlopen on .node (may need --allow-ffi --unstable)
+			// If fails, build plain cdylib and adjust symbols
+			ffi = (Deno as any).dlopen(libPath, {
+				log_and_double: { parameters: ["buffer", "i32"], result: "i32" },
+				get_version: { parameters: [], result: "buffer" },
+			});
+		} else {
+			// Node/Bun: napi-rs via bindings
+			ffi = getRequire()(libPath); // Or bindings('corelib-rust')
+		}
+		return ffi;
+	} catch (error) {
+		console.error(`[CORE] Failed to load FFI from ${libPath}:`, error);
+		return null;
 	}
-	return ffi;
 }
 
 /**
@@ -94,6 +110,10 @@ async function loadFFI() {
  * Use with caution and proper type casting.
  */
 export const coreFFI = await loadFFI();
+
+export function isFfiAvailable(): boolean {
+	return coreFFI !== null;
+}
 
 export function logAndDouble(msg: string, value: number): number {
 	if (
@@ -120,5 +140,13 @@ export function getVersion(): string {
 }
 
 export const Core = {
-	run: () => console.log(`[CORE] Running on ${runtime} with FFI`),
+	isFfiAvailable,
+	getVersion,
+	logAndDouble,
+	run: (task?: string, options?: any) => {
+		console.log(`[CORE] Running on ${runtime}. FFI: ${isFfiAvailable()}`);
+		if (task) {
+			console.log(`[CORE] Task: ${task}`, options || "");
+		}
+	},
 };

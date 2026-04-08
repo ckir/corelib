@@ -9,6 +9,7 @@ Financial market utilities and data providers for the Corelib monorepo, featurin
 - **Market Monitor**: Adaptive poller with heuristic fallback during API failures.
 - **CNN Fear & Greed Index**: Retrieval and filtering of the popular sentiment indicator.
 - **Yahoo Real-Time Streaming**: High-performance ticker streaming powered by Rust FFI.
+- **Market Symbols**: Persistent symbol database with auto-refresh and environment-aware search sequencing.
 
 ## Installation
 
@@ -19,7 +20,7 @@ pnpm add @ckir/corelib-markets
 ## Usage Examples
 
 ### 1. Market Monitor (Resilient Status Poller)
-Intelligent long-running task that adapts to market hours and handles failures gracefully.
+Intelligent long-running task that adapts to market hours and handles failures gracefully. It emits events only on market phase changes or after the first successful poll.
 
 ```typescript
 import { MarketMonitor, type MarketPhase } from '@ckir/corelib-markets';
@@ -27,12 +28,13 @@ import { MarketMonitor, type MarketPhase } from '@ckir/corelib-markets';
 const monitor = new MarketMonitor({
   liveIntervalSec: 15,      // Frequency when market is open
   closedIntervalSec: 1800,  // Frequency when market is closed
-  warnIntervalSec: 60       // Warning throttle
+  warnIntervalSec: 60       // Warning throttle during failures
 });
 
+// Emits on first successful poll and whenever the market phase (open/closed/pre/after) changes
 monitor.on("status-change", (phase: MarketPhase, data, heuristic) => {
   console.log(`Current phase: ${phase}`);
-  console.log(`Is heuristic (using fallback data): ${!!heuristic}`);
+  console.log(`Is heuristic (using fallback data due to fetch failure): ${!!heuristic}`);
   console.log('Full Market Data:', data);
 });
 
@@ -41,6 +43,10 @@ monitor.on("stopped", () => {
 });
 
 monitor.start();
+
+// Check current state
+console.log('Is Running:', monitor.isRunningState);
+console.log('Current Phase:', monitor.currentPhase);
 
 // Later...
 // monitor.stop();
@@ -58,7 +64,7 @@ if (result.status === 'success') {
   const info = result.value;
   console.log(`Nasdaq Status: ${info.mrktStatus}`);
   
-  // Calculate milliseconds until next open or pre-market
+  // Calculate milliseconds until next open or pre-market (returns 0 if already open)
   const sleepMs = MarketStatus.getSleepDuration(info);
   console.log(`Sleeping ${sleepMs}ms until next event.`);
 }
@@ -70,11 +76,14 @@ Retrieve sentiment data with optional historical filtering.
 ```typescript
 import { CnnFearAndGreed, CnnFearAndGreedFilter } from '@ckir/corelib-markets';
 
-// Fetch current Fear & Greed Index
+// Fetch current Fear & Greed Index (returns the 'fear_and_greed' sub-object by default)
 const current = await CnnFearAndGreed.getFearAndGreed();
 
-// Fetch historical score for specific date with filter
-const voldata = await CnnFearAndGreed.getFearAndGreed(
+// Fetch historical scores (full 1-year data)
+const historical = await CnnFearAndGreed.getFearAndGreed("Historical", "full");
+
+// Fetch specific metric for a specific date
+const vix = await CnnFearAndGreed.getFearAndGreed(
   "2026-03-15", 
   CnnFearAndGreedFilter.MarketVolatilityVix
 );
@@ -85,7 +94,7 @@ if (current.status === 'success') {
 ```
 
 ### 4. Yahoo Real-Time Streaming (FFI)
-High-performance ticker updates using the Rust bridge.
+High-performance ticker updates using the Rust bridge. Requires `@ckir/corelib` with FFI support.
 
 ```ts
 import { YahooStreaming } from '@ckir/corelib-markets';
@@ -106,25 +115,32 @@ stream.on("pricing", (data) => {
 stream.on("silence-reconnect", () => {
   console.log("Yahoo stream silent for too long, reconnecting...");
 });
+
+// Clean up temporary session data (runs automatically in development mode)
+stream.clean();
+
+// Stop the stream
+stream.stop();
 ```
 
 ### 5. Persistent Symbol Database (MarketSymbols)
-Automated Nasdaq symbol directory with auto-refresh, environment-aware search sequencing, and cloud integration.
+Automated Nasdaq symbol directory with auto-refresh and environment-aware search sequencing.
 
 #### Features
-- **Auto-Refresh**: Synchronizes with official Nasdaq directories if data is missing or outdated (older than today NY time).
-- **Environment-Aware**: Automatically optimizes search sequence (DB vs API) based on whether it is running on the Edge.
+- **Auto-Refresh**: Synchronizes with official Nasdaq directories (`nasdaqlisted.txt`, `otherlisted.txt`) if data is missing or outdated (older than today NY time).
+- **Environment-Aware**: Automatically optimizes search sequence based on the runtime:
+  - **Standard (Node/Bun)**: `SQLite -> Nasdaq API -> Ingestors` (Prioritizes local speed).
+  - **Edge (Cloudflare/Lambda)**: `Nasdaq API -> Ingestors -> SQLite` (Prioritizes fresh API data over cold storage).
 - **Turso Support**: Supports both local SQLite and remote Turso/LibSQL databases.
-- **Custom Ingestors**: Extensible registry for querying additional symbol data sources (e.g., Google Apps Script).
 
-#### Basic Usage (Local SQLite)
+#### Basic Usage
 ```typescript
 import { MarketSymbols } from '@ckir/corelib-markets';
 
-// Initialize (defaults to local SQLite file)
+// Initialize (defaults to local SQLite: ./tmp/NasdaqSymbols.sqlite)
 const symbols = new MarketSymbols();
 
-// Get details (Sequence: DB -> Nasdaq API -> Ingestors)
+// Get details (Sequence depends on runtime)
 const aapl = await symbols.get("AAPL");
 ```
 
@@ -137,12 +153,14 @@ const symbols = new MarketSymbols({
 ```
 
 #### Custom Ingestors (e.g., Google Apps Script)
+The ingestor should return a `MarketSymbolRow` JSON structure.
+
 ```typescript
 const ingestorUrl = "https://script.google.com/macros/s/.../exec";
 const symbols = new MarketSymbols(undefined, [ingestorUrl]);
 
-// If not in DB or Nasdaq API, it will query your script
-const custom = await symbols.get("MY_PRIVATE_SYMBOL");
+// Fallback search will hit the GAS endpoint if not found in DB or Nasdaq API
+const custom = await symbols.get("PRIVATE_TICKER");
 ```
 
 #### Manual Maintenance
@@ -178,11 +196,10 @@ import { MarketMonitor } from '@ckir/corelib-markets';
 // The monitor automatically uses the global logger
 const monitor = new MarketMonitor();
 
-// You can configure intervals via ConfigManager (if supported by your implementation)
-const config = ConfigManager.getInstance();
-await config.initialize();
+// You can override default headers via ConfigManager
+// markets.nasdaq.headers
+// markets.cnn.headers
 
 logger.info("Starting market services...");
 monitor.start();
 ```
-
