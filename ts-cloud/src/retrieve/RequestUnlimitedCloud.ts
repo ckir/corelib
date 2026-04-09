@@ -6,7 +6,7 @@
  */
 
 import { endPoint, type RequestResult } from "@ckir/corelib";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { AppEnv } from "../core/types";
 
@@ -31,7 +31,7 @@ function toContentfulStatus(code: number): ContentfulStatusCode {
  * Receives a request containing parameters for RequestUnlimited.
  * Supports both single 'url' and bulk 'endPoints' arrays.
  */
-kyRouter.post("/", async (c) => {
+kyRouter.post("/", async (c: Context<AppEnv>): Promise<Response> => {
 	try {
 		const body = await c.req.json().catch(() => null);
 
@@ -98,13 +98,16 @@ kyRouter.post("/", async (c) => {
  * Support for proxied requests via query parameter (e.g. ?url=...).
  * Used by RequestProxied.
  */
-kyRouter.get("/", async (c) => {
+kyRouter.get("/", async (c: Context<AppEnv>): Promise<Response> => {
 	try {
 		const url = c.req.query("url");
 
 		if (!url) {
 			return c.json(
-				{ status: "error", reason: { message: "Missing 'url' query parameter" } },
+				{
+					status: "error",
+					reason: { message: "Missing 'url' query parameter" },
+				},
 				400,
 			);
 		}
@@ -117,9 +120,12 @@ kyRouter.get("/", async (c) => {
 		}
 		return c.json(result, (result.reason as any)?.status || 500);
 	} catch (error) {
-		c.get("logger")?.error("RequestUnlimitedCloud: Internal execution error (GET)", {
-			error,
-		});
+		c.get("logger")?.error(
+			"RequestUnlimitedCloud: Internal execution error (GET)",
+			{
+				error,
+			},
+		);
 
 		return c.json(
 			{

@@ -5,9 +5,9 @@
  * Note: This proxy is transparent (returns Nasdaq response directly) but automatically injects Nasdaq spoof headers.
  */
 
-import { endPoint, type RequestResult } from "@ckir/corelib";
+import { endPoint } from "@ckir/corelib";
 import { getNasdaqHeaders } from "@ckir/corelib-markets";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import type { Options as KyOptions } from "ky";
 import { serializeError } from "serialize-error";
 import type { AppEnv } from "../../core/types";
@@ -23,11 +23,14 @@ export const nasdaqRouter = new Hono<AppEnv>();
  * Resilient proxy for Nasdaq API requests.
  * Supports both single URL and bulk endpoint processing.
  */
-nasdaqRouter.post("/", async (c) => {
+nasdaqRouter.post("/", async (c: Context<AppEnv>): Promise<Response> => {
 	try {
 		const body = await c.req.json().catch(() => null);
 		if (!body) {
-			return c.json({ status: "error", reason: { message: "Missing body" } }, 400);
+			return c.json(
+				{ status: "error", reason: { message: "Missing body" } },
+				400,
+			);
 		}
 		const { url, options, endPoints } = body;
 
@@ -93,13 +96,16 @@ nasdaqRouter.post("/", async (c) => {
  * Support for proxied requests via query parameter (e.g. ?url=...).
  * Used by RequestProxied.
  */
-nasdaqRouter.get("/", async (c) => {
+nasdaqRouter.get("/", async (c: Context<AppEnv>): Promise<Response> => {
 	try {
 		const url = c.req.query("url");
 
 		if (!url) {
 			return c.json(
-				{ status: "error", reason: { message: "Missing 'url' query parameter" } },
+				{
+					status: "error",
+					reason: { message: "Missing 'url' query parameter" },
+				},
 				400,
 			);
 		}
@@ -112,9 +118,12 @@ nasdaqRouter.get("/", async (c) => {
 		}
 		return c.json(result, (result.reason as any)?.status || 500);
 	} catch (error) {
-		c.get("logger")?.error("ApiNasdaqUnlimitedCloud: Internal execution error (GET)", {
-			error: serializeError(error),
-		});
+		c.get("logger")?.error(
+			"ApiNasdaqUnlimitedCloud: Internal execution error (GET)",
+			{
+				error: serializeError(error),
+			},
+		);
 
 		return c.json(
 			{

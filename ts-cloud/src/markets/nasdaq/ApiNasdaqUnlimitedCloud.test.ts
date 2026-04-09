@@ -4,15 +4,18 @@
  * Verified scenarios: Single URL proxying, bulk endpoint processing, validation errors, and crash resilience.
  */
 
-import { ApiNasdaqUnlimited, type NasdaqResult } from "@ckir/corelib-markets";
+import { endPoint } from "@ckir/corelib";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { nasdaqRouter } from "./ApiNasdaqUnlimitedCloud";
 
-// Mock the corelib-markets dependency to isolate router logic
+// Mock the corelib dependency
+vi.mock("@ckir/corelib", () => ({
+	endPoint: vi.fn(),
+}));
+
+// Mock the corelib-markets dependency
 vi.mock("@ckir/corelib-markets", () => ({
-	ApiNasdaqUnlimited: {
-		endPoint: vi.fn(),
-	},
+	getNasdaqHeaders: vi.fn(() => ({ "x-test": "header" })),
 }));
 
 describe("ApiNasdaqUnlimitedCloud (Edge)", () => {
@@ -23,11 +26,11 @@ describe("ApiNasdaqUnlimitedCloud (Edge)", () => {
 	});
 
 	it("should return success for a single URL and maintain 200 OK status", async () => {
-		const mockSuccess: NasdaqResult = {
+		const mockSuccess = {
 			status: "success",
-			value: { symbol: "AAPL", price: 150 },
+			value: { status: 200, body: { data: { symbol: "AAPL" } } },
 		};
-		vi.mocked(ApiNasdaqUnlimited.endPoint).mockResolvedValueOnce(mockSuccess);
+		vi.mocked(endPoint).mockResolvedValueOnce(mockSuccess as any);
 
 		const res = await nasdaqRouter.request("/", {
 			method: "POST",
@@ -36,19 +39,21 @@ describe("ApiNasdaqUnlimitedCloud (Edge)", () => {
 		});
 
 		expect(res.status).toBe(200);
-		const body = (await res.json()) as NasdaqResult;
-		expect(body).toEqual(mockSuccess);
-		expect(ApiNasdaqUnlimited.endPoint).toHaveBeenCalledWith(MOCK_URL, {});
+		const body = await res.json();
+		expect(body).toEqual(mockSuccess.value.body);
+		expect(endPoint).toHaveBeenCalledWith(MOCK_URL, {
+			headers: { "x-test": "header" },
+		});
 	});
 
 	it("should handle bulk endPoints and return an array of results", async () => {
-		const mockResults: NasdaqResult[] = [
-			{ status: "success", value: { id: 1 } },
-			{ status: "success", value: { id: 2 } },
+		const mockResults = [
+			{ status: "success", value: { body: { id: 1 } } },
+			{ status: "success", value: { body: { id: 2 } } },
 		];
-		vi.mocked(ApiNasdaqUnlimited.endPoint)
-			.mockResolvedValueOnce(mockResults[0])
-			.mockResolvedValueOnce(mockResults[1]);
+		vi.mocked(endPoint)
+			.mockResolvedValueOnce(mockResults[0] as any)
+			.mockResolvedValueOnce(mockResults[1] as any);
 
 		const res = await nasdaqRouter.request("/", {
 			method: "POST",
@@ -64,7 +69,7 @@ describe("ApiNasdaqUnlimitedCloud (Edge)", () => {
 		expect(res.status).toBe(200);
 		const body = await res.json();
 		expect(body).toEqual(mockResults);
-		expect(ApiNasdaqUnlimited.endPoint).toHaveBeenCalledTimes(2);
+		expect(endPoint).toHaveBeenCalledTimes(2);
 	});
 
 	it("should return a validation error if payload is missing required fields", async () => {
@@ -74,21 +79,17 @@ describe("ApiNasdaqUnlimitedCloud (Edge)", () => {
 			headers: { "Content-Type": "application/json" },
 		});
 
-		expect(res.status).toBe(200);
-		const body = (await res.json()) as NasdaqResult;
+		expect(res.status).toBe(400);
+		const body = (await res.json()) as any;
 		expect(body.status).toBe("error");
-		if (body.status === "error") {
-			expect(body.reason?.message).toContain(
-				"Expected 'url' (string) or 'endPoints'",
-			);
-		}
+		expect(body.reason?.message).toContain(
+			"Expected 'url' (string) or 'endPoints'",
+		);
 	});
 
 	it("should return a fatal error result if an internal exception occurs", async () => {
 		// Force a rejection to trigger the catch block
-		vi.mocked(ApiNasdaqUnlimited.endPoint).mockRejectedValueOnce(
-			new Error("Edge Crash"),
-		);
+		vi.mocked(endPoint).mockRejectedValueOnce(new Error("Edge Crash"));
 
 		const res = await nasdaqRouter.request("/", {
 			method: "POST",
@@ -96,11 +97,9 @@ describe("ApiNasdaqUnlimitedCloud (Edge)", () => {
 			headers: { "Content-Type": "application/json" },
 		});
 
-		expect(res.status).toBe(200);
-		const body = (await res.json()) as NasdaqResult;
+		expect(res.status).toBe(500);
+		const body = (await res.json()) as any;
 		expect(body.status).toBe("error");
-		if (body.status === "error") {
-			expect(body.reason?.message).toBe("Internal Edge Proxy Error");
-		}
+		expect(body.reason?.message).toBe("Internal Edge Proxy Error");
 	});
 });

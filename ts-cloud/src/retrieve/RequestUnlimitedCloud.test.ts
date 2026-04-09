@@ -46,18 +46,18 @@ describe("RequestUnlimitedCloud (kyRouter)", () => {
 		it("should return success and mirror the target status code (200)", async () => {
 			const mockResult = {
 				status: "success",
-				value: { status: 200, data: { foo: "bar" } },
+				value: { status: 200, body: { foo: "bar" } },
 			};
 			vi.mocked(endPoint).mockResolvedValueOnce(mockResult as any);
 
 			const res = await performPost({ url: "https://example.com" });
-			const json = (await res.json()) as RequestResult<unknown>;
+			const json = await res.json();
 
 			expect(res.status).toBe(200);
-			expect(json).toEqual(mockResult);
+			expect(json).toEqual(mockResult.value.body);
 		});
 
-		it("should mirror target error status codes (e.g., 404)", async () => {
+		it("should return error structure if transport fails", async () => {
 			const mockResult = {
 				status: "error",
 				reason: { status: 404, message: "Not Found" },
@@ -65,7 +65,7 @@ describe("RequestUnlimitedCloud (kyRouter)", () => {
 			vi.mocked(endPoint).mockResolvedValueOnce(mockResult as any);
 
 			const res = await performPost({ url: "https://example.com/missing" });
-			const json = (await res.json()) as RequestResult<unknown>;
+			const json = await res.json();
 
 			expect(res.status).toBe(404);
 			expect(json).toEqual(mockResult);
@@ -74,7 +74,7 @@ describe("RequestUnlimitedCloud (kyRouter)", () => {
 		it("should map non-contentful status (204) to 200 to allow JSON body", async () => {
 			const mockResult = {
 				status: "success",
-				value: { status: 204, data: null },
+				value: { status: 204, body: null },
 			};
 			vi.mocked(endPoint).mockResolvedValueOnce(mockResult as any);
 
@@ -109,7 +109,6 @@ describe("RequestUnlimitedCloud (kyRouter)", () => {
 			const res = await performPost({ something: "else" });
 			expect(res.status).toBe(400);
 
-			// FIXED: Cast to any or specific shape to access .reason
 			const json = (await res.json()) as any;
 			expect(json.reason.message).toContain("Invalid payload");
 		});
