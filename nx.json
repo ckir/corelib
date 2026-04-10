@@ -1,8 +1,94 @@
 {
-	"tasksRunnerOptions": {
-		"default": {
-			"runner": "nx/tasks-runners/default",
-			"options": { "cacheableOperations": ["build", "test", "lint"] }
-		}
-	}
+  "$schema": "https://nx.dev/nx-schema.json",
+  "tasksRunnerOptions": {
+    "default": {
+      "runner": "nx/tasks-runners/default",
+      "options": {
+        "cacheableOperations": [
+          "build",
+          "test",
+          "lint",
+          "format",
+          "docs",
+          "build-rust"
+        ],
+        "parallel": 8,
+        "cacheDirectory": ".nx/cache"
+      }
+    }
+  },
+  "targetDefaults": {
+    "build": {
+      "dependsOn": [
+        "^build"
+      ],
+      "inputs": [
+        "production",
+        "^production"
+      ],
+      "outputs": [
+        "{projectRoot}/dist"
+      ]
+    },
+    "test": {
+      "inputs": [
+        "default",
+        "^production"
+      ],
+      "outputs": [
+        "{projectRoot}/coverage"
+      ]
+    },
+    "lint": {
+      "inputs": [
+        "default"
+      ]
+    },
+    "format": {
+      "inputs": [
+        "default"
+      ]
+    },
+    "docs": {
+      "inputs": [
+        "default"
+      ]
+    },
+    "build-rust": {
+      "dependsOn": [],
+      "inputs": [
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/Cargo.toml"
+      ],
+      "outputs": [
+        "{projectRoot}/target",
+        "{projectRoot}/*.node"
+      ]
+    }
+  },
+  "namedInputs": {
+    "default": [
+      "{projectRoot}/**/*",
+      "sharedGlobals"
+    ],
+    "production": [
+      "!{projectRoot}/**/*.spec.ts",
+      "!{projectRoot}/**/*.test.ts",
+      "!{projectRoot}/**/*.spec.tsx",
+      "!{projectRoot}/**/*.test.tsx",
+      "!{projectRoot}/**/__tests__/**/*",
+      "!{projectRoot}/**/*.stories.tsx",
+      "!{projectRoot}/tsconfig.json",
+      "!{projectRoot}/vitest.config.ts",
+      "!{projectRoot}/tsup.config.ts",
+      "!{projectRoot}/**/*.test.*",
+      "!{projectRoot}/**/*.spec.*"
+    ],
+    "sharedGlobals": [
+      "{workspaceRoot}/pnpm-lock.yaml",
+      "{workspaceRoot}/package.json",
+      "{workspaceRoot}/tsconfig.base.json"
+    ]
+  },
+  "analytics": true
 }

@@ -6,7 +6,7 @@
  */
 
 import { endPoint } from "@ckir/corelib";
-import { getNasdaqHeaders } from "@ckir/corelib-markets";
+import { getNasdaqHeaders, getSymbolsTop100 } from "@ckir/corelib-markets";
 import { type Context, Hono } from "hono";
 import type { Options as KyOptions } from "ky";
 import { serializeError } from "serialize-error";
@@ -17,6 +17,34 @@ import type { AppEnv } from "../../core/types";
  * Mounted at /api/v1/markets/nasdaq in the main application.
  */
 export const nasdaqRouter = new Hono<AppEnv>();
+
+/**
+ * GET /groups/top100
+ * Retrieves the list of Nasdaq 100 symbols.
+ */
+nasdaqRouter.get(
+	"/groups/top100",
+	async (c: Context<AppEnv>): Promise<Response> => {
+		try {
+			const symbols = await getSymbolsTop100();
+			return c.json({ status: "success", value: symbols }, 200);
+		} catch (error) {
+			c.get("logger")?.error(
+				"ApiNasdaqUnlimitedCloud: Failed to fetch Top 100",
+				{
+					error: serializeError(error),
+				},
+			);
+			return c.json(
+				{
+					status: "error",
+					reason: { message: "Failed to retrieve Nasdaq 100 symbols" },
+				},
+				500,
+			);
+		}
+	},
+);
 
 /**
  * POST /

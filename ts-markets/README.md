@@ -8,6 +8,7 @@ Financial market utilities and data providers for the Corelib monorepo, featurin
 - **Market Status & Scheduling**: Intelligent pollers and sleep-calculators based on market phases.
 - **Market Monitor**: Adaptive poller with heuristic fallback during API failures.
 - **CNN Fear & Greed Index**: Retrieval and filtering of the popular sentiment indicator.
+- **Nasdaq 100 Symbols**: Fast, cached access to the Nasdaq 10 constituent symbols.
 - **Yahoo Real-Time Streaming**: High-performance ticker streaming powered by Rust FFI.
 - **Market Symbols**: Persistent symbol database with auto-refresh and environment-aware search sequencing.
 
@@ -93,7 +94,17 @@ if (current.status === 'success') {
 }
 ```
 
-### 4. Yahoo Real-Time Streaming (FFI)
+### 4. Nasdaq 100 Symbols
+Fast, cached retrieval of the Nasdaq 100 constituent symbols.
+
+```typescript
+import { getSymbolsTop100 } from '@ckir/corelib-markets';
+
+const symbols = await getSymbolsTop100();
+console.log(`Nasdaq 100 constituents (${symbols.length}):`, symbols);
+```
+
+### 5. Yahoo Real-Time Streaming (FFI)
 High-performance ticker updates using the Rust bridge. Requires `@ckir/corelib` with FFI support.
 
 ```ts

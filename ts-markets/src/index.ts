@@ -41,6 +41,7 @@ export const Markets = {
 
 export * as Luxon from "luxon";
 export { YahooStreaming } from "./nasdaq/datafeeds/streaming/yahoo/YahooStreaming";
+export { getSymbolsTop100 } from "./nasdaq/groups/Top100";
 export { MarketMonitor, type MarketPhase } from "./nasdaq/MarketMonitor";
 export { MarketStatus, type NasdaqMarketInfo } from "./nasdaq/MarketStatus";
 export { type MarketSymbolRow, MarketSymbols };

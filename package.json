@@ -5,6 +5,8 @@
     "devDependencies": {
         "@biomejs/biome": "^2.4.10",
         "del-cli": "^7.0.0",
+        "dependency-cruiser": "^17.3.10",
+        "nx": "^22.6.4",
         "tsup": "^8.5.1",
         "typescript": "^6.0.2"
     },

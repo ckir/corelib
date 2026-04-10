@@ -44,6 +44,7 @@ src/
 - **`POST /api/v1/ky`**: Generic resilient HTTP proxy (supports single or bulk parallel requests).
 - **`POST /api/v1/markets/nasdaq`**: Nasdaq-specific resilient market data proxy.
 - **`GET /api/v1/markets/nasdaq/status`**: Fetches current Nasdaq market status (Open/Closed/Pre/After).
+- **`GET /api/v1/markets/nasdaq/groups/top100`**: Retrieves the list of current Nasdaq 100 constituent symbols.
 - **`POST /api/v1/sql`**: Executes a parameterized SQL query on Turso/LibSQL.
 
 ## Usage Examples
@@ -92,6 +93,11 @@ curl -X POST https://your-service-url/api/v1/markets/nasdaq \
 #### Market Status
 ```bash
 curl https://your-service-url/api/v1/markets/nasdaq/status
+```
+
+#### Nasdaq 100 Symbols
+```bash
+curl https://your-service-url/api/v1/markets/nasdaq/groups/top100
 ```
 
 ### SQL Query (Turso)
