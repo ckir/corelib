@@ -50,6 +50,7 @@ choices = [
     {'letter': 'H', 'desc': 'Trigger GitHub Release Workflow', 'cmd': 'gh workflow run release.yml'},
     {'letter': 'G', 'desc': 'Verify GitHub Release Assets', 'cmd': 'pwsh -ExecutionPolicy Bypass -File ./TestRelease.ps1'},
     {'letter': 'D', 'desc': 'Generate Documentation', 'cmd': 'pnpm -r docs'},
+    {'letter': 'A', 'desc': 'Analyze Module Dependencies (SVG)', 'cmd': 'npx depcruise --config .dependency-cruiser.js --output-type dot ts-core/src ts-markets/src ts-cloud/src | dot -T svg > full-modules.svg'},
     {'letter': 'E', 'desc': 'Create Local release package (Zip/Tar)'},
     {'letter': 'Q', 'desc': 'Quit', 'cmd': None},
 ]

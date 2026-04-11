@@ -26,3 +26,5 @@ sam-corelib/.aws-sam/
 sam-corelib/*.js
 sam-corelib/*.zip
 sam-corelib/*.tgz
+
+full-modules.svg
