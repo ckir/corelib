@@ -8,6 +8,10 @@
 /// Contains internal helpers for future FFI functions (cron, etc.).
 pub mod utils;
 
+/// Public retrieve module (contains the `ky` HTTP client).
+pub mod retrieve;
+pub use retrieve::ky;
+
 use napi_derive::napi;
 
 /// Logs a message in Rust and returns the input value doubled.
