@@ -33,6 +33,7 @@ pub fn get_version() -> String {
 
 pub mod markets {
     pub mod nasdaq {
+        pub mod api_nasdaq_unlimited;
         pub mod datafeeds {
             pub mod streaming {
                 pub mod yahoo {
@@ -47,6 +48,10 @@ pub mod markets {
         }
     }
 }
+
+pub use markets::nasdaq::api_nasdaq_unlimited::{
+    get_nasdaq_headers, nasdaq_end_point, nasdaq_end_points,
+};
 
 pub use markets::nasdaq::datafeeds::streaming::yahoo::{
     EventRecord, LogRecord, RustCallbacks, YahooConfig, YahooStreaming, YahooStreamingCore,
