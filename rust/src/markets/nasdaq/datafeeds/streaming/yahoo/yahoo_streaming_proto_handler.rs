@@ -1,9 +1,9 @@
 // =============================================
 // FILE: rust/src/markets/nasdaq/datafeeds/streaming/yahoo/yahoo_streaming_proto_handler.rs
 // PURPOSE: Protobuf handler for Yahoo Finance websocket messages.
-// DESCRIPTION: This module defines the data structures and enumerations 
-// corresponding to the Yahoo Finance pricing Protobuf definition. It provides 
-// conversion logic between the internal Rust structs and the N-API compatible 
+// DESCRIPTION: This module defines the data structures and enumerations
+// corresponding to the Yahoo Finance pricing Protobuf definition. It provides
+// conversion logic between the internal Rust structs and the N-API compatible
 // objects used by the JavaScript bridge.
 // =============================================
 
@@ -80,8 +80,8 @@ pub struct PricingData {
 }
 
 /// An N-API compatible object representing pricing data.
-/// 
-/// This struct mirrors `PricingData` but uses `f64` for all floating-point numbers 
+///
+/// This struct mirrors `PricingData` but uses `f64` for all floating-point numbers
 /// to ensure precision when passed to JavaScript.
 #[napi(object)]
 #[derive(Clone, Serialize, Deserialize)]

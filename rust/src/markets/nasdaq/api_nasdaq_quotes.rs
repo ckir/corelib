@@ -1,8 +1,8 @@
 // =============================================
 // FILE: rust/src/markets/nasdaq/api_nasdaq_quotes.rs
 // PURPOSE: Public API for fetching Nasdaq quotes.
-// DESCRIPTION: This module provides a high-level interface for fetching real-time 
-// and end-of-day quotes from Nasdaq. It handles symbol parsing, asset class 
+// DESCRIPTION: This module provides a high-level interface for fetching real-time
+// and end-of-day quotes from Nasdaq. It handles symbol parsing, asset class
 // mapping, and concurrent bulk fetching with a configurable concurrency limit.
 // =============================================
 
@@ -14,7 +14,7 @@ use std::str::FromStr;
 
 /// Defines the asset classes recognized by the Nasdaq API.
 ///
-/// This enum mirrors the exact categories specified in the TypeScript `AssetClass` 
+/// This enum mirrors the exact categories specified in the TypeScript `AssetClass`
 /// definition, differentiating between real-time and delayed/end-of-day assets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssetClass {
@@ -38,8 +38,8 @@ impl FromStr for AssetClass {
     type Err = String;
 
     /// Parses a string slice into an `AssetClass` enum variant.
-    /// 
-    /// The input string is converted to lowercase before matching to ensure 
+    ///
+    /// The input string is converted to lowercase before matching to ensure
     /// case-insensitive parsing, aligning with the TypeScript implementation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
@@ -143,7 +143,10 @@ async fn nasdaq_quote_ext(symbol_input: &str, base_url: &str) -> Result<Value, S
 ///
 /// # Returns
 /// A `Vec` of `Result` objects, where each element corresponds to the input symbol at the same index.
-pub async fn nasdaq_quotes(symbols: &[&str], concurrency_limit: usize) -> Vec<Result<Value, String>> {
+pub async fn nasdaq_quotes(
+    symbols: &[&str],
+    concurrency_limit: usize,
+) -> Vec<Result<Value, String>> {
     // Forward the bulk request to the extended version using the default Nasdaq base URL
     nasdaq_quotes_ext(symbols, concurrency_limit, "https://api.nasdaq.com").await
 }
@@ -167,10 +170,10 @@ async fn nasdaq_quotes_ext(
     for chunk in symbols.chunks(limit) {
         // Create an iterator of futures, each fetching a single quote
         let futures = chunk.iter().map(|&s| nasdaq_quote_ext(s, base_url));
-        
+
         // Execute all futures in the current chunk concurrently
         let chunk_results = join_all(futures).await;
-        
+
         // Append the results of the current batch to the final vector
         results.extend(chunk_results);
     }
@@ -242,7 +245,7 @@ mod tests {
             .await;
 
         let res = nasdaq_quote_ext("AAPL::stocks", &server.uri()).await;
-        
+
         assert!(res.is_ok(), "Failed to fetch quote: {:?}", res);
         let data = res.unwrap();
         assert_eq!(data["symbol"], symbol);
@@ -263,7 +266,7 @@ mod tests {
             .await;
 
         let res = nasdaq_quote_ext("INVALID::stocks", &server.uri()).await;
-        
+
         assert!(res.is_err());
         assert!(res.unwrap_err().contains("Symbol not found"));
     }
@@ -271,7 +274,7 @@ mod tests {
     #[tokio::test]
     async fn test_nasdaq_quotes_bulk() {
         let server = MockServer::start().await;
-        
+
         let symbols = vec!["MSFT", "QQQ", "TSLA"];
         for sym in &symbols {
             Mock::given(method("GET"))
@@ -296,7 +299,7 @@ mod tests {
     #[tokio::test]
     async fn test_nasdaq_quotes_bulk_with_errors() {
         let server = MockServer::start().await;
-        
+
         // NVDA Success
         Mock::given(method("GET"))
             .and(path("/api/quote/NVDA/info"))

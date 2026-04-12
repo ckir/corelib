@@ -1,9 +1,9 @@
 // =============================================
 // FILE: rust/src/markets/nasdaq/datafeeds/streaming/yahoo/yahoo_streamer.rs
 // PURPOSE: Long-running Yahoo Finance price stream handler.
-// DESCRIPTION: This module provides a robust, supervised price streamer using 
-// Yahoo Finance's WebSocket API. It decodes protobuf-encoded pricing messages, 
-// persists subscriptions in a local `redb` database, and handles network 
+// DESCRIPTION: This module provides a robust, supervised price streamer using
+// Yahoo Finance's WebSocket API. It decodes protobuf-encoded pricing messages,
+// persists subscriptions in a local `redb` database, and handles network
 // instability with silence detection and exponential backoff reconnection.
 // =============================================
 
@@ -414,7 +414,7 @@ impl<C: YahooCallbacks> YahooStreamingCore<C> {
             if !guard.subscriptions.contains(s) {
                 guard.subscriptions.push(s.clone());
                 to_send.push(s.clone());
-                
+
                 // Persist the new subscription in redb
                 let write_txn = guard.db.begin_write().unwrap();
                 {
@@ -435,7 +435,7 @@ impl<C: YahooCallbacks> YahooStreamingCore<C> {
         let mut guard = self.inner.lock().await;
         // Remove symbols from memory
         guard.subscriptions.retain(|s| !symbols.contains(s));
-        
+
         // Remove symbols from the persistent database
         let write_txn = guard.db.begin_write().unwrap();
         {
@@ -455,7 +455,7 @@ impl<C: YahooCallbacks> YahooStreamingCore<C> {
         let write_txn = guard.db.begin_write().unwrap();
         let _ = write_txn.delete_table(SUBSCRIPTIONS_TABLE);
         write_txn.commit().unwrap();
-        
+
         // Reset in-memory state
         guard.subscriptions.clear();
         // Stop the active task

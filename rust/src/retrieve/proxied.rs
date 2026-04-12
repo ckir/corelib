@@ -1,8 +1,8 @@
 // =============================================
 // FILE: rust/src/retrieve/proxied.rs
 // PURPOSE: High-resilience proxied HTTP client mirroring RequestProxied.ts.
-// DESCRIPTION: This module provides a load-balanced HTTP client that rotates 
-// through a list of proxy servers. It handles automatic fallback to alternative 
+// DESCRIPTION: This module provides a load-balanced HTTP client that rotates
+// through a list of proxy servers. It handles automatic fallback to alternative
 // proxies upon failure and permanently removes consistently failing proxies.
 // =============================================
 
@@ -15,8 +15,8 @@ use serde::de::DeserializeOwned;
 use crate::retrieve::unlimited::{self, ApiResponse, RequestOptions};
 
 /// Internal state for the proxied client, managing active proxies and rotation.
-/// 
-/// Wrapped in a Mutex to allow safe concurrent mutation of rotation indices 
+///
+/// Wrapped in a Mutex to allow safe concurrent mutation of rotation indices
 /// and failure tracking across multiple Tokio tasks.
 #[derive(Debug)]
 struct ProxyState {
@@ -29,9 +29,9 @@ struct ProxyState {
 }
 
 /// A proxied HTTP client with automatic rotation, fallback, and load-balancing.
-/// 
-/// It mirrors the exact public API and resilience logic of the TypeScript `RequestProxied` class. 
-/// It delegates the actual network fetching, retries, and response serialization 
+///
+/// It mirrors the exact public API and resilience logic of the TypeScript `RequestProxied` class.
+/// It delegates the actual network fetching, retries, and response serialization
 /// to the `unlimited` retrieve module.
 #[derive(Debug, Clone)]
 pub struct RequestProxied {
@@ -41,10 +41,10 @@ pub struct RequestProxied {
 
 impl RequestProxied {
     /// Creates a new `RequestProxied` instance.
-    /// 
+    ///
     /// # Arguments
     /// * `proxies` - A vector of proxy base URLs (e.g., `["https://proxy1.com", "https://proxy2.com"]`).
-    /// 
+    ///
     /// # Panics
     /// Panics if the provided `proxies` vector is empty.
     pub fn new(proxies: Vec<String>) -> Self {
@@ -63,10 +63,10 @@ impl RequestProxied {
     }
 
     /// Builds the final proxy URL by appending the target URL as a query parameter.
-    /// 
-    /// This function uses `reqwest::Url` to guarantee correct query string encoding 
+    ///
+    /// This function uses `reqwest::Url` to guarantee correct query string encoding
     /// and handling of the original target URL.
-    /// 
+    ///
     /// # Arguments
     /// * `proxy_base` - The base URL of the proxy server.
     /// * `suffix` - An optional path segment to append to the proxy base.
@@ -94,7 +94,7 @@ impl RequestProxied {
     }
 
     /// Records a successful request for a proxy, resetting its failure streak.
-    /// 
+    ///
     /// # Arguments
     /// * `proxy_base` - The base URL of the proxy that succeeded.
     fn track_success(&self, proxy_base: &str) {
@@ -104,17 +104,20 @@ impl RequestProxied {
     }
 
     /// Records a failure for a proxy and removes it if it fails too many times consecutively.
-    /// 
-    /// After 3 consecutive failures, the proxy is permanently removed from the active list 
+    ///
+    /// After 3 consecutive failures, the proxy is permanently removed from the active list
     /// for this specific instance of `RequestProxied`.
-    /// 
+    ///
     /// # Arguments
     /// * `proxy_base` - The base URL of the proxy that failed.
     fn track_failure(&self, proxy_base: &str) {
         let mut state = self.state.lock().unwrap();
-        
+
         // Increment the failure streak for this proxy
-        let streak = state.failure_streaks.entry(proxy_base.to_string()).or_insert(0);
+        let streak = state
+            .failure_streaks
+            .entry(proxy_base.to_string())
+            .or_insert(0);
         *streak += 1;
 
         // Check if the threshold for removal has been reached
@@ -132,20 +135,23 @@ impl RequestProxied {
             }
 
             // Log the removal to stderr
-            eprintln!("[RequestProxied] Proxy removed (3 consecutive failures): {}", proxy_base);
+            eprintln!(
+                "[RequestProxied] Proxy removed (3 consecutive failures): {}",
+                proxy_base
+            );
         }
     }
 
     /// Makes a single proxied HTTP request with automatic rotation and fallback.
-    /// 
-    /// If the first proxy fails, it will automatically attempt the request using the 
+    ///
+    /// If the first proxy fails, it will automatically attempt the request using the
     /// next available proxy until all proxies in the active list have been exhausted.
-    /// 
+    ///
     /// # Arguments
     /// * `url` - The original target URL.
     /// * `suffix` - An optional path to append to the proxy base (e.g., `/api/v1`).
     /// * `options` - Standard request options passed through to the underlying fetcher.
-    /// 
+    ///
     /// # Returns
     /// An `ApiResponse<T>` from the first successful proxy or an error if all failed.
     pub async fn end_point<T: DeserializeOwned>(
@@ -177,11 +183,11 @@ impl RequestProxied {
                 if state.active_proxies.is_empty() {
                     break;
                 }
-                
+
                 // Select the proxy URL using the current rotation index
                 let idx = state.current_index % state.active_proxies.len();
                 proxy_base = state.active_proxies[idx].clone();
-                
+
                 // Advance the rotation index for the next request
                 state.current_index = (state.current_index + 1) % state.active_proxies.len();
             }
@@ -213,15 +219,15 @@ impl RequestProxied {
     }
 
     /// Makes multiple parallel proxied requests with round-robin load balancing.
-    /// 
-    /// Assigns each target URL to a proxy from the active list in a round-robin fashion 
+    ///
+    /// Assigns each target URL to a proxy from the active list in a round-robin fashion
     /// before executing all requests concurrently.
-    /// 
+    ///
     /// # Arguments
     /// * `urls` - A slice of target URLs.
     /// * `suffix` - An optional suffix applied to every proxy URL in this batch.
     /// * `options` - Shared request options applied to every individual request.
-    /// 
+    ///
     /// # Returns
     /// A vector of `ApiResponse<T>` objects corresponding to the input URLs.
     pub async fn end_points<T: DeserializeOwned>(
@@ -316,23 +322,24 @@ mod tests {
         let server2 = MockServer::start().await;
         let server3 = MockServer::start().await;
 
-        let body = TestBody { message: "ok".to_string() };
+        let body = TestBody {
+            message: "ok".to_string(),
+        };
 
         Mock::given(method("GET"))
             .respond_with(ResponseTemplate::new(200).set_body_json(&body))
-            .mount(&server1).await;
+            .mount(&server1)
+            .await;
         Mock::given(method("GET"))
             .respond_with(ResponseTemplate::new(200).set_body_json(&body))
-            .mount(&server2).await;
+            .mount(&server2)
+            .await;
         Mock::given(method("GET"))
             .respond_with(ResponseTemplate::new(200).set_body_json(&body))
-            .mount(&server3).await;
+            .mount(&server3)
+            .await;
 
-        let proxied = RequestProxied::new(vec![
-            server1.uri(),
-            server2.uri(),
-            server3.uri(),
-        ]);
+        let proxied = RequestProxied::new(vec![server1.uri(), server2.uri(), server3.uri()]);
 
         let target = "https://target.com";
 
@@ -360,15 +367,20 @@ mod tests {
 
         Mock::given(method("GET"))
             .respond_with(ResponseTemplate::new(500))
-            .mount(&server_fail1).await;
+            .mount(&server_fail1)
+            .await;
 
         Mock::given(method("GET"))
             .respond_with(ResponseTemplate::new(500))
-            .mount(&server_fail2).await;
+            .mount(&server_fail2)
+            .await;
 
         Mock::given(method("GET"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(TestBody { message: "ok".to_string() }))
-            .mount(&server_success).await;
+            .respond_with(ResponseTemplate::new(200).set_body_json(TestBody {
+                message: "ok".to_string(),
+            }))
+            .mount(&server_success)
+            .await;
 
         let proxied = RequestProxied::new(vec![
             server_fail1.uri(),
@@ -376,7 +388,9 @@ mod tests {
             server_success.uri(),
         ]);
 
-        let result = proxied.end_point::<TestBody>("https://target.com", "", Some(fast_fail_options())).await;
+        let result = proxied
+            .end_point::<TestBody>("https://target.com", "", Some(fast_fail_options()))
+            .await;
 
         match result {
             ApiResponse::Success { value } => assert_eq!(value.body.message, "ok"),
@@ -395,20 +409,23 @@ mod tests {
 
         Mock::given(method("GET"))
             .respond_with(ResponseTemplate::new(500))
-            .mount(&server_fail).await;
+            .mount(&server_fail)
+            .await;
 
         Mock::given(method("GET"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(TestBody { message: "ok".to_string() }))
-            .mount(&server_success).await;
+            .respond_with(ResponseTemplate::new(200).set_body_json(TestBody {
+                message: "ok".to_string(),
+            }))
+            .mount(&server_success)
+            .await;
 
-        let proxied = RequestProxied::new(vec![
-            server_fail.uri(),
-            server_success.uri(),
-        ]);
+        let proxied = RequestProxied::new(vec![server_fail.uri(), server_success.uri()]);
 
         // Attempt enough times to guarantee 3 failures on server_fail
         for _ in 0..5 {
-            let _ = proxied.end_point::<TestBody>("https://target.com", "", Some(fast_fail_options())).await;
+            let _ = proxied
+                .end_point::<TestBody>("https://target.com", "", Some(fast_fail_options()))
+                .await;
         }
 
         let state = proxied.state.lock().unwrap();
@@ -424,14 +441,18 @@ mod tests {
 
         Mock::given(method("GET"))
             .respond_with(ResponseTemplate::new(500))
-            .mount(&server1).await;
+            .mount(&server1)
+            .await;
         Mock::given(method("GET"))
             .respond_with(ResponseTemplate::new(500))
-            .mount(&server2).await;
+            .mount(&server2)
+            .await;
 
         let proxied = RequestProxied::new(vec![server1.uri(), server2.uri()]);
 
-        let result = proxied.end_point::<TestBody>("https://t.com", "", Some(fast_fail_options())).await;
+        let result = proxied
+            .end_point::<TestBody>("https://t.com", "", Some(fast_fail_options()))
+            .await;
 
         match result {
             ApiResponse::Error { reason } => assert_eq!(reason["message"], "All proxies failed"),
@@ -445,19 +466,21 @@ mod tests {
         let server2 = MockServer::start().await;
 
         Mock::given(method("GET"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(TestBody { message: "ok".to_string() }))
-            .mount(&server1).await;
+            .respond_with(ResponseTemplate::new(200).set_body_json(TestBody {
+                message: "ok".to_string(),
+            }))
+            .mount(&server1)
+            .await;
         Mock::given(method("GET"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(TestBody { message: "ok".to_string() }))
-            .mount(&server2).await;
+            .respond_with(ResponseTemplate::new(200).set_body_json(TestBody {
+                message: "ok".to_string(),
+            }))
+            .mount(&server2)
+            .await;
 
         let proxied = RequestProxied::new(vec![server1.uri(), server2.uri()]);
 
-        let urls = vec![
-            "https://t1.com",
-            "https://t2.com",
-            "https://t3.com",
-        ];
+        let urls = vec!["https://t1.com", "https://t2.com", "https://t3.com"];
 
         let results = proxied.end_points::<TestBody>(&urls, "", None).await;
         assert_eq!(results.len(), 3);
@@ -470,25 +493,53 @@ mod tests {
         assert_eq!(reqs2.len(), 1);
 
         // Verify correct ?url payload mapped
-        assert_eq!(reqs1[0].url.query_pairs().find(|(k, _)| k == "url").unwrap().1, "https://t1.com");
-        assert_eq!(reqs2[0].url.query_pairs().find(|(k, _)| k == "url").unwrap().1, "https://t2.com");
-        assert_eq!(reqs1[1].url.query_pairs().find(|(k, _)| k == "url").unwrap().1, "https://t3.com");
+        assert_eq!(
+            reqs1[0]
+                .url
+                .query_pairs()
+                .find(|(k, _)| k == "url")
+                .unwrap()
+                .1,
+            "https://t1.com"
+        );
+        assert_eq!(
+            reqs2[0]
+                .url
+                .query_pairs()
+                .find(|(k, _)| k == "url")
+                .unwrap()
+                .1,
+            "https://t2.com"
+        );
+        assert_eq!(
+            reqs1[1]
+                .url
+                .query_pairs()
+                .find(|(k, _)| k == "url")
+                .unwrap()
+                .1,
+            "https://t3.com"
+        );
     }
 
     #[tokio::test]
     async fn test_edge_case_no_active_proxies_left() {
         let proxied = RequestProxied::new(vec!["http://dummy".to_string()]);
-        
+
         // Manually empty active proxies
         {
             let mut state = proxied.state.lock().unwrap();
             state.active_proxies.clear();
         }
 
-        let result = proxied.end_point::<TestBody>("https://target.com", "", None).await;
+        let result = proxied
+            .end_point::<TestBody>("https://target.com", "", None)
+            .await;
 
         match result {
-            ApiResponse::Error { reason } => assert_eq!(reason["message"], "No active proxies left"),
+            ApiResponse::Error { reason } => {
+                assert_eq!(reason["message"], "No active proxies left")
+            }
             _ => panic!("Expected immediate fail if no proxies exist"),
         }
     }

@@ -1,8 +1,8 @@
 // =============================================
 // FILE: rust/src/utils/include_exclude_cron.rs
 // PURPOSE: Dedicated file for the include/exclude cron helper.
-// DESCRIPTION: This module provides a thread-based cron scheduler that 
-// supports multiple inclusion and exclusion rules. It is an exact behavioral 
+// DESCRIPTION: This module provides a thread-based cron scheduler that
+// supports multiple inclusion and exclusion rules. It is an exact behavioral
 // mirror of the `ts-core/src/utils/cron.ts` implementation.
 // =============================================
 
@@ -16,7 +16,7 @@ use std::time::Duration as StdDuration;
 
 /// A handle to a running background cron job.
 ///
-/// This handle allows the caller to gracefully stop the background thread 
+/// This handle allows the caller to gracefully stop the background thread
 /// responsible for ticking and executing the scheduled handler.
 pub struct CronJobHandle {
     /// Atomic flag checked by the background thread on every tick.
@@ -24,9 +24,9 @@ pub struct CronJobHandle {
 }
 
 impl CronJobHandle {
-    /// Signals the background cron job to stop. 
-    /// 
-    /// The background thread will exit cleanly upon its next internal tick 
+    /// Signals the background cron job to stop.
+    ///
+    /// The background thread will exit cleanly upon its next internal tick
     /// after this method is called.
     pub fn stop(&self) {
         // Set the atomic stop flag to true
@@ -44,7 +44,7 @@ impl CronJobHandle {
 /// - Cron expressions are pre-parsed for performance.
 /// - Supports 7-field cron format (second-level precision).
 /// - Runs in a dedicated native OS thread.
-/// 
+///
 /// # Arguments
 /// * `include_exprs` - A list of cron strings that trigger execution.
 /// * `exclude_exprs` - A list of cron strings that prevent execution.

@@ -1,8 +1,8 @@
 // =============================================
 // FILE: rust/src/markets/nasdaq/api_nasdaq_unlimited.rs
 // PURPOSE: High-resilience Nasdaq API wrapper.
-// DESCRIPTION: This module provides specialized wrappers for the Nasdaq API. 
-// It automatically injects required spoofed headers (Standard or Charting) 
+// DESCRIPTION: This module provides specialized wrappers for the Nasdaq API.
+// It automatically injects required spoofed headers (Standard or Charting)
 // and validates the application-level `rCode` within the response JSON.
 // =============================================
 
@@ -15,13 +15,13 @@ use std::collections::HashMap;
 const CHROME_VERSION: &str = "145";
 
 /// Generates the static spoof headers required for authentic Nasdaq API requests.
-/// 
-/// This function determines whether to use "Standard" headers (for `www.nasdaq.com`) 
+///
+/// This function determines whether to use "Standard" headers (for `www.nasdaq.com`)
 /// or "Charting" headers (for `charting.nasdaq.com`) based on the URL content.
-/// 
+///
 /// # Arguments
 /// * `url` - The target Nasdaq URL string.
-/// 
+///
 /// # Returns
 /// A `HashMap` containing the necessary HTTP header keys and values.
 pub fn get_nasdaq_headers(url: &str) -> HashMap<String, String> {
@@ -74,17 +74,17 @@ pub fn get_nasdaq_headers(url: &str) -> HashMap<String, String> {
 }
 
 /// Makes a single resilient request to a Nasdaq API endpoint with automatic header injection.
-/// 
-/// This function dynamically determines the correct headers for the target URL, 
-/// executes the request via the `unlimited` module, and then performs a deep validation 
+///
+/// This function dynamically determines the correct headers for the target URL,
+/// executes the request via the `unlimited` module, and then performs a deep validation
 /// of the Nasdaq-specific `status.rCode` field in the JSON response.
-/// 
+///
 /// User-provided headers in `RequestOptions` will override any generated defaults.
-/// 
+///
 /// # Arguments
 /// * `url` - The target Nasdaq URL to fetch.
 /// * `options` - Optional overrides for retries, timeouts, and headers.
-/// 
+///
 /// # Returns
 /// An `ApiResponse<T>` containing either the Generic parsed response body or an error state.
 pub async fn nasdaq_end_point<T: DeserializeOwned + Serialize>(
@@ -132,7 +132,7 @@ pub async fn nasdaq_end_point<T: DeserializeOwned + Serialize>(
                     }
                 }
             }
-            
+
             // Return the original Success if no validation errors were found
             ApiResponse::Success { value }
         }
@@ -142,15 +142,15 @@ pub async fn nasdaq_end_point<T: DeserializeOwned + Serialize>(
 }
 
 /// Makes multiple parallel resilient requests to multiple Nasdaq API endpoints.
-/// 
-/// This function maps each URL to a `nasdaq_end_point` call, ensuring that the 
-/// correct headers and validation logic are applied to each request independently. 
+///
+/// This function maps each URL to a `nasdaq_end_point` call, ensuring that the
+/// correct headers and validation logic are applied to each request independently.
 /// All requests are executed concurrently.
-/// 
+///
 /// # Arguments
 /// * `urls` - A slice of target Nasdaq URLs.
 /// * `options` - Shared configuration overrides applied to every request in the batch.
-/// 
+///
 /// # Returns
 /// A vector of `ApiResponse<T>` objects.
 pub async fn nasdaq_end_points<T: DeserializeOwned + Serialize>(
@@ -197,7 +197,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_nasdaq_headers_standard() {
         let headers = get_nasdaq_headers("https://api.nasdaq.com/api/quote/AAPL/info");
-        
+
         assert_eq!(headers.get("origin").unwrap(), "https://www.nasdaq.com");
         assert_eq!(headers.get("referer").unwrap(), "https://www.nasdaq.com/");
         assert_eq!(headers.get("sec-ch-ua-platform").unwrap(), "\"Windows\"");
@@ -222,7 +222,7 @@ mod tests {
     #[tokio::test]
     async fn test_nasdaq_end_point_success() {
         let server = MockServer::start().await;
-        
+
         let expected_body = MockResponse {
             symbol: "AAPL".to_string(),
             price: 150.0,
@@ -287,7 +287,7 @@ mod tests {
     #[tokio::test]
     async fn test_nasdaq_end_point_charting_success() {
         let server = MockServer::start().await;
-        
+
         // Charting data often omits the `status.rCode` wrapper entirely
         let expected_body = MockResponse {
             symbol: "CHART".to_string(),
@@ -297,7 +297,10 @@ mod tests {
 
         Mock::given(method("GET"))
             .and(path("/charting/data"))
-            .and(header("referer", "https://charting.nasdaq.com/dynamic/chart.html"))
+            .and(header(
+                "referer",
+                "https://charting.nasdaq.com/dynamic/chart.html",
+            ))
             .respond_with(ResponseTemplate::new(200).set_body_json(&expected_body))
             .mount(&server)
             .await;
@@ -330,7 +333,7 @@ mod tests {
             .await;
 
         let url = format!("{}/override", server.uri());
-        
+
         let mut custom_headers = HashMap::new();
         custom_headers.insert("User-Agent".to_string(), "Custom Agent".to_string());
 
@@ -353,15 +356,29 @@ mod tests {
     #[tokio::test]
     async fn test_nasdaq_end_points_parallel_dispatch() {
         let server = MockServer::start().await;
-        
-        let body_1 = MockResponse { symbol: "1".to_string(), price: 1.0, status: None };
-        let body_2 = MockResponse { symbol: "2".to_string(), price: 2.0, status: None };
 
-        Mock::given(method("GET")).and(path("/1"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(&body_1)).mount(&server).await;
+        let body_1 = MockResponse {
+            symbol: "1".to_string(),
+            price: 1.0,
+            status: None,
+        };
+        let body_2 = MockResponse {
+            symbol: "2".to_string(),
+            price: 2.0,
+            status: None,
+        };
 
-        Mock::given(method("GET")).and(path("/2/charting"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(&body_2)).mount(&server).await;
+        Mock::given(method("GET"))
+            .and(path("/1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&body_1))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/2/charting"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&body_2))
+            .mount(&server)
+            .await;
 
         let url1 = format!("{}/1", server.uri());
         let url2 = format!("{}/2/charting", server.uri());
@@ -370,8 +387,14 @@ mod tests {
         let results = nasdaq_end_points::<MockResponse>(&urls, None).await;
 
         assert_eq!(results.len(), 2);
-        match &results[0] { ApiResponse::Success { value } => assert_eq!(value.body, body_1), _ => panic!() }
-        match &results[1] { ApiResponse::Success { value } => assert_eq!(value.body, body_2), _ => panic!() }
+        match &results[0] {
+            ApiResponse::Success { value } => assert_eq!(value.body, body_1),
+            _ => panic!(),
+        }
+        match &results[1] {
+            ApiResponse::Success { value } => assert_eq!(value.body, body_2),
+            _ => panic!(),
+        }
     }
 
     #[tokio::test]
@@ -385,7 +408,10 @@ mod tests {
             .await;
 
         let url = format!("{}/error", server.uri());
-        let options = RequestOptions { retry_limit: Some(0), ..Default::default() };
+        let options = RequestOptions {
+            retry_limit: Some(0),
+            ..Default::default()
+        };
         let res = nasdaq_end_point::<MockResponse>(&url, Some(options)).await;
 
         match res {

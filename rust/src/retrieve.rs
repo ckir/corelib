@@ -1,8 +1,8 @@
 // =============================================
 // FILE: rust/src/retrieve.rs
 // PURPOSE: Retrieve module index / barrel file
-// DESCRIPTION: This file acts as a barrel for the `retrieve` section, 
-// re-exporting the `ky` HTTP client, the `unlimited` high-resilience utility, 
+// DESCRIPTION: This file acts as a barrel for the `retrieve` section,
+// re-exporting the `ky` HTTP client, the `unlimited` high-resilience utility,
 // and the `proxied` load-balanced client.
 // =============================================
 

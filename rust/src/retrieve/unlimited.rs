@@ -1,8 +1,8 @@
 // =============================================
 // FILE: rust/src/retrieve/unlimited.rs
 // PURPOSE: High-resilience HTTP request utility.
-// DESCRIPTION: This module provides high-level functions for making resilient 
-// HTTP requests, mirroring the `RequestUnlimited.ts` logic. It supports automatic 
+// DESCRIPTION: This module provides high-level functions for making resilient
+// HTTP requests, mirroring the `RequestUnlimited.ts` logic. It supports automatic
 // retries, timeouts, and standardized response serialization.
 // =============================================
 
@@ -17,7 +17,7 @@ use serde_json::Value;
 use crate::retrieve::ky;
 
 /// Standardized structure for serialized HTTP responses.
-/// 
+///
 /// Mirrors the `SerializedResponse<T>` interface from TypeScript.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SerializedResponse<T> {
@@ -36,26 +36,26 @@ pub struct SerializedResponse<T> {
 }
 
 /// Discriminated union for API results, providing a consistent success/error structure.
-/// 
-/// It maps exactly to `{"status": "success", "value": ...}` or `{"status": "error", "reason": ...}` 
+///
+/// It maps exactly to `{"status": "success", "value": ...}` or `{"status": "error", "reason": ...}`
 /// for seamless serialization between Rust and TypeScript.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "status", rename_all = "lowercase")]
 pub enum ApiResponse<T> {
     /// Represents a successful HTTP request with a 2xx status code and successfully parsed body.
-    Success { 
+    Success {
         /// The serialized response wrapper containing the parsed body and metadata.
-        value: SerializedResponse<T> 
+        value: SerializedResponse<T>,
     },
     /// Represents a failure, either at the network level, HTTP level (non-2xx), or parsing level.
-    Error { 
+    Error {
         /// Detailed reason for the error, structured as a JSON value for cross-language compatibility.
-        reason: Value 
+        reason: Value,
     },
 }
 
 /// Request configuration options for high-resilience fetching.
-/// 
+///
 /// Defines overrides for standard HTTP parameters and the underlying `ky` retry logic.
 #[derive(Debug, Clone, Default)]
 pub struct RequestOptions {
@@ -73,15 +73,15 @@ pub struct RequestOptions {
 
 /// Makes an HTTP request to a single URL with built-in resilience features.
 ///
-/// This function uses the underlying `ky` implementation to automatically handle 
+/// This function uses the underlying `ky` implementation to automatically handle
 /// retries and timeouts based on the provided options or defaults.
-/// 
+///
 /// # Arguments
 /// * `url` - The target URL to fetch.
 /// * `options` - Optional configuration overrides (method, headers, body, retries).
-/// 
+///
 /// # Returns
-/// An `ApiResponse<T>` containing either the `SerializedResponse` on success 
+/// An `ApiResponse<T>` containing either the `SerializedResponse` on success
 /// or a JSON-structured error reason on failure.
 pub async fn end_point<T: DeserializeOwned>(
     url: &str,
@@ -134,14 +134,11 @@ pub async fn end_point<T: DeserializeOwned>(
             let status_code = status.as_u16();
             let status_text = status.canonical_reason().unwrap_or("").to_string();
             let res_url = inner_res.url().to_string();
-            
+
             // Map headers into a standard HashMap
             let mut headers = HashMap::new();
             for (k, v) in inner_res.headers() {
-                headers.insert(
-                    k.as_str().to_string(),
-                    v.to_str().unwrap_or("").to_string(),
-                );
+                headers.insert(k.as_str().to_string(), v.to_str().unwrap_or("").to_string());
             }
 
             // Attempt to deserialize the response body as the requested type T
@@ -190,21 +187,21 @@ pub async fn end_point<T: DeserializeOwned>(
                     })
                 }
             };
-            
+
             ApiResponse::Error { reason }
         }
     }
 }
 
 /// Makes parallel HTTP requests to multiple URLs concurrently.
-/// 
-/// All requests are executed simultaneously using `futures::future::join_all`. 
+///
+/// All requests are executed simultaneously using `futures::future::join_all`.
 /// The order of results in the returned vector matches the order of input URLs.
-/// 
+///
 /// # Arguments
 /// * `urls` - A slice of target URLs to fetch.
 /// * `options` - Shared configuration overrides applied to every request in the batch.
-/// 
+///
 /// # Returns
 /// A vector of `ApiResponse<T>` objects.
 pub async fn end_points<T: DeserializeOwned>(
@@ -212,14 +209,12 @@ pub async fn end_points<T: DeserializeOwned>(
     options: Option<RequestOptions>,
 ) -> Vec<ApiResponse<T>> {
     let opts = options.unwrap_or_default();
-    
+
     // Create an iterator of futures, each calling end_point for a specific URL
     let futures = urls.iter().map(|&url| {
         // Clone the shared options for each individual task
         let cloned_opts = opts.clone();
-        async move {
-            end_point::<T>(url, Some(cloned_opts)).await
-        }
+        async move { end_point::<T>(url, Some(cloned_opts)).await }
     });
 
     // Execute all futures concurrently and await their completion
@@ -282,7 +277,7 @@ mod tests {
             .await;
 
         let url = format!("{}/not-found", server.uri());
-        
+
         // Disable retries for fast failure
         let options = RequestOptions {
             retry_limit: Some(0),
@@ -343,9 +338,15 @@ mod tests {
     #[tokio::test]
     async fn test_end_points_parallel_execution() {
         let server = MockServer::start().await;
-        
-        let body_1 = TestBody { message: "First".to_string(), code: 1 };
-        let body_2 = TestBody { message: "Second".to_string(), code: 2 };
+
+        let body_1 = TestBody {
+            message: "First".to_string(),
+            code: 1,
+        };
+        let body_2 = TestBody {
+            message: "Second".to_string(),
+            code: 2,
+        };
 
         Mock::given(method("GET"))
             .and(path("/1"))
@@ -370,7 +371,7 @@ mod tests {
         let url3 = format!("{}/error", server.uri());
 
         let urls = vec![url1.as_str(), url2.as_str(), url3.as_str()];
-        
+
         let options = RequestOptions {
             retry_limit: Some(0),
             ..Default::default()

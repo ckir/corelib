@@ -1,8 +1,8 @@
 // =============================================
 // FILE: rust/src/bin/yahoo_streamer.rs
 // PURPOSE: CLI entry point for the Yahoo Finance price streamer.
-// DESCRIPTION: This binary allows running the Yahoo price streamer from the 
-// command line. It supports symbol subscription, persistence via a local database, 
+// DESCRIPTION: This binary allows running the Yahoo price streamer from the
+// command line. It supports symbol subscription, persistence via a local database,
 // and outputs real-time pricing data as JSON to stdout.
 // =============================================
 

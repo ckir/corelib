@@ -1,8 +1,8 @@
 // =============================================
 // FILE: rust/src/retrieve/ky.rs
 // PURPOSE: Lightweight HTTP client mimicking the `ky` API.
-// DESCRIPTION: This module provides a high-level, ergonomic wrapper around 
-// `reqwest` that mimics the `ky` API. It includes automatic retries with 
+// DESCRIPTION: This module provides a high-level, ergonomic wrapper around
+// `reqwest` that mimics the `ky` API. It includes automatic retries with
 // exponential backoff and support for the `Retry-After` header.
 // =============================================
 
@@ -92,7 +92,7 @@ impl Default for RetryOptions {
 }
 
 /// The main `ky`-like client instance.
-/// 
+///
 /// It encapsulates a `reqwest::Client` and a set of `RetryOptions`.
 #[derive(Clone, Debug)]
 pub struct Ky {
@@ -119,7 +119,7 @@ impl Ky {
     }
 
     /// Creates a new `Ky` instance from an existing `reqwest::Client`.
-    /// 
+    ///
     /// # Arguments
     /// * `client` - The `reqwest` client to wrap.
     pub fn with_client(client: Client) -> Self {
@@ -130,7 +130,7 @@ impl Ky {
     }
 
     /// Sets the maximum number of retry attempts for this client instance.
-    /// 
+    ///
     /// # Arguments
     /// * `limit` - The new retry limit.
     pub fn retry(mut self, limit: u32) -> Self {
@@ -139,7 +139,7 @@ impl Ky {
     }
 
     /// Overrides the entire retry configuration for this client instance.
-    /// 
+    ///
     /// # Arguments
     /// * `options` - The new `RetryOptions` to apply.
     pub fn retry_options(mut self, options: RetryOptions) -> Self {
@@ -216,7 +216,7 @@ pub struct KyRequestBuilder {
 
 impl KyRequestBuilder {
     /// Attaches a JSON body to the request.
-    /// 
+    ///
     /// # Arguments
     /// * `json` - The serializable object to be sent as JSON.
     pub fn json<T: Serialize + ?Sized>(mut self, json: &T) -> Self {
@@ -261,7 +261,7 @@ impl KyRequestBuilder {
     }
 
     /// Executes the request, handling non-2xx status codes and automatic retries.
-    /// 
+    ///
     /// # Returns
     /// A `Result` containing the `KyResponse` on success, or a `KyError` on failure.
     pub async fn send(self) -> Result<KyResponse, KyError> {
@@ -409,7 +409,7 @@ impl KyResponse {
     }
 
     /// Consumes the `KyResponse` and returns the underlying `reqwest::Response`.
-    /// 
+    ///
     /// This is useful if you need to access raw headers or other low-level details.
     pub fn into_inner(self) -> reqwest::Response {
         self.res

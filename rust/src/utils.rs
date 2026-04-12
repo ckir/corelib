@@ -1,7 +1,7 @@
 // =============================================
 // FILE: rust/src/utils.rs
 // PURPOSE: Utils module index / barrel file
-// DESCRIPTION: Re-exports all helper utilities, mirroring the TypeScript 
+// DESCRIPTION: Re-exports all helper utilities, mirroring the TypeScript
 // `ts-core/src/utils/index.ts` structure.
 // =============================================
 

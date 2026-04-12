@@ -1,8 +1,8 @@
 // =============================================
 // FILE: rust/src/lib.rs
 // PURPOSE: Core Rust FFI entry point + public modules
-// DESCRIPTION: This file defines the main entry point for the N-API FFI bridge 
-// and re-exports all public Rust modules (retrieve, markets, utils) for internal 
+// DESCRIPTION: This file defines the main entry point for the N-API FFI bridge
+// and re-exports all public Rust modules (retrieve, markets, utils) for internal
 // and external usage.
 // =============================================
 
@@ -15,20 +15,20 @@ pub mod retrieve;
 
 /// Re-export the ergonomic `ky` HTTP client.
 pub use retrieve::ky;
-/// Re-export the high-resilience `unlimited` request utility.
-pub use retrieve::unlimited;
 /// Re-export the high-resilience `proxied` HTTP client.
 pub use retrieve::proxied;
+/// Re-export the high-resilience `unlimited` request utility.
+pub use retrieve::unlimited;
 
 use napi_derive::napi;
 
 /// Logs a message in Rust and returns the input value doubled.
 /// Used by the TS FFI bridge (`logAndDouble`).
-/// 
+///
 /// # Arguments
 /// * `msg` - The message to log to stdout.
 /// * `value` - The integer value to double.
-/// 
+///
 /// # Returns
 /// The input `value` multiplied by 2.
 #[napi]
@@ -41,7 +41,7 @@ pub fn log_and_double(msg: String, value: i32) -> i32 {
 
 /// Returns the Cargo package version as a string.
 /// Used by the TS FFI bridge (`getVersion`).
-/// 
+///
 /// # Returns
 /// The version string from `Cargo.toml`.
 #[napi]
