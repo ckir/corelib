@@ -11,6 +11,7 @@ pub mod utils;
 /// Public retrieve module (contains the `ky` HTTP client).
 pub mod retrieve;
 pub use retrieve::ky;
+pub use retrieve::unlimited;
 
 use napi_derive::napi;
 
