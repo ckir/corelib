@@ -1,6 +1,6 @@
 [package]
 name = "corelib-rust"
-version = "0.1.13"
+version = "0.1.14"
 edition = "2021"
 
 [lib]
@@ -38,6 +38,10 @@ wiremock = "0.6.5"
 
 [build-dependencies]
 napi-build = "2"
+
+[[bin]]
+name = "nasdaq_polling"
+required-features = ["clap"]
 
 [[bin]]
 name = "yahoo_streamer"

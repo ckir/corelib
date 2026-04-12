@@ -1,6 +1,6 @@
 {
     "name": "corelib-rust",
-    "version": "0.1.13",
+    "version": "0.1.14",
     "main": "index.js",
     "types": "index.d.ts",
     "napi": {
@@ -16,6 +16,7 @@
     "scripts": {
         "build": "napi build --release --platform",
         "build:local": "napi build --release",
+        "build:bins": "cargo build --release --bins --features clap",
         "docs": "cargo doc --no-deps && node -e \"const fs=require('fs');const path=require('path');const t=path.join('target','doc');const d='docs';if(fs.existsSync(d))fs.rmSync(d,{recursive:true,force:true});fs.mkdirSync(d,{recursive:true});fs.cpSync(t,d,{recursive:true});fs.rmSync(t,{recursive:true,force:true});console.log('✅ Rust docs moved to ./rust/docs')\"",
         "docs:clean": "cargo clean --doc",
         "format": "cargo fmt",

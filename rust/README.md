@@ -26,7 +26,10 @@ High-resilience wrappers for the official Nasdaq API:
 ### 3. Yahoo Streaming Core (`crate::markets::nasdaq::datafeeds::streaming::yahoo`)
 High-speed Yahoo Finance price stream handler using WebSockets and Protocol Buffers. Features silence detection, persistent subscriptions via `redb`, and supervised reconnection logic.
 
-### 4. General Utilities (`crate::utils`)
+### 4. Nasdaq Polling Daemon (`src/bin/nasdaq_polling.rs`)
+A native CLI binary that polls Nasdaq quotes based on complex cron schedules (inclusion/exclusion). Supports direct API calls or load-balanced execution via edge proxies.
+
+### 5. General Utilities (`crate::utils`)
 - **`include_exclude_cron`**: A multi-rule cron scheduler with second-level precision, mirroring the TypeScript implementation for unified task scheduling logic.
 
 ## Building & Development
@@ -46,6 +49,41 @@ pnpm build
 The Rust package includes an exhaustive test suite using `wiremock` for deterministic network testing.
 ```bash
 cargo test
+```
+
+## CLI Binaries
+
+The project includes several high-performance CLI binaries for standalone market data acquisition.
+
+### 1. Yahoo Streamer (`yahoo_streamer`)
+A supervised WebSocket client for Yahoo Finance. Outputs real-time pricing data as NDJSON to `stdout`.
+
+```bash
+# Subscribe to multiple symbols with a 60s silence timeout
+./target/release/yahoo_streamer --symbols "AAPL,MSFT,TSLA" --silence 60
+
+# Clear existing persistent subscriptions and start fresh
+./target/release/yahoo_streamer --clean --symbols "QQQ,SPY"
+```
+
+### 2. Nasdaq Polling Daemon (`nasdaq_polling`)
+A cron-driven daemon for polling the official Nasdaq API. Supports load-balancing via multiple edge proxies.
+
+```bash
+# Poll every second during market hours, excluding weekends
+./target/release/nasdaq_polling \
+  --include "* * * * * * *" \
+  --exclude "* * * * * 0,6 *" \
+  --symbol "AAPL::stocks" \
+  --symbol "QQQ::etf" \
+  --concurrency 10
+
+# Poll via ts-cloud edge proxies for enhanced resilience
+./target/release/nasdaq_polling \
+  --include "*/5 * * * * * *" \
+  --symbol "MSFT::stocks" \
+  --proxy "https://ts-cloud.costas.workers.dev/" \
+  --proxy "https://vk2hdy5skibvncgvbqwrnxvlvu0idgat.lambda-url.us-east-1.on.aws/"
 ```
 
 ## Internal Usage (via FFI)

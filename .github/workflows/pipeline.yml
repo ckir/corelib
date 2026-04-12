@@ -185,16 +185,20 @@ jobs:
         include:
           - os: ubuntu-latest
             artifact_name: corelib-rust-linux-x64.node
-            bin_name: yahoo_streamer-linux-x64
+            bin_yahoo: yahoo_streamer-linux-x64
+            bin_polling: nasdaq_polling-linux-x64
           - os: macos-latest
             artifact_name: corelib-rust-darwin-x64.node
-            bin_name: yahoo_streamer-darwin-x64
+            bin_yahoo: yahoo_streamer-darwin-x64
+            bin_polling: nasdaq_polling-darwin-x64
           - os: macos-14
             artifact_name: corelib-rust-darwin-arm64.node
-            bin_name: yahoo_streamer-darwin-arm64
+            bin_yahoo: yahoo_streamer-darwin-arm64
+            bin_polling: nasdaq_polling-darwin-arm64
           - os: windows-latest
             artifact_name: corelib-rust-win32-x64.node
-            bin_name: yahoo_streamer-win32-x64.exe
+            bin_yahoo: yahoo_streamer-win32-x64.exe
+            bin_polling: nasdaq_polling-win32-x64.exe
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
@@ -212,18 +216,20 @@ jobs:
         run: |
           cd rust
           pnpm exec napi build --release
-      - name: Build yahoo_streamer CLI
+      - name: Build CLI Binaries
         run: |
           cd rust
-          cargo build --release --bin yahoo_streamer --features clap
+          cargo build --release --bins --features clap
       - name: Rename Artifacts
         shell: bash
         run: |
           mv rust/corelib-rust.node ${{ matrix.artifact_name }}
           if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-            mv rust/target/release/yahoo_streamer.exe ${{ matrix.bin_name }}
+            mv rust/target/release/yahoo_streamer.exe ${{ matrix.bin_yahoo }}
+            mv rust/target/release/nasdaq_polling.exe ${{ matrix.bin_polling }}
           else
-            mv rust/target/release/yahoo_streamer ${{ matrix.bin_name }}
+            mv rust/target/release/yahoo_streamer ${{ matrix.bin_yahoo }}
+            mv rust/target/release/nasdaq_polling ${{ matrix.bin_polling }}
           fi
       - uses: actions/upload-artifact@v7
         with:
@@ -232,8 +238,13 @@ jobs:
           retention-days: 1
       - uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.bin_name }}
-          path: ${{ matrix.bin_name }}
+          name: ${{ matrix.bin_yahoo }}
+          path: ${{ matrix.bin_yahoo }}
+          retention-days: 1
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.bin_polling }}
+          path: ${{ matrix.bin_polling }}
           retention-days: 1
 
   release:
