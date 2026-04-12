@@ -1,6 +1,9 @@
 // =============================================
 // FILE: rust/src/retrieve/proxied.rs
 // PURPOSE: High-resilience proxied HTTP client mirroring RequestProxied.ts.
+// DESCRIPTION: This module provides a load-balanced HTTP client that rotates 
+// through a list of proxy servers. It handles automatic fallback to alternative 
+// proxies upon failure and permanently removes consistently failing proxies.
 // =============================================
 
 use std::collections::HashMap;
@@ -11,38 +14,41 @@ use serde::de::DeserializeOwned;
 
 use crate::retrieve::unlimited::{self, ApiResponse, RequestOptions};
 
-/// Internal state for the proxied client.
+/// Internal state for the proxied client, managing active proxies and rotation.
 /// 
-/// Wrapped in a Mutex to allow safe mutation of rotation indices 
-/// and failure tracking across concurrent Tokio tasks.
+/// Wrapped in a Mutex to allow safe concurrent mutation of rotation indices 
+/// and failure tracking across multiple Tokio tasks.
 #[derive(Debug)]
 struct ProxyState {
-    /// List of currently active proxy base URLs
+    /// List of currently active proxy base URLs.
     active_proxies: Vec<String>,
-    /// Tracks consecutive failures for each proxy
+    /// Tracks the number of consecutive failures for each proxy URL.
     failure_streaks: HashMap<String, u32>,
-    /// The current index for round-robin rotation
+    /// The current index used for round-robin proxy rotation.
     current_index: usize,
 }
 
-/// Proxied HTTP client with automatic rotation, fallback, and load-balancing.
+/// A proxied HTTP client with automatic rotation, fallback, and load-balancing.
 /// 
-/// Mirrors the exact public API and resilience logic of `RequestProxied.ts`.
-/// Delegates actual fetching, retries, and serialization to `RequestUnlimited`.
+/// It mirrors the exact public API and resilience logic of the TypeScript `RequestProxied` class. 
+/// It delegates the actual network fetching, retries, and response serialization 
+/// to the `unlimited` retrieve module.
 #[derive(Debug, Clone)]
 pub struct RequestProxied {
+    /// Shared thread-safe state of the proxy list and rotation logic.
     state: Arc<Mutex<ProxyState>>,
 }
 
 impl RequestProxied {
-    /// Creates a new RequestProxied instance.
+    /// Creates a new `RequestProxied` instance.
     /// 
     /// # Arguments
-    /// * `proxies` - Array of proxy base URLs (e.g. `["https://proxy1...", "https://proxy2..."]`).
+    /// * `proxies` - A vector of proxy base URLs (e.g., `["https://proxy1.com", "https://proxy2.com"]`).
     /// 
     /// # Panics
     /// Panics if the provided `proxies` vector is empty.
     pub fn new(proxies: Vec<String>) -> Self {
+        // Enforce that at least one proxy is provided
         if proxies.is_empty() {
             panic!("RequestProxied: at least one proxy URL is required");
         }
@@ -56,68 +62,92 @@ impl RequestProxied {
         }
     }
 
-    /// Builds the final proxy URL using the reqwest::Url constructor.
-    /// Guarantees correct query string handling and URL encoding of the original target.
+    /// Builds the final proxy URL by appending the target URL as a query parameter.
+    /// 
+    /// This function uses `reqwest::Url` to guarantee correct query string encoding 
+    /// and handling of the original target URL.
+    /// 
+    /// # Arguments
+    /// * `proxy_base` - The base URL of the proxy server.
+    /// * `suffix` - An optional path segment to append to the proxy base.
+    /// * `target_url` - The original URL that should be fetched via the proxy.
     fn build_proxy_url(proxy_base: &str, suffix: &str, target_url: &str) -> String {
-        // Ensure base ends with / so suffix path is appended correctly
+        // Ensure the base URL ends with a slash so the suffix is joined correctly
         let base_with_slash = if proxy_base.ends_with('/') {
             proxy_base.to_string()
         } else {
             format!("{}/", proxy_base)
         };
 
-        // Parse base URL
+        // Parse the base URL into a Url object
         let mut url_obj = Url::parse(&base_with_slash).expect("Invalid proxy base URL");
 
-        // Apply suffix if provided
+        // Join the suffix if it's not empty
         if !suffix.is_empty() {
             url_obj = url_obj.join(suffix).expect("Invalid proxy suffix");
         }
 
-        // Append the encoded target URL
+        // Append the encoded target URL as the 'url' query parameter
         url_obj.query_pairs_mut().append_pair("url", target_url);
+        // Return the final serialized URL string
         url_obj.to_string()
     }
 
-    /// Records a successful request for a proxy (resets failure streak).
+    /// Records a successful request for a proxy, resetting its failure streak.
+    /// 
+    /// # Arguments
+    /// * `proxy_base` - The base URL of the proxy that succeeded.
     fn track_success(&self, proxy_base: &str) {
         let mut state = self.state.lock().unwrap();
+        // Reset the streak to 0 upon success
         state.failure_streaks.insert(proxy_base.to_string(), 0);
     }
 
-    /// Records a failure for a proxy.
-    /// After 3 consecutive failures, the proxy is permanently removed from the active list.
+    /// Records a failure for a proxy and removes it if it fails too many times consecutively.
+    /// 
+    /// After 3 consecutive failures, the proxy is permanently removed from the active list 
+    /// for this specific instance of `RequestProxied`.
+    /// 
+    /// # Arguments
+    /// * `proxy_base` - The base URL of the proxy that failed.
     fn track_failure(&self, proxy_base: &str) {
         let mut state = self.state.lock().unwrap();
         
+        // Increment the failure streak for this proxy
         let streak = state.failure_streaks.entry(proxy_base.to_string()).or_insert(0);
         *streak += 1;
 
+        // Check if the threshold for removal has been reached
         if *streak >= 3 {
-            // Remove permanently for this instance
+            // Remove the proxy from the active list
             state.active_proxies.retain(|p| p != proxy_base);
+            // Clear the failure streak data for the removed proxy
             state.failure_streaks.remove(proxy_base);
 
-            // Prevent index out of bounds
+            // Adjust the current index to prevent out-of-bounds access
             if state.active_proxies.is_empty() {
                 state.current_index = 0;
             } else if state.current_index >= state.active_proxies.len() {
                 state.current_index = 0;
             }
 
+            // Log the removal to stderr
             eprintln!("[RequestProxied] Proxy removed (3 consecutive failures): {}", proxy_base);
         }
     }
 
-    /// Makes a single proxied HTTP request with full fallback.
+    /// Makes a single proxied HTTP request with automatic rotation and fallback.
     /// 
-    /// Automatically rotates proxies on every attempt and falls back to the next proxy
-    /// if the current one fails, until all active proxies have been exhausted.
+    /// If the first proxy fails, it will automatically attempt the request using the 
+    /// next available proxy until all proxies in the active list have been exhausted.
     /// 
     /// # Arguments
-    /// * `url` - Original target URL.
-    /// * `suffix` - Optional path to append to the proxy base (default empty).
-    /// * `options` - Options passed through to RequestUnlimited.
+    /// * `url` - The original target URL.
+    /// * `suffix` - An optional path to append to the proxy base (e.g., `/api/v1`).
+    /// * `options` - Standard request options passed through to the underlying fetcher.
+    /// 
+    /// # Returns
+    /// An `ApiResponse<T>` from the first successful proxy or an error if all failed.
     pub async fn end_point<T: DeserializeOwned>(
         &self,
         url: &str,
@@ -127,12 +157,14 @@ impl RequestProxied {
         let max_attempts;
         {
             let state = self.state.lock().unwrap();
+            // Return immediately if no proxies are left
             if state.active_proxies.is_empty() {
                 eprintln!("[RequestProxied] No active proxies left");
                 return ApiResponse::Error {
                     reason: serde_json::json!({ "message": "No active proxies left" }),
                 };
             }
+            // We will attempt at most once per active proxy
             max_attempts = state.active_proxies.len();
         }
 
@@ -146,46 +178,52 @@ impl RequestProxied {
                     break;
                 }
                 
-                // Select proxy via round-robin
+                // Select the proxy URL using the current rotation index
                 let idx = state.current_index % state.active_proxies.len();
                 proxy_base = state.active_proxies[idx].clone();
                 
-                // Advance rotation on EVERY attempt
+                // Advance the rotation index for the next request
                 state.current_index = (state.current_index + 1) % state.active_proxies.len();
             }
 
+            // Construct the proxied URL
             let proxy_url = Self::build_proxy_url(&proxy_base, suffix, url);
+            // Execute the request via the unlimited module
             let result = unlimited::end_point::<T>(&proxy_url, options.clone()).await;
 
             match result {
                 ApiResponse::Success { .. } => {
+                    // Request succeeded, track it and return the result
                     self.track_success(&proxy_base);
                     return result;
                 }
                 ApiResponse::Error { .. } => {
-                    // Track failure and attempt next proxy
+                    // Request failed via this proxy, track the failure and try the next one
                     self.track_failure(&proxy_base);
                     attempts += 1;
                 }
             }
         }
 
-        // All proxies failed
+        // Exhausted all proxies without success
         eprintln!("[RequestProxied] All proxies failed for url: {}", url);
         ApiResponse::Error {
             reason: serde_json::json!({ "message": "All proxies failed" }),
         }
     }
 
-    /// Makes parallel proxied requests with explicit round-robin load balancing.
+    /// Makes multiple parallel proxied requests with round-robin load balancing.
     /// 
-    /// Each original URL is assigned to a proxy via round-robin.
-    /// The constructed proxy URLs are then passed to RequestUnlimited::end_points.
+    /// Assigns each target URL to a proxy from the active list in a round-robin fashion 
+    /// before executing all requests concurrently.
     /// 
     /// # Arguments
-    /// * `urls` - Slice of original target URLs.
-    /// * `suffix` - Optional suffix applied to every proxy (default empty).
-    /// * `options` - Options applied to all requests.
+    /// * `urls` - A slice of target URLs.
+    /// * `suffix` - An optional suffix applied to every proxy URL in this batch.
+    /// * `options` - Shared request options applied to every individual request.
+    /// 
+    /// # Returns
+    /// A vector of `ApiResponse<T>` objects corresponding to the input URLs.
     pub async fn end_points<T: DeserializeOwned>(
         &self,
         urls: &[&str],
@@ -198,6 +236,7 @@ impl RequestProxied {
             active_proxies = state.active_proxies.clone();
         }
 
+        // Return errors for all URLs if no proxies are available or no URLs provided
         if active_proxies.is_empty() || urls.is_empty() {
             return urls
                 .iter()
@@ -207,20 +246,21 @@ impl RequestProxied {
                 .collect();
         }
 
-        // Explicit round-robin distribution
+        // Distribute the URLs across the available proxies
         let proxy_urls: Vec<String> = urls
             .iter()
             .enumerate()
             .map(|(i, target)| {
+                // Pick a proxy based on the loop index for static load balancing
                 let proxy_base = &active_proxies[i % active_proxies.len()];
                 Self::build_proxy_url(proxy_base, suffix, target)
             })
             .collect();
 
-        // Convert to slice of string slices for unlimited::end_points
+        // Convert the String vector into a vector of &str for the unlimited module API
         let proxy_urls_refs: Vec<&str> = proxy_urls.iter().map(|s| s.as_str()).collect();
 
-        // Delegate parallelism and retries to RequestUnlimited
+        // Delegate concurrent execution to the unlimited module
         unlimited::end_points::<T>(&proxy_urls_refs, options).await
     }
 }

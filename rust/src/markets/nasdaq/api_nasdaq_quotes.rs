@@ -1,8 +1,9 @@
 // =============================================
 // FILE: rust/src/markets/nasdaq/api_nasdaq_quotes.rs
 // PURPOSE: Public API for fetching Nasdaq quotes.
-// Translates symbols and asset classes into precise Nasdaq API requests.
-// Supports concurrency-limited bulk fetching and generic JSON returns.
+// DESCRIPTION: This module provides a high-level interface for fetching real-time 
+// and end-of-day quotes from Nasdaq. It handles symbol parsing, asset class 
+// mapping, and concurrent bulk fetching with a configurable concurrency limit.
 // =============================================
 
 use crate::markets::nasdaq::api_nasdaq_unlimited::nasdaq_end_point;
@@ -13,32 +14,33 @@ use std::str::FromStr;
 
 /// Defines the asset classes recognized by the Nasdaq API.
 ///
-/// Mirrors the exact categories specified in `AssetClass.ts`, 
-/// differentiating between Real-Time and Non-Real-Time assets.
+/// This enum mirrors the exact categories specified in the TypeScript `AssetClass` 
+/// definition, differentiating between real-time and delayed/end-of-day assets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssetClass {
-    /// Real-time Stock quotes
+    /// Real-time Stock quotes.
     Stocks,
-    /// Real-time ETF quotes
+    /// Real-time ETF quotes.
     Etf,
-    /// Real-time Currency quotes
+    /// Real-time Currency quotes.
     Currencies,
-    /// Real-time Cryptocurrency quotes
+    /// Real-time Cryptocurrency quotes.
     Crypto,
-    /// End-of-day Mutual Fund quotes
+    /// End-of-day Mutual Fund quotes.
     MutualFunds,
-    /// End-of-day Index quotes
+    /// End-of-day Index quotes.
     Index,
-    /// End-of-day Fixed Income quotes
+    /// End-of-day Fixed Income (Bonds) quotes.
     FixedIncome,
 }
 
 impl FromStr for AssetClass {
     type Err = String;
 
-    /// Parses a string into an `AssetClass`.
+    /// Parses a string slice into an `AssetClass` enum variant.
     /// 
-    /// Matches the exact string values from the TypeScript implementation.
+    /// The input string is converted to lowercase before matching to ensure 
+    /// case-insensitive parsing, aligning with the TypeScript implementation.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "stocks" => Ok(AssetClass::Stocks),
@@ -54,7 +56,7 @@ impl FromStr for AssetClass {
 }
 
 impl std::fmt::Display for AssetClass {
-    /// Formats the `AssetClass` into the exact string required by the Nasdaq API URL.
+    /// Formats the `AssetClass` into the exact string required by Nasdaq API URL parameters.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
             AssetClass::Stocks => "stocks",
@@ -65,19 +67,20 @@ impl std::fmt::Display for AssetClass {
             AssetClass::Index => "index",
             AssetClass::FixedIncome => "fixedincome",
         };
+        // Write the normalized string to the formatter
         write!(f, "{}", s)
     }
 }
 
-/// Helper function to parse an input string like "MSFT::stocks" into a Symbol and AssetClass.
+/// Parses an input string in the format `"SYMBOL::assetclass"` into its components.
 ///
 /// # Arguments
-/// * `input` - The formatted string to parse (e.g., "AAPL::stocks").
+/// * `input` - The formatted string to parse (e.g., `"AAPL::stocks"`).
 ///
 /// # Returns
-/// A tuple containing the uppercase symbol and the parsed `AssetClass`, or an error string.
+/// A `Result` containing a tuple of the uppercase symbol and parsed `AssetClass`.
 fn parse_symbol_input(input: &str) -> Result<(String, AssetClass), String> {
-    // Split the input into exactly two parts using the "::" delimiter
+    // Split the input string into exactly two parts using the "::" delimiter
     let parts: Vec<&str> = input.split("::").collect();
     if parts.len() != 2 {
         return Err(format!(
@@ -86,69 +89,72 @@ fn parse_symbol_input(input: &str) -> Result<(String, AssetClass), String> {
         ));
     }
 
-    // Extract and normalize the symbol and class
+    // Extract the symbol and convert it to uppercase for API compatibility
     let symbol = parts[0].to_uppercase();
+    // Parse the second part into the AssetClass enum
     let class = AssetClass::from_str(parts[1])?;
 
     Ok((symbol, class))
 }
 
-/// Fetches quote information for a single Nasdaq symbol.
+/// Fetches quote information for a single Nasdaq symbol using the official API.
 ///
 /// # Arguments
 /// * `symbol_input` - The symbol and asset class formatted as `"SYMBOL::assetclass"` (e.g., `"MSFT::stocks"`).
 ///
 /// # Returns
-/// A `Result` containing the parsed `serde_json::Value` of the quote's `data` payload on success, 
-/// or an error message on failure.
+/// A `Result` containing the parsed `serde_json::Value` of the quote's `data` payload.
 pub async fn nasdaq_quote(symbol_input: &str) -> Result<Value, String> {
+    // Forward the request to the extended version using the default Nasdaq base URL
     nasdaq_quote_ext(symbol_input, "https://api.nasdaq.com").await
 }
 
-/// Internal version of nasdaq_quote that allows overriding the base URL for testing.
+/// Internal implementation of quote fetching that allows overriding the base URL for testing.
 async fn nasdaq_quote_ext(symbol_input: &str, base_url: &str) -> Result<Value, String> {
     // Parse the input string into actionable components
     let (symbol, class) = parse_symbol_input(symbol_input)?;
 
-    // Construct the official Nasdaq API endpoint URL
+    // Construct the full Nasdaq API endpoint URL with the required query parameters
     let url = format!(
         "{}/api/quote/{}/info?assetclass={}",
         base_url, symbol, class
     );
 
-    // Execute the request using the highly resilient `api_nasdaq_unlimited` wrapper
+    // Execute the request using the highly resilient `api_nasdaq_unlimited` module
     let response = nasdaq_end_point::<Value>(&url, None).await;
 
-    // Evaluate the response and map it to standard Rust Result enum
+    // Evaluate the response and map the discriminated union to a standard Result
     match response {
         ApiResponse::Success { value } => {
-            // Extract the "data" field which contains the actual quote info, otherwise fallback to the full body
+            // Extract the "data" field from the response body if it exists, otherwise return the full body
             let data = value.body.get("data").cloned().unwrap_or(value.body);
             Ok(data)
         }
+        // Map the structured error reason to a string for the caller
         ApiResponse::Error { reason } => Err(reason.to_string()),
     }
 }
 
-/// Fetches quote information for multiple Nasdaq symbols in parallel, respecting a concurrency limit.
+/// Fetches quote information for multiple Nasdaq symbols in parallel with concurrency control.
 ///
 /// # Arguments
-/// * `symbols` - A slice of symbol strings formatted as `"SYMBOL::assetclass"` (e.g., `["AAPL::stocks", "QQQ::etf"]`).
-/// * `concurrency_limit` - The maximum number of simultaneous network requests (defaults to 5 if set to 0).
+/// * `symbols` - A slice of symbol strings formatted as `"SYMBOL::assetclass"`.
+/// * `concurrency_limit` - The maximum number of simultaneous network requests. Set to 0 for the default (5).
 ///
 /// # Returns
-/// A `Vec` of `Result<serde_json::Value, String>` matching the order of the provided symbols.
+/// A `Vec` of `Result` objects, where each element corresponds to the input symbol at the same index.
 pub async fn nasdaq_quotes(symbols: &[&str], concurrency_limit: usize) -> Vec<Result<Value, String>> {
+    // Forward the bulk request to the extended version using the default Nasdaq base URL
     nasdaq_quotes_ext(symbols, concurrency_limit, "https://api.nasdaq.com").await
 }
 
-/// Internal version of nasdaq_quotes that allows overriding the base URL for testing.
+/// Internal implementation of bulk quote fetching that allows overriding the base URL for testing.
 async fn nasdaq_quotes_ext(
     symbols: &[&str],
     concurrency_limit: usize,
     base_url: &str,
 ) -> Vec<Result<Value, String>> {
-    // Validate and enforce the concurrency limit
+    // Use the provided limit or fall back to 5 if 0 is specified
     let limit = if concurrency_limit == 0 {
         5
     } else {
@@ -157,15 +163,15 @@ async fn nasdaq_quotes_ext(
 
     let mut results = Vec::with_capacity(symbols.len());
 
-    // Process the symbols in chunks to prevent overloading the Nasdaq rate limiters
+    // Process the list of symbols in chunks to respect the concurrency limit
     for chunk in symbols.chunks(limit) {
-        // Map the current chunk into asynchronous tasks
+        // Create an iterator of futures, each fetching a single quote
         let futures = chunk.iter().map(|&s| nasdaq_quote_ext(s, base_url));
         
-        // Execute the batch concurrently
+        // Execute all futures in the current chunk concurrently
         let chunk_results = join_all(futures).await;
         
-        // Collect the batch results
+        // Append the results of the current batch to the final vector
         results.extend(chunk_results);
     }
 

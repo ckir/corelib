@@ -1,3 +1,12 @@
+// =============================================
+// FILE: rust/src/markets/nasdaq/datafeeds/streaming/yahoo/yahoo_streaming_proto_handler.rs
+// PURPOSE: Protobuf handler for Yahoo Finance websocket messages.
+// DESCRIPTION: This module defines the data structures and enumerations 
+// corresponding to the Yahoo Finance pricing Protobuf definition. It provides 
+// conversion logic between the internal Rust structs and the N-API compatible 
+// objects used by the JavaScript bridge.
+// =============================================
+
 use napi_derive::napi;
 use prost::Message;
 use serde::{Deserialize, Serialize};
@@ -8,48 +17,72 @@ use serde::{Deserialize, Serialize};
 /// It contains price, volume, and metadata for a specific financial instrument.
 #[derive(Clone, PartialEq, Message, Serialize, Deserialize)]
 pub struct PricingData {
+    /// The ticker symbol of the instrument (e.g., "AAPL").
     #[prost(string, tag = "1")]
     pub id: String,
+    /// The current market price.
     #[prost(float, tag = "2")]
     pub price: f32,
+    /// Timestamp of the quote in milliseconds since epoch.
     #[prost(sint64, tag = "3")]
     pub time: i64,
+    /// The currency code (e.g., "USD").
     #[prost(string, tag = "4")]
     pub currency: String,
+    /// The exchange identifier (e.g., "NMS").
     #[prost(string, tag = "5")]
     pub exchange: String,
+    /// The type of quote (Equity, ETF, etc.).
     #[prost(enumeration = "QuoteType", tag = "6")]
     pub quote_type: i32,
+    /// The current market session (Regular, Pre, Post).
     #[prost(enumeration = "MarketHoursType", tag = "7")]
     pub market_hours: i32,
+    /// Percentage change since the previous close.
     #[prost(float, tag = "8")]
     pub change_percent: f32,
+    /// Cumulative volume for the current trading day.
     #[prost(sint64, tag = "9")]
     pub day_volume: i64,
+    /// Highest price reached during the current trading day.
     #[prost(float, tag = "10")]
     pub day_high: f32,
+    /// Lowest price reached during the current trading day.
     #[prost(float, tag = "11")]
     pub day_low: f32,
+    /// Absolute price change since the previous close.
     #[prost(float, tag = "12")]
     pub change: f32,
+    /// The short descriptive name of the security.
     #[prost(string, tag = "13")]
     pub short_name: String,
+    /// Expiration date for options or futures (milliseconds epoch).
     #[prost(sint64, tag = "14")]
     pub expire_date: i64,
+    /// The opening price for the current session.
     #[prost(float, tag = "15")]
     pub open_price: f32,
+    /// The closing price of the previous trading session.
     #[prost(float, tag = "16")]
     pub previous_close: f32,
+    /// The strike price for options contracts.
     #[prost(float, tag = "17")]
     pub strike_price: f32,
+    /// The underlying ticker for derivative contracts.
     #[prost(string, tag = "18")]
     pub underlying_symbol: String,
+    /// The total number of outstanding derivative contracts.
     #[prost(sint64, tag = "19")]
     pub open_interest: i64,
+    /// The type of option (Call or Put).
     #[prost(enumeration = "OptionType", tag = "20")]
     pub option_type: i32,
 }
 
+/// An N-API compatible object representing pricing data.
+/// 
+/// This struct mirrors `PricingData` but uses `f64` for all floating-point numbers 
+/// to ensure precision when passed to JavaScript.
 #[napi(object)]
 #[derive(Clone, Serialize, Deserialize)]
 pub struct JsPricingData {
@@ -76,6 +109,7 @@ pub struct JsPricingData {
 }
 
 impl From<PricingData> for JsPricingData {
+    /// Converts a native `PricingData` struct into a `JsPricingData` object.
     fn from(p: PricingData) -> Self {
         Self {
             id: p.id,
@@ -132,9 +166,13 @@ pub enum QuoteType {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, prost::Enumeration)]
 #[repr(i32)]
 pub enum MarketHoursType {
+    /// Before the official market open.
     PreMarket = 0,
+    /// During official trading hours.
     RegularMarket = 1,
+    /// After the official market close.
     PostMarket = 2,
+    /// General catch-all for non-regular hours.
     ExtendedHoursMarket = 3,
 }
 
@@ -143,7 +181,9 @@ pub enum MarketHoursType {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, prost::Enumeration)]
 #[repr(i32)]
 pub enum OptionType {
+    /// A call option.
     Call = 0,
+    /// A put option.
     Put = 1,
 }
 

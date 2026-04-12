@@ -1,8 +1,9 @@
 // =============================================
 // FILE: rust/src/utils/include_exclude_cron.rs
-// PURPOSE: Dedicated file for the include/exclude cron helper
-// (moved out of utils.rs to follow the request).
-// Exact behavioural mirror of ts-core/src/utils/cron.ts.
+// PURPOSE: Dedicated file for the include/exclude cron helper.
+// DESCRIPTION: This module provides a thread-based cron scheduler that 
+// supports multiple inclusion and exclusion rules. It is an exact behavioral 
+// mirror of the `ts-core/src/utils/cron.ts` implementation.
 // =============================================
 
 use chrono::{DateTime, Duration, Utc};
@@ -13,34 +14,47 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration as StdDuration;
 
-/// Handle returned by `include_exclude_cron`.
+/// A handle to a running background cron job.
 ///
-/// Allows the caller to gracefully stop the background cron thread.
-/// The thread will exit on the next tick after `stop()` is called.
+/// This handle allows the caller to gracefully stop the background thread 
+/// responsible for ticking and executing the scheduled handler.
 pub struct CronJobHandle {
+    /// Atomic flag checked by the background thread on every tick.
     stop_flag: Arc<AtomicBool>,
 }
 
 impl CronJobHandle {
-    /// Stops the cron job. The background thread will exit cleanly on the next tick.
+    /// Signals the background cron job to stop. 
+    /// 
+    /// The background thread will exit cleanly upon its next internal tick 
+    /// after this method is called.
     pub fn stop(&self) {
+        // Set the atomic stop flag to true
         self.stop_flag.store(true, Ordering::Relaxed);
     }
 }
 
-/// Creates and starts a background cron job that ticks every second.
+/// Creates and starts a background cron job with complex scheduling rules.
 ///
-/// The provided `handler` is executed **only** when:
-/// - **ANY** of the `include_exprs` matches the current time, **AND**
-/// - **NONE** of the `exclude_exprs` matches the current time.
+/// The provided `handler` closure is executed every second **only if**:
+/// 1. **Any** of the `include_exprs` cron patterns match the current time.
+/// 2. **None** of the `exclude_exprs` cron patterns match the current time.
 ///
-/// - Crons are pre-parsed once for maximum performance.
-/// - Supports second-level precision (7-field cron format).
-/// - Runs in a dedicated `std::thread` (no Tokio or async runtime required).
-/// - Returns a `CronJobHandle` that can be used to stop the job.
+/// Features:
+/// - Cron expressions are pre-parsed for performance.
+/// - Supports 7-field cron format (second-level precision).
+/// - Runs in a dedicated native OS thread.
+/// 
+/// # Arguments
+/// * `include_exprs` - A list of cron strings that trigger execution.
+/// * `exclude_exprs` - A list of cron strings that prevent execution.
+/// * `handler` - The closure to execute when scheduling rules are met.
+///
+/// # Returns
+/// A `CronJobHandle` used to manage the lifecycle of the job.
 ///
 /// # Panics
-/// Panics (with a clear message) if any cron expression is invalid – same behaviour as the TS version.
+/// Panics if any of the provided cron expressions are syntactically invalid.
 pub fn include_exclude_cron<F>(
     include_exprs: Vec<String>,
     exclude_exprs: Vec<String>,
@@ -49,28 +63,32 @@ pub fn include_exclude_cron<F>(
 where
     F: Fn() + Send + Sync + 'static,
 {
+    // Wrap the handler in an Arc for thread-safe shared access
     let handler = Arc::new(handler);
 
-    // Pre-parse all include crons (fast path)
+    // Pre-parse all "include" cron expressions into Schedule objects
     let include_schedules: Vec<Schedule> = include_exprs
         .into_iter()
         .map(|expr| Schedule::from_str(&expr).expect("invalid include cron expression"))
         .collect();
 
-    // Pre-parse all exclude crons
+    // Pre-parse all "exclude" cron expressions into Schedule objects
     let exclude_schedules: Vec<Schedule> = exclude_exprs
         .into_iter()
         .map(|expr| Schedule::from_str(&expr).expect("invalid exclude cron expression"))
         .collect();
 
+    // Initialize the thread-safe stop flag
     let stop_flag = Arc::new(AtomicBool::new(false));
     let stop_flag_clone = Arc::clone(&stop_flag);
     let handler_clone = Arc::clone(&handler);
 
-    // Background tick thread
+    // Spawn the background ticking thread
     thread::spawn(move || {
+        // Track the timestamp of the last executed tick to prevent double-firing
         let mut last_fire_ts = 0;
         loop {
+            // Check if the job has been requested to stop
             if stop_flag_clone.load(Ordering::Relaxed) {
                 break;
             }
@@ -78,22 +96,26 @@ where
             let now: DateTime<Utc> = Utc::now();
             let now_ts = now.timestamp();
 
+            // Check if we've already processed this exact second
             if now_ts <= last_fire_ts {
-                // Already handled this second, sleep until next one
+                // Calculate sleep time until the start of the next second
                 let next_sec_ts = last_fire_ts + 1;
                 let next_sec = DateTime::from_timestamp(next_sec_ts, 0).expect("invalid timestamp");
                 let sleep_dur = next_sec - Utc::now();
                 if sleep_dur > Duration::zero() {
+                    // Sleep for the precise duration until the next second starts
                     thread::sleep(StdDuration::from_millis(sleep_dur.num_milliseconds() as u64));
                 } else {
+                    // Fallback to a very short sleep if we missed the target
                     thread::sleep(StdDuration::from_millis(10));
                 }
                 continue;
             }
 
+            // Define the reference time for cron matching (the exact start of this second)
             let test_time = now - Duration::seconds(1);
 
-            // ANY include matches?
+            // Determine if the current time is "included" by any rule
             let included = include_schedules.iter().any(|schedule| {
                 let mut upcoming = schedule.after(&test_time);
                 upcoming
@@ -102,13 +124,12 @@ where
             });
 
             if !included {
-                // Not a fire second for us, sleep a bit but check again soon-ish
-                // to stay aligned with the start of seconds.
+                // Not a match for inclusion, wait a short while before checking again
                 thread::sleep(StdDuration::from_millis(100));
                 continue;
             }
 
-            // ANY exclude matches?
+            // Determine if the current time is "excluded" by any rule
             let excluded = exclude_schedules.iter().any(|schedule| {
                 let mut upcoming = schedule.after(&test_time);
                 upcoming
@@ -116,10 +137,12 @@ where
                     .is_some_and(|next| next.timestamp() == now_ts)
             });
 
+            // If included and NOT excluded, execute the provided handler
             if !excluded {
                 (handler_clone)();
             }
 
+            // Record this timestamp as the last fired second
             last_fire_ts = now_ts;
         }
     });

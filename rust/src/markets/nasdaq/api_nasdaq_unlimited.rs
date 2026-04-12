@@ -1,9 +1,9 @@
 // =============================================
 // FILE: rust/src/markets/nasdaq/api_nasdaq_unlimited.rs
 // PURPOSE: High-resilience Nasdaq API wrapper.
-// Injects necessary static headers (Standard or Charting) for Nasdaq endpoints.
-// Validates Nasdaq's internal application `rCode`.
-// Delegates underlying fetching and error handling to the `unlimited` retrieve module.
+// DESCRIPTION: This module provides specialized wrappers for the Nasdaq API. 
+// It automatically injects required spoofed headers (Standard or Charting) 
+// and validates the application-level `rCode` within the response JSON.
 // =============================================
 
 use crate::retrieve::unlimited::{end_point, ApiResponse, RequestOptions};
@@ -11,23 +11,25 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::collections::HashMap;
 
-/// The Chrome version string used to spoof the user agent for Nasdaq requests.
+/// The version string for Chrome used to spoof the User-Agent for Nasdaq requests.
 const CHROME_VERSION: &str = "145";
 
-/// Generates the static spoof headers required for Nasdaq API requests.
+/// Generates the static spoof headers required for authentic Nasdaq API requests.
 /// 
-/// Determines whether to use "Standard" or "Charting" headers based on the URL.
+/// This function determines whether to use "Standard" headers (for `www.nasdaq.com`) 
+/// or "Charting" headers (for `charting.nasdaq.com`) based on the URL content.
 /// 
 /// # Arguments
 /// * `url` - The target Nasdaq URL string.
 /// 
 /// # Returns
-/// A `HashMap` containing the necessary HTTP headers.
+/// A `HashMap` containing the necessary HTTP header keys and values.
 pub fn get_nasdaq_headers(url: &str) -> HashMap<String, String> {
     let mut headers = HashMap::new();
+    // Check if the URL is for the charting domain
     let is_charting = url.contains("charting");
 
-    // Pre-format the dynamic SEC and User-Agent strings
+    // Pre-format the dynamic SEC-CH-UA and User-Agent strings with the fixed Chrome version
     let sec_ch_ua = format!(
         "\"Google Chrome\";v=\"{CHROME_VERSION}\", \"Not-A.Brand\";v=\"8\", \"Chromium\";v=\"{CHROME_VERSION}\""
     );
@@ -36,7 +38,7 @@ pub fn get_nasdaq_headers(url: &str) -> HashMap<String, String> {
     );
 
     if is_charting {
-        // Charting-specific headers
+        // Apply headers required by the charting.nasdaq.com endpoints
         headers.insert("accept".to_string(), "*/*".to_string());
         headers.insert("accept-language".to_string(), "en-US,en;q=0.9".to_string());
         headers.insert("cache-control".to_string(), "no-cache".to_string());
@@ -54,7 +56,7 @@ pub fn get_nasdaq_headers(url: &str) -> HashMap<String, String> {
         );
         headers.insert("user-agent".to_string(), user_agent);
     } else {
-        // Standard endpoint headers
+        // Apply headers required by the standard api.nasdaq.com endpoints
         headers.insert(
             "accept".to_string(),
             "application/json, text/plain, */*".to_string(),
@@ -71,48 +73,54 @@ pub fn get_nasdaq_headers(url: &str) -> HashMap<String, String> {
     headers
 }
 
-/// Makes a single resilient request to a Nasdaq API endpoint.
+/// Makes a single resilient request to a Nasdaq API endpoint with automatic header injection.
 /// 
-/// Injects the requisite Nasdaq headers dynamically based on the target URL.
-/// Validates that the application-level `rCode` is 200 (if present in the response payload).
-/// User-provided headers in `RequestOptions` will override the generated defaults.
+/// This function dynamically determines the correct headers for the target URL, 
+/// executes the request via the `unlimited` module, and then performs a deep validation 
+/// of the Nasdaq-specific `status.rCode` field in the JSON response.
+/// 
+/// User-provided headers in `RequestOptions` will override any generated defaults.
 /// 
 /// # Arguments
-/// * `url` - The target URL to fetch.
-/// * `options` - Optional configuration overrides (retries, timeouts, custom headers).
+/// * `url` - The target Nasdaq URL to fetch.
+/// * `options` - Optional overrides for retries, timeouts, and headers.
 /// 
 /// # Returns
-/// An `ApiResponse<T>` containing either the generic parsed response body or an error.
+/// An `ApiResponse<T>` containing either the Generic parsed response body or an error state.
 pub async fn nasdaq_end_point<T: DeserializeOwned + Serialize>(
     url: &str,
     options: Option<RequestOptions>,
 ) -> ApiResponse<T> {
     let mut opts = options.unwrap_or_default();
+    // Generate the baseline Nasdaq headers for this URL
     let mut headers = get_nasdaq_headers(url);
 
-    // Apply any explicit header overrides provided by the caller
+    // Merge user-defined headers, allowing them to override the defaults
     if let Some(user_headers) = opts.headers {
         for (k, v) in user_headers {
-            // Enforce lowercase keys to match behavior in `retrieve/unlimited.rs` and TS
+            // Keys are forced to lowercase to match standard HTTP behavior and the TS implementation
             headers.insert(k.to_lowercase(), v);
         }
     }
 
+    // Update the options with the final header map
     opts.headers = Some(headers);
 
-    // Delegate execution to the core retrieve module
+    // Execute the request using the core resilient retrieve logic
     let response = end_point::<T>(url, Some(opts)).await;
 
-    // Validate the Nasdaq-specific application-level rCode if present
+    // Perform application-level validation on the received data
     match response {
         ApiResponse::Success { value } => {
-            // Serialize body temporarily to inspect the generic structure safely
+            // Serialize the body to a JSON Value to inspect internal fields without knowing the full type T
             if let Ok(body_val) = serde_json::to_value(&value.body) {
+                // Nasdaq standardizes success/failure in an 'rCode' field deep in the JSON
                 let r_code = body_val.pointer("/status/rCode").and_then(|v| v.as_i64());
 
                 if let Some(code) = r_code {
+                    // An rCode of 200 is the only acceptable success state
                     if code != 200 {
-                        // Transform HTTP 200 success into an application Error state
+                        // Return an Error state with the details provided by Nasdaq's API
                         return ApiResponse::Error {
                             reason: serde_json::json!({
                                 "error": "Nasdaq API returned non-200 rCode",
@@ -125,37 +133,40 @@ pub async fn nasdaq_end_point<T: DeserializeOwned + Serialize>(
                 }
             }
             
-            // If rCode is 200 or doesn't exist, return the intact successful response
+            // Return the original Success if no validation errors were found
             ApiResponse::Success { value }
         }
+        // Passthrough errors from the underlying fetcher
         ApiResponse::Error { reason } => ApiResponse::Error { reason },
     }
 }
 
-/// Makes parallel resilient requests to multiple Nasdaq API endpoints.
+/// Makes multiple parallel resilient requests to multiple Nasdaq API endpoints.
 /// 
-/// Correctly determines the required headers independently for each URL 
-/// before executing the requests concurrently, and checks internal rCodes.
+/// This function maps each URL to a `nasdaq_end_point` call, ensuring that the 
+/// correct headers and validation logic are applied to each request independently. 
+/// All requests are executed concurrently.
 /// 
 /// # Arguments
-/// * `urls` - A slice of target URLs.
-/// * `options` - Shared configuration overrides applied to all requests.
+/// * `urls` - A slice of target Nasdaq URLs.
+/// * `options` - Shared configuration overrides applied to every request in the batch.
 /// 
 /// # Returns
-/// A vector of `ApiResponse<T>` objects corresponding to the input order.
+/// A vector of `ApiResponse<T>` objects.
 pub async fn nasdaq_end_points<T: DeserializeOwned + Serialize>(
     urls: &[&str],
     options: Option<RequestOptions>,
 ) -> Vec<ApiResponse<T>> {
     let opts = options.unwrap_or_default();
 
-    // Map each URL into an asynchronous task using the single endpoint executor
+    // Map each URL into an asynchronous task
     let futures = urls.iter().map(|&url| {
+        // Clone the options for each task
         let cloned_opts = opts.clone();
         async move { nasdaq_end_point::<T>(url, Some(cloned_opts)).await }
     });
 
-    // Execute all pending futures simultaneously
+    // Execute all futures concurrently and wait for all to complete
     futures::future::join_all(futures).await
 }
 

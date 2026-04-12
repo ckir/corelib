@@ -1,7 +1,9 @@
 // =============================================
 // FILE: rust/src/retrieve/unlimited.rs
 // PURPOSE: High-resilience HTTP request utility.
-// Mirrors ts-core/src/retrieve/RequestUnlimited.ts
+// DESCRIPTION: This module provides high-level functions for making resilient 
+// HTTP requests, mirroring the `RequestUnlimited.ts` logic. It supports automatic 
+// retries, timeouts, and standardized response serialization.
 // =============================================
 
 use std::collections::HashMap;
@@ -19,72 +21,77 @@ use crate::retrieve::ky;
 /// Mirrors the `SerializedResponse<T>` interface from TypeScript.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SerializedResponse<T> {
-    /// True if the HTTP status code is 2xx
+    /// True if the HTTP status code is 2xx.
     pub ok: bool,
-    /// HTTP status code
+    /// The numeric HTTP status code.
     pub status: u16,
-    /// HTTP status text/reason
+    /// The status text or reason phrase returned by the server.
     pub status_text: String,
-    /// HTTP headers
+    /// A map of response headers.
     pub headers: HashMap<String, String>,
-    /// The final URL after any redirects
+    /// The final URL reached after redirects.
     pub url: String,
-    /// The parsed response body
+    /// The successfully parsed response body of type `T`.
     pub body: T,
 }
 
-/// Discriminated union for API results, mapping exactly to `{"status": "success", "value": ...}` 
-/// or `{"status": "error", "reason": ...}` for Serde serialization.
+/// Discriminated union for API results, providing a consistent success/error structure.
+/// 
+/// It maps exactly to `{"status": "success", "value": ...}` or `{"status": "error", "reason": ...}` 
+/// for seamless serialization between Rust and TypeScript.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "status", rename_all = "lowercase")]
 pub enum ApiResponse<T> {
     /// Represents a successful HTTP request with a 2xx status code and successfully parsed body.
     Success { 
-        /// The serialized response wrapper containing the parsed body
+        /// The serialized response wrapper containing the parsed body and metadata.
         value: SerializedResponse<T> 
     },
     /// Represents a failure, either at the network level, HTTP level (non-2xx), or parsing level.
     Error { 
-        /// Detailed reason for the error, structured as a JSON value
+        /// Detailed reason for the error, structured as a JSON value for cross-language compatibility.
         reason: Value 
     },
 }
 
-/// Request options to configure individual requests.
+/// Request configuration options for high-resilience fetching.
 /// 
-/// Defines overrides for method, headers, payload, and ky resilience features.
+/// Defines overrides for standard HTTP parameters and the underlying `ky` retry logic.
 #[derive(Debug, Clone, Default)]
 pub struct RequestOptions {
-    /// HTTP Method (Defaults to GET)
+    /// The HTTP method to use (Defaults to GET).
     pub method: Option<Method>,
-    /// Custom HTTP headers
+    /// A map of custom HTTP headers to include in the request.
     pub headers: Option<HashMap<String, String>>,
-    /// JSON payload for POST/PUT/PATCH requests
+    /// A JSON value to be sent as the request body (for POST/PUT/PATCH).
     pub json: Option<Value>,
-    /// Request timeout
+    /// An optional timeout duration for the entire request.
     pub timeout: Option<Duration>,
-    /// Maximum number of retry attempts
+    /// The maximum number of retry attempts allowed for this request.
     pub retry_limit: Option<u32>,
 }
 
-/// Makes an HTTP request to a single URL with resilience features.
+/// Makes an HTTP request to a single URL with built-in resilience features.
 ///
-/// Uses the underlying `ky` implementation to automatically handle retries and timeouts.
+/// This function uses the underlying `ky` implementation to automatically handle 
+/// retries and timeouts based on the provided options or defaults.
 /// 
 /// # Arguments
 /// * `url` - The target URL to fetch.
 /// * `options` - Optional configuration overrides (method, headers, body, retries).
 /// 
 /// # Returns
-/// An `ApiResponse` containing either the `SerializedResponse` or an error reason.
+/// An `ApiResponse<T>` containing either the `SerializedResponse` on success 
+/// or a JSON-structured error reason on failure.
 pub async fn end_point<T: DeserializeOwned>(
     url: &str,
     options: Option<RequestOptions>,
 ) -> ApiResponse<T> {
+    // Extract options or use defaults
     let opts = options.unwrap_or_default();
     let method = opts.method.unwrap_or(Method::GET);
 
-    // Initialize the appropriate ky builder based on the method
+    // Initialize the appropriate ky builder based on the specified HTTP method
     let mut builder = match method {
         Method::POST => ky::post(url),
         Method::PUT => ky::put(url),
@@ -93,34 +100,34 @@ pub async fn end_point<T: DeserializeOwned>(
         _ => ky::get(url),
     };
 
-    // Apply headers
+    // Apply custom headers if provided
     if let Some(headers) = opts.headers {
         for (k, v) in headers {
             builder = builder.header(k, v);
         }
     }
 
-    // Apply JSON body
+    // Attach the JSON payload if present
     if let Some(json_body) = opts.json {
         builder = builder.json(&json_body);
     }
 
-    // Apply timeout override
+    // Override the default timeout if specified
     if let Some(t) = opts.timeout {
         builder = builder.timeout(t);
     }
 
-    // Apply retry limit override
+    // Override the default retry limit if specified
     if let Some(r) = opts.retry_limit {
         builder = builder.retry(r);
     }
 
-    // Execute the request via ky
+    // Execute the request via the ky client
     let result = builder.send().await;
 
     match result {
         Ok(ky_res) => {
-            // Extract properties before consuming the response body
+            // Successfully received a response (2xx). Extract properties before consuming the body.
             let inner_res = ky_res.into_inner();
             let status = inner_res.status();
             let ok = status.is_success();
@@ -128,6 +135,7 @@ pub async fn end_point<T: DeserializeOwned>(
             let status_text = status.canonical_reason().unwrap_or("").to_string();
             let res_url = inner_res.url().to_string();
             
+            // Map headers into a standard HashMap
             let mut headers = HashMap::new();
             for (k, v) in inner_res.headers() {
                 headers.insert(
@@ -136,7 +144,7 @@ pub async fn end_point<T: DeserializeOwned>(
                 );
             }
 
-            // Attempt to parse the body as T
+            // Attempt to deserialize the response body as the requested type T
             match inner_res.json::<T>().await {
                 Ok(body) => ApiResponse::Success {
                     value: SerializedResponse {
@@ -149,6 +157,7 @@ pub async fn end_point<T: DeserializeOwned>(
                     },
                 },
                 Err(e) => ApiResponse::Error {
+                    // Body was not valid JSON or didn't match the expected schema
                     reason: serde_json::json!({
                         "message": "Failed to parse response body",
                         "error": e.to_string(),
@@ -158,7 +167,8 @@ pub async fn end_point<T: DeserializeOwned>(
             }
         }
         Err(e) => {
-            // Handle request or HTTP level errors
+            // The request failed at the HTTP level (non-2xx) or transport level.
+            // Map the ky::KyError into a consistent JSON reason.
             let reason = match e {
                 ky::KyError::Http { status, url } => {
                     serde_json::json!({
@@ -186,32 +196,33 @@ pub async fn end_point<T: DeserializeOwned>(
     }
 }
 
-/// Makes parallel HTTP requests to multiple URLs.
+/// Makes parallel HTTP requests to multiple URLs concurrently.
 /// 
-/// Executes all requests simultaneously using `futures::future::join_all`.
+/// All requests are executed simultaneously using `futures::future::join_all`. 
+/// The order of results in the returned vector matches the order of input URLs.
 /// 
 /// # Arguments
-/// * `urls` - A slice of target URLs.
-/// * `options` - Shared configuration overrides applied to all requests.
+/// * `urls` - A slice of target URLs to fetch.
+/// * `options` - Shared configuration overrides applied to every request in the batch.
 /// 
 /// # Returns
-/// A vector of `ApiResponse` objects corresponding to the input order.
+/// A vector of `ApiResponse<T>` objects.
 pub async fn end_points<T: DeserializeOwned>(
     urls: &[&str],
     options: Option<RequestOptions>,
 ) -> Vec<ApiResponse<T>> {
     let opts = options.unwrap_or_default();
     
-    // Map each URL to a future calling end_point
+    // Create an iterator of futures, each calling end_point for a specific URL
     let futures = urls.iter().map(|&url| {
-        // Clone options for each future
+        // Clone the shared options for each individual task
         let cloned_opts = opts.clone();
         async move {
             end_point::<T>(url, Some(cloned_opts)).await
         }
     });
 
-    // Execute all futures concurrently
+    // Execute all futures concurrently and await their completion
     join_all(futures).await
 }
 
