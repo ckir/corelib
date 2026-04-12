@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"mod":["ky"]};
+window.SIDEBAR_ITEMS = {"mod":["ky","unlimited"]};
