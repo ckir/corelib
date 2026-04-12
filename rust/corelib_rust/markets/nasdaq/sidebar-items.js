@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"mod":["api_nasdaq_unlimited","datafeeds"]};
+window.SIDEBAR_ITEMS = {"mod":["api_nasdaq_quotes","api_nasdaq_unlimited","datafeeds"]};
