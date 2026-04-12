@@ -12,6 +12,7 @@ pub mod utils;
 pub mod retrieve;
 pub use retrieve::ky;
 pub use retrieve::unlimited;
+pub use retrieve::proxied;
 
 use napi_derive::napi;
 

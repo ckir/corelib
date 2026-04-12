@@ -10,6 +10,9 @@ pub mod ky;
 /// High-resilience HTTP request utility.
 pub mod unlimited;
 
+/// High-resilience proxied HTTP client.
+pub mod proxied;
+
 // Re-export the public API so users can write:
 // use corelib_rust::retrieve::ky;
 pub use ky::{delete, get, patch, post, put, Ky, KyError, KyRequestBuilder, KyResponse};
@@ -17,3 +20,7 @@ pub use ky::{delete, get, patch, post, put, Ky, KyError, KyRequestBuilder, KyRes
 // Re-export the public API so users can write:
 // use corelib_rust::retrieve::unlimited;
 pub use unlimited::{end_point, end_points, ApiResponse, RequestOptions, SerializedResponse};
+
+// Re-export the public API so users can write:
+// use corelib_rust::retrieve::proxied;
+pub use proxied::RequestProxied;
