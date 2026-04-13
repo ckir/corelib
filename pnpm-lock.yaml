@@ -117,9 +117,6 @@ importers:
       deepmerge-ts:
         specifier: ^7.1.5
         version: 7.1.5
-      dotenv:
-        specifier: ^17.4.1
-        version: 17.4.1
       ky:
         specifier: ^2.0.0
         version: 2.0.0
@@ -144,9 +141,6 @@ importers:
       serialize-error:
         specifier: ^13.0.1
         version: 13.0.1
-      undici:
-        specifier: ^8.0.2
-        version: 8.0.2
     devDependencies:
       '@biomejs/biome':
         specifier: ^2.4.10
@@ -2366,10 +2360,6 @@ packages:
     resolution: {integrity: sha512-47qPchRCykZC03FhkYAhrvwU4xDBFIj1QPqaarj6mdM/hgUzfPHcpkHJOn3mJAufFeeAxAzeGsr5X0M4k6fLZQ==}
     engines: {node: '>=12'}
 
-  dotenv@17.4.1:
-    resolution: {integrity: sha512-k8DaKGP6r1G30Lx8V4+pCsLzKr8vLmV2paqEj1Y55GdAgJuIqpRp5FfajGF8KtwMxCz9qJc6wUIJnm053d/WCw==}
-    engines: {node: '>=12'}
-
   dunder-proto@1.0.1:
     resolution: {integrity: sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==}
     engines: {node: '>= 0.4'}
@@ -3679,10 +3669,6 @@ packages:
   undici@7.24.4:
     resolution: {integrity: sha512-BM/JzwwaRXxrLdElV2Uo6cTLEjhSb3WXboncJamZ15NgUURmvlXvxa6xkwIOILIjPNo9i8ku136ZvWV0Uly8+w==}
     engines: {node: '>=20.18.1'}
-
-  undici@8.0.2:
-    resolution: {integrity: sha512-B9MeU5wuFhkFAuNeA19K2GDFcQXZxq33fL0nRy2Aq30wdufZbyyvxW3/ChaeipXVfy/wUweZyzovQGk39+9k2w==}
-    engines: {node: '>=22.19.0'}
 
   unenv@2.0.0-rc.24:
     resolution: {integrity: sha512-i7qRCmY42zmCwnYlh9H2SvLEypEFGye5iRmEMKjcGi7zk9UquigRjFtTLz0TYqr0ZGLZhaMHl/foy1bZR+Cwlw==}
@@ -5581,8 +5567,6 @@ snapshots:
 
   dotenv@16.4.7: {}
 
-  dotenv@17.4.1: {}
-
   dunder-proto@1.0.1:
     dependencies:
       call-bind-apply-helpers: 1.0.2
@@ -7008,8 +6992,6 @@ snapshots:
   undici-types@7.18.2: {}
 
   undici@7.24.4: {}
-
-  undici@8.0.2: {}
 
   unenv@2.0.0-rc.24:
     dependencies:

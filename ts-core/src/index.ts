@@ -1,5 +1,3 @@
-// FIXED (2026-03-07): Changed single quotes to double quotes for import paths per Biome formatting rules. All unrelated features (e.g., exports, comments) remain fully maintained and unchanged.
-
 // =============================================
 // FILE: ts-core/src/index.ts
 // PURPOSE: Main exports for @ckir/corelib
