@@ -54,41 +54,46 @@
 <a href=#54 id=54 data-nosnippet>54</a></span><span class="kw">pub mod </span>markets {
 <a href=#55 id=55 data-nosnippet>55</a>    <span class="doccomment">/// Nasdaq-specific API wrappers and data structures.
 <a href=#56 id=56 data-nosnippet>56</a>    </span><span class="kw">pub mod </span>nasdaq {
-<a href=#57 id=57 data-nosnippet>57</a>        <span class="doccomment">/// High-level API for fetching Nasdaq quotes.
-<a href=#58 id=58 data-nosnippet>58</a>        </span><span class="kw">pub mod </span>api_nasdaq_quotes;
-<a href=#59 id=59 data-nosnippet>59</a>        <span class="doccomment">/// Resilient Nasdaq API base wrapper with spoofed headers.
-<a href=#60 id=60 data-nosnippet>60</a>        </span><span class="kw">pub mod </span>api_nasdaq_unlimited;
-<a href=#61 id=61 data-nosnippet>61</a>        <span class="doccomment">/// Data feed implementations (streaming/polling).
-<a href=#62 id=62 data-nosnippet>62</a>        </span><span class="kw">pub mod </span>datafeeds {
-<a href=#63 id=63 data-nosnippet>63</a>            <span class="doccomment">/// Streaming data feed implementations.
-<a href=#64 id=64 data-nosnippet>64</a>            </span><span class="kw">pub mod </span>streaming {
-<a href=#65 id=65 data-nosnippet>65</a>                <span class="doccomment">/// Yahoo-specific streaming implementation.
-<a href=#66 id=66 data-nosnippet>66</a>                </span><span class="kw">pub mod </span>yahoo {
-<a href=#67 id=67 data-nosnippet>67</a>                    <span class="doccomment">/// Main Yahoo price streamer logic.
-<a href=#68 id=68 data-nosnippet>68</a>                    </span><span class="kw">pub mod </span>yahoo_streamer;
-<a href=#69 id=69 data-nosnippet>69</a>                    <span class="doccomment">/// Protobuf handler for Yahoo Finance websocket messages.
-<a href=#70 id=70 data-nosnippet>70</a>                    </span><span class="kw">pub mod </span>yahoo_streaming_proto_handler;
-<a href=#71 id=71 data-nosnippet>71</a>                    <span class="doccomment">/// Re-export Yahoo streaming components for convenience.
-<a href=#72 id=72 data-nosnippet>72</a>                    </span><span class="kw">pub use </span>yahoo_streamer::{
-<a href=#73 id=73 data-nosnippet>73</a>                        EventRecord, LogRecord, RustCallbacks, YahooConfig, YahooStreaming,
-<a href=#74 id=74 data-nosnippet>74</a>                        YahooStreamingCore,
-<a href=#75 id=75 data-nosnippet>75</a>                    };
-<a href=#76 id=76 data-nosnippet>76</a>                }
-<a href=#77 id=77 data-nosnippet>77</a>            }
-<a href=#78 id=78 data-nosnippet>78</a>        }
-<a href=#79 id=79 data-nosnippet>79</a>    }
-<a href=#80 id=80 data-nosnippet>80</a>}
-<a href=#81 id=81 data-nosnippet>81</a>
-<a href=#82 id=82 data-nosnippet>82</a><span class="doccomment">/// Re-export Nasdaq quote fetching functions.
-<a href=#83 id=83 data-nosnippet>83</a></span><span class="kw">pub use </span>markets::nasdaq::api_nasdaq_quotes::{nasdaq_quote, nasdaq_quotes, AssetClass};
-<a href=#84 id=84 data-nosnippet>84</a>
-<a href=#85 id=85 data-nosnippet>85</a><span class="doccomment">/// Re-export Nasdaq base API functions.
-<a href=#86 id=86 data-nosnippet>86</a></span><span class="kw">pub use </span>markets::nasdaq::api_nasdaq_unlimited::{
-<a href=#87 id=87 data-nosnippet>87</a>    get_nasdaq_headers, nasdaq_end_point, nasdaq_end_points,
-<a href=#88 id=88 data-nosnippet>88</a>};
+<a href=#57 id=57 data-nosnippet>57</a>        <span class="doccomment">/// High-level API for fetching Nasdaq market status.
+<a href=#58 id=58 data-nosnippet>58</a>        </span><span class="kw">pub mod </span>api_nasdaq_marketstatus;
+<a href=#59 id=59 data-nosnippet>59</a>        <span class="doccomment">/// High-level API for fetching Nasdaq quotes.
+<a href=#60 id=60 data-nosnippet>60</a>        </span><span class="kw">pub mod </span>api_nasdaq_quotes;
+<a href=#61 id=61 data-nosnippet>61</a>        <span class="doccomment">/// Resilient Nasdaq API base wrapper with spoofed headers.
+<a href=#62 id=62 data-nosnippet>62</a>        </span><span class="kw">pub mod </span>api_nasdaq_unlimited;
+<a href=#63 id=63 data-nosnippet>63</a>        <span class="doccomment">/// Data feed implementations (streaming/polling).
+<a href=#64 id=64 data-nosnippet>64</a>        </span><span class="kw">pub mod </span>datafeeds {
+<a href=#65 id=65 data-nosnippet>65</a>            <span class="doccomment">/// Streaming data feed implementations.
+<a href=#66 id=66 data-nosnippet>66</a>            </span><span class="kw">pub mod </span>streaming {
+<a href=#67 id=67 data-nosnippet>67</a>                <span class="doccomment">/// Yahoo-specific streaming implementation.
+<a href=#68 id=68 data-nosnippet>68</a>                </span><span class="kw">pub mod </span>yahoo {
+<a href=#69 id=69 data-nosnippet>69</a>                    <span class="doccomment">/// Main Yahoo price streamer logic.
+<a href=#70 id=70 data-nosnippet>70</a>                    </span><span class="kw">pub mod </span>yahoo_streamer;
+<a href=#71 id=71 data-nosnippet>71</a>                    <span class="doccomment">/// Protobuf handler for Yahoo Finance websocket messages.
+<a href=#72 id=72 data-nosnippet>72</a>                    </span><span class="kw">pub mod </span>yahoo_streaming_proto_handler;
+<a href=#73 id=73 data-nosnippet>73</a>                    <span class="doccomment">/// Re-export Yahoo streaming components for convenience.
+<a href=#74 id=74 data-nosnippet>74</a>                    </span><span class="kw">pub use </span>yahoo_streamer::{
+<a href=#75 id=75 data-nosnippet>75</a>                        EventRecord, LogRecord, RustCallbacks, YahooConfig, YahooStreaming,
+<a href=#76 id=76 data-nosnippet>76</a>                        YahooStreamingCore,
+<a href=#77 id=77 data-nosnippet>77</a>                    };
+<a href=#78 id=78 data-nosnippet>78</a>                }
+<a href=#79 id=79 data-nosnippet>79</a>            }
+<a href=#80 id=80 data-nosnippet>80</a>        }
+<a href=#81 id=81 data-nosnippet>81</a>    }
+<a href=#82 id=82 data-nosnippet>82</a>}
+<a href=#83 id=83 data-nosnippet>83</a>
+<a href=#84 id=84 data-nosnippet>84</a><span class="doccomment">/// Re-export Nasdaq quote fetching functions.
+<a href=#85 id=85 data-nosnippet>85</a></span><span class="kw">pub use </span>markets::nasdaq::api_nasdaq_quotes::{nasdaq_quote, nasdaq_quotes, AssetClass};
+<a href=#86 id=86 data-nosnippet>86</a>
+<a href=#87 id=87 data-nosnippet>87</a><span class="doccomment">/// Re-export Nasdaq market status function.
+<a href=#88 id=88 data-nosnippet>88</a></span><span class="kw">pub use </span>markets::nasdaq::api_nasdaq_marketstatus::get_status;
 <a href=#89 id=89 data-nosnippet>89</a>
-<a href=#90 id=90 data-nosnippet>90</a><span class="doccomment">/// Re-export Yahoo streaming components.
-<a href=#91 id=91 data-nosnippet>91</a></span><span class="kw">pub use </span>markets::nasdaq::datafeeds::streaming::yahoo::{
-<a href=#92 id=92 data-nosnippet>92</a>    EventRecord, LogRecord, RustCallbacks, YahooConfig, YahooStreaming, YahooStreamingCore,
+<a href=#90 id=90 data-nosnippet>90</a><span class="doccomment">/// Re-export Nasdaq base API functions.
+<a href=#91 id=91 data-nosnippet>91</a></span><span class="kw">pub use </span>markets::nasdaq::api_nasdaq_unlimited::{
+<a href=#92 id=92 data-nosnippet>92</a>    get_nasdaq_headers, nasdaq_end_point, nasdaq_end_points,
 <a href=#93 id=93 data-nosnippet>93</a>};
+<a href=#94 id=94 data-nosnippet>94</a>
+<a href=#95 id=95 data-nosnippet>95</a><span class="doccomment">/// Re-export Yahoo streaming components.
+<a href=#96 id=96 data-nosnippet>96</a></span><span class="kw">pub use </span>markets::nasdaq::datafeeds::streaming::yahoo::{
+<a href=#97 id=97 data-nosnippet>97</a>    EventRecord, LogRecord, RustCallbacks, YahooConfig, YahooStreaming, YahooStreamingCore,
+<a href=#98 id=98 data-nosnippet>98</a>};
 </code></pre></div></section></main></body></html>

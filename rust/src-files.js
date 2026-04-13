@@ -1,2 +1,2 @@
-createSrcSidebar('[["corelib_rust",["",[["markets",[["nasdaq",[["datafeeds",[["streaming",[["yahoo",[],["yahoo_streamer.rs","yahoo_streaming_proto_handler.rs"]]]]]]],["api_nasdaq_quotes.rs","api_nasdaq_unlimited.rs"]]]],["retrieve",[],["ky.rs","proxied.rs","unlimited.rs"]],["utils",[],["include_exclude_cron.rs"]]],["lib.rs","retrieve.rs","utils.rs"]]]]');
-//{"start":19,"fragment_lengths":[334]}
+createSrcSidebar('[["corelib_rust",["",[["markets",[["nasdaq",[["datafeeds",[["streaming",[["yahoo",[],["yahoo_streamer.rs","yahoo_streaming_proto_handler.rs"]]]]]]],["api_nasdaq_marketstatus.rs","api_nasdaq_quotes.rs","api_nasdaq_unlimited.rs"]]]],["retrieve",[],["ky.rs","proxied.rs","unlimited.rs"]],["utils",[],["include_exclude_cron.rs"]]],["lib.rs","retrieve.rs","utils.rs"]]]]');
+//{"start":19,"fragment_lengths":[363]}
