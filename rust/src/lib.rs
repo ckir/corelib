@@ -54,6 +54,8 @@ pub fn get_version() -> String {
 pub mod markets {
     /// Nasdaq-specific API wrappers and data structures.
     pub mod nasdaq {
+        /// High-level API for fetching Nasdaq market status.
+        pub mod api_nasdaq_marketstatus;
         /// High-level API for fetching Nasdaq quotes.
         pub mod api_nasdaq_quotes;
         /// Resilient Nasdaq API base wrapper with spoofed headers.
@@ -81,6 +83,9 @@ pub mod markets {
 
 /// Re-export Nasdaq quote fetching functions.
 pub use markets::nasdaq::api_nasdaq_quotes::{nasdaq_quote, nasdaq_quotes, AssetClass};
+
+/// Re-export Nasdaq market status function.
+pub use markets::nasdaq::api_nasdaq_marketstatus::get_status;
 
 /// Re-export Nasdaq base API functions.
 pub use markets::nasdaq::api_nasdaq_unlimited::{

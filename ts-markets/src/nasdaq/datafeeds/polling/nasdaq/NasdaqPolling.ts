@@ -91,6 +91,7 @@ export class NasdaqPolling extends EventEmitter {
 		logger.info("[NasdaqPolling] Starting Nasdaq polling", {
 			interval: this.apiInterval,
 		});
+		this.emit("status", "started");
 
 		// Initial poll execution
 		void this.poll();
@@ -109,6 +110,7 @@ export class NasdaqPolling extends EventEmitter {
 			clearInterval(this.intervalId);
 			this.intervalId = null;
 			logger.info("[NasdaqPolling] Nasdaq polling stopped.");
+			this.emit("status", "stopped");
 		}
 	}
 
