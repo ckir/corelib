@@ -161,7 +161,11 @@ async fn main() {
     );
     eprintln!(
         "[INFO] Execution strategy: {}",
-        if use_proxies { "ts-cloud Edge Proxies" } else { "Direct API Fallback" }
+        if use_proxies {
+            "ts-cloud Edge Proxies"
+        } else {
+            "Direct API Fallback"
+        }
     );
 
     // Persistent daemon loop listening for cron ticks
@@ -173,9 +177,8 @@ async fn main() {
                 .await
         } else {
             // Execute direct Nasdaq API requests with concurrency limit
-            let direct_quotes =
-                api_nasdaq_quotes::nasdaq_quotes(&sym_refs, args.concurrency).await;
-            
+            let direct_quotes = api_nasdaq_quotes::nasdaq_quotes(&sym_refs, args.concurrency).await;
+
             // Map the raw results to the standardized ApiResponse format
             direct_quotes
                 .into_iter()

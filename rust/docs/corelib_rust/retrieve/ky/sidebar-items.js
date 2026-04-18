@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["KyError"],"fn":["delete","get","patch","post","put"],"struct":["Ky","KyRequestBuilder","KyResponse","RetryOptions"]};

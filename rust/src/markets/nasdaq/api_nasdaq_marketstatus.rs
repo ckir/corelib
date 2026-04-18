@@ -13,7 +13,7 @@ use serde_json::Value;
 ///
 /// This function performs an asynchronous request to the official Nasdaq API
 /// endpoint (`/api/market-info`). It automatically injects the necessary spoofed
-/// headers and validates the application-level `rCode` via the resilient 
+/// headers and validates the application-level `rCode` via the resilient
 /// `nasdaq_end_point` utility.
 ///
 /// # Returns
@@ -89,7 +89,7 @@ mod tests {
 
         // Verify the response is successful
         assert!(res.is_ok(), "Failed to fetch status: {:?}", res);
-        
+
         // Verify the payload matches expectations
         let data = res.unwrap();
         assert_eq!(data["mrktStatus"], "Open");
@@ -105,10 +105,10 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/api/market-info"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "status": { 
-                    "rCode": 400, 
-                    "developerMessage": "Bad Request", 
-                    "bCodeMessage": [{"code": 1001, "errorMessage": "Invalid parameters"}] 
+                "status": {
+                    "rCode": 400,
+                    "developerMessage": "Bad Request",
+                    "bCodeMessage": [{"code": 1001, "errorMessage": "Invalid parameters"}]
                 },
                 "data": null
             })))
@@ -120,7 +120,7 @@ mod tests {
 
         // Verify the response is an error
         assert!(res.is_err());
-        
+
         // Verify the error message contains details of the logic failure
         let err_msg = res.unwrap_err();
         assert!(err_msg.contains("Nasdaq API returned non-200 rCode"));
@@ -144,7 +144,7 @@ mod tests {
 
         // Verify the response is an error
         assert!(res.is_err());
-        
+
         // Verify the error message indicates a transport/HTTP error
         let err_msg = res.unwrap_err();
         assert!(err_msg.contains("HTTP Error 500"));

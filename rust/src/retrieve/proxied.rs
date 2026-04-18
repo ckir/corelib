@@ -128,9 +128,8 @@ impl RequestProxied {
             state.failure_streaks.remove(proxy_base);
 
             // Adjust the current index to prevent out-of-bounds access
-            if state.active_proxies.is_empty() {
-                state.current_index = 0;
-            } else if state.current_index >= state.active_proxies.len() {
+            if state.active_proxies.is_empty() || state.current_index >= state.active_proxies.len()
+            {
                 state.current_index = 0;
             }
 

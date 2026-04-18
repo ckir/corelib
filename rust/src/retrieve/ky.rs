@@ -293,11 +293,12 @@ impl KyRequestBuilder {
                     }
 
                     // Check if we should retry based on the HTTP status code
-                    if builder_clone.is_some()
-                        && attempt_count <= self.retry_options.limit
-                        && self.retry_options.methods.contains(&self.method)
-                        && self.retry_options.status_codes.contains(&status)
-                    {
+                    if let (Some(builder), true) = (
+                        builder_clone,
+                        attempt_count <= self.retry_options.limit
+                            && self.retry_options.methods.contains(&self.method)
+                            && self.retry_options.status_codes.contains(&status),
+                    ) {
                         // Calculate the initial exponential backoff delay
                         let mut delay_duration =
                             Self::calculate_delay(attempt_count, self.retry_options.backoff_limit);
@@ -337,7 +338,7 @@ impl KyRequestBuilder {
                         tokio::time::sleep(delay_duration).await;
                         attempt_count += 1;
                         // Use the preserved clone for the next iteration
-                        current_builder = builder_clone.unwrap();
+                        current_builder = builder;
                         continue;
                     }
 
@@ -349,16 +350,17 @@ impl KyRequestBuilder {
                 }
                 Err(e) => {
                     // Check if we should retry based on network-level errors (connect or timeout)
-                    if builder_clone.is_some()
-                        && attempt_count <= self.retry_options.limit
-                        && self.retry_options.methods.contains(&self.method)
-                        && (e.is_connect() || e.is_timeout())
-                    {
+                    if let (Some(builder), true) = (
+                        builder_clone,
+                        attempt_count <= self.retry_options.limit
+                            && self.retry_options.methods.contains(&self.method)
+                            && (e.is_connect() || e.is_timeout()),
+                    ) {
                         let delay_duration =
                             Self::calculate_delay(attempt_count, self.retry_options.backoff_limit);
                         tokio::time::sleep(delay_duration).await;
                         attempt_count += 1;
-                        current_builder = builder_clone.unwrap();
+                        current_builder = builder;
                         continue;
                     }
                     // Return the network error

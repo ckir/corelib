@@ -64,6 +64,15 @@ pub mod markets {
         pub mod datafeeds {
             /// Streaming data feed implementations.
             pub mod streaming {
+                /// Alpaca-specific streaming implementation.
+                pub mod alpaca {
+                    /// Main Alpaca price streamer logic.
+                    pub mod alpaca_streamer;
+                    /// Re-export Alpaca streaming components for convenience.
+                    pub use alpaca_streamer::{
+                        AlpacaConfig, AlpacaPricingData, AlpacaStreaming, AlpacaStreamingCore,
+                    };
+                }
                 /// Yahoo-specific streaming implementation.
                 pub mod yahoo {
                     /// Main Yahoo price streamer logic.
@@ -90,6 +99,11 @@ pub use markets::nasdaq::api_nasdaq_marketstatus::get_status;
 /// Re-export Nasdaq base API functions.
 pub use markets::nasdaq::api_nasdaq_unlimited::{
     get_nasdaq_headers, nasdaq_end_point, nasdaq_end_points,
+};
+
+/// Re-export Alpaca streaming components.
+pub use markets::nasdaq::datafeeds::streaming::alpaca::{
+    AlpacaConfig, AlpacaPricingData, AlpacaStreaming, AlpacaStreamingCore,
 };
 
 /// Re-export Yahoo streaming components.
