@@ -7,18 +7,18 @@
  */
 
 const Alpaca = require("@alpacahq/alpaca-trade-api");
-const API_KEY = "PKSAHT3YV5RKVEWKPGFTYBATUA";
-const API_SECRET = "ChVNyuANVCwuwLAxaaJvxTNMRYQ82LvKZS53mvj6KYxk";
+const APCA_API_KEY_ID = process.env.APCA_API_KEY_ID;
+const APCA_API_SECRET_KEY = process.env.APCA_API_SECRET_KEY;
 
 const alpaca = new Alpaca({
-  keyId: API_KEY,
-  secretKey: API_SECRET,
+  keyId: APCA_API_KEY_ID,
+  secretKey: APCA_API_SECRET_KEY,
   paper: true,
 })
 
 const websocket = alpaca.data_stream_v2;
 websocket.onConnect(() => {
-  websocket.subscribeForQuotes(["AAPL", "MSFT", "TSLA", "GOOG", "AMZN"]);
+  websocket.subscribeForTrades(["AAPL", "MSFT", "TSLA", "GOOG", "AMZN"]);
 });
 websocket.onStateChange((status) => {
   console.log("Status:", status);

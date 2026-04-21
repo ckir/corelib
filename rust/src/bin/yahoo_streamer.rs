@@ -17,7 +17,7 @@ struct Args {
     #[arg(short, long)]
     symbols: Option<String>,
     /// Threshold in seconds for silence detection before reconnecting.
-    #[arg(short, long, default_value = "60")]
+    #[arg(long, default_value = "60")]
     silence: u32,
     /// If set, clears all existing persistent subscriptions before starting.
     #[arg(long)]
