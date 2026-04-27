@@ -22,14 +22,14 @@
     "dependencies": {
         "@ckir/corelib": "workspace:*",
         "@ckir/corelib-markets": "workspace:*",
-        "@hono/node-server": "^1.19.13",
+        "@hono/node-server": "^2.0.0",
         "hono": "^4.12.12",
         "ky": "^2.0.0",
         "serialize-error": "^13.0.1"
     },
     "devDependencies": {
         "@cloudflare/vite-plugin": "^1.31.1",
-        "@cloudflare/vitest-pool-workers": "^0.14.2",
+        "@cloudflare/vitest-pool-workers": "^0.15.0",
         "@cloudflare/workers-types": "^4.20260408.1",
         "@types/aws-lambda": "^8.10.161",
         "@types/deno": "^2.5.0",

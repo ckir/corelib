@@ -112,6 +112,10 @@ export interface JsPricingData {
   underlyingSymbol: string
   openInterest: number
   optionType: number
+  bidPrice: number
+  bidSize: number
+  askPrice: number
+  askSize: number
 }
 
 /**

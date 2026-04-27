@@ -77,6 +77,18 @@ pub struct PricingData {
     /// The type of option (Call or Put).
     #[prost(enumeration = "OptionType", tag = "20")]
     pub option_type: i32,
+    /// The current bid price.
+    #[prost(float, tag = "23")]
+    pub bid_price: f32,
+    /// The current bid size.
+    #[prost(sint64, tag = "24")]
+    pub bid_size: i64,
+    /// The current ask price.
+    #[prost(float, tag = "25")]
+    pub ask_price: f32,
+    /// The current ask size.
+    #[prost(sint64, tag = "26")]
+    pub ask_size: i64,
 }
 
 /// An N-API compatible object representing pricing data.
@@ -106,6 +118,10 @@ pub struct JsPricingData {
     pub underlying_symbol: String,
     pub open_interest: i64,
     pub option_type: i32,
+    pub bid_price: f64,
+    pub bid_size: i64,
+    pub ask_price: f64,
+    pub ask_size: i64,
 }
 
 impl From<PricingData> for JsPricingData {
@@ -132,6 +148,10 @@ impl From<PricingData> for JsPricingData {
             underlying_symbol: p.underlying_symbol,
             open_interest: p.open_interest,
             option_type: p.option_type,
+            bid_price: p.bid_price as f64,
+            bid_size: p.bid_size,
+            ask_price: p.ask_price as f64,
+            ask_size: p.ask_size,
         }
     }
 }
@@ -215,6 +235,10 @@ mod tests {
             underlying_symbol: "".to_string(),
             open_interest: 0,
             option_type: OptionType::Call as i32,
+            bid_price: 150.40,
+            bid_size: 100,
+            ask_price: 150.60,
+            ask_size: 200,
         };
 
         // // Encode to bytes
