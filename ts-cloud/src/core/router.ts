@@ -9,6 +9,7 @@ import type { StrictLogger } from "@ckir/corelib";
 import { Hono } from "hono";
 import { sqlRouter } from "../database/SqlCloud";
 import { nasdaqRouter } from "../markets/nasdaq/ApiNasdaqUnlimitedCloud";
+import { historicalRouter } from "../markets/nasdaq/HistoricalCloud";
 import { marketStatusRouter } from "../markets/nasdaq/MarketStatusCloud";
 import { kyRouter } from "../retrieve/RequestUnlimitedCloud";
 import type { AppEnv } from "./types";
@@ -97,6 +98,7 @@ export const createRouter = (logger?: StrictLogger): Hono<AppEnv> => {
 	 */
 	apiV1.route("/markets/nasdaq", nasdaqRouter);
 	apiV1.route("/markets/nasdaq/status", marketStatusRouter);
+	apiV1.route("/markets/nasdaq/historical", historicalRouter);
 
 	/**
 	 * SQL Query (Turso) Endpoint
