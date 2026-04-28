@@ -14,6 +14,7 @@ export interface HistoricalOptions {
  * Dates are guaranteed to be ISO-8601 strings.
  */
 export interface HistoricalQuote {
+	symbol: string;
 	date: string;
 	open: number;
 	high: number;

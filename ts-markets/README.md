@@ -94,7 +94,26 @@ if (current.status === 'success') {
 }
 ```
 
-### 4. Nasdaq 100 Symbols
+### 4. Historical Data (Yahoo Finance v3)
+Retrieve standardized historical OHLCV data using a resilient Yahoo Finance v3 integration.
+
+```typescript
+import { Historical } from '@ckir/corelib-markets';
+
+// Fetch daily historical data for the last year
+const result = await Historical.getData("AAPL", {
+  period1: "2023-01-01",
+  interval: "1d"
+});
+
+if (result.status === 'success') {
+  console.log(`Retrieved ${result.value.length} quotes for ${result.value[0].symbol}`);
+  const latest = result.value[result.value.length - 1];
+  console.log(`Latest Close (${latest.date}): ${latest.close}`);
+}
+```
+
+### 5. Nasdaq 100 Symbols
 Fast, cached retrieval of the Nasdaq 100 constituent symbols.
 
 ```typescript

@@ -31,6 +31,7 @@ export class YahooHistoricalProvider implements HistoricalProvider {
 
 			// Transform to strictly standardized JSON format
 			const value: HistoricalQuote[] = data.map((item: any) => ({
+				symbol,
 				date:
 					DateTime.fromJSDate(item.date).toUTC().toISO() ||
 					item.date.toISOString(),

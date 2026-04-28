@@ -120,6 +120,9 @@ monitor.start();
 // 2. Persistent Symbol Database
 const symbols = new MarketSymbols();
 const aapl = await symbols.get("AAPL"); // Auto-refreshes if needed
+
+// 3. Resilient Historical Data (Yahoo Finance v3)
+const history = await Historical.getData("AAPL", { period1: "2023-01-01" });
 ```
 
 ### 3. Edge Proxy Services (`@ckir/corelib-cloud`)

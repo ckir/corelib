@@ -18,6 +18,7 @@ describe("HistoricalCloud Router", () => {
 	const mockOptions = { period1: "2023-01-01", interval: "1d" };
 	const mockQuotes = [
 		{
+			symbol: "AAPL",
 			date: "2023-01-01",
 			open: 150,
 			high: 155,

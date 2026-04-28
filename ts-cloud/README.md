@@ -43,6 +43,7 @@ src/
 ### Data & Proxy Endpoints
 - **`POST /api/v1/ky`**: Generic resilient HTTP proxy (supports single or bulk parallel requests).
 - **`POST /api/v1/markets/nasdaq`**: Nasdaq-specific resilient market data proxy.
+- **`POST /api/v1/markets/nasdaq/historical`**: Yahoo Finance historical data proxy.
 - **`GET /api/v1/markets/nasdaq/status`**: Fetches current Nasdaq market status (Open/Closed/Pre/After).
 - **`GET /api/v1/markets/nasdaq/groups/top100`**: Retrieves the list of current Nasdaq 100 constituent symbols.
 - **`POST /api/v1/sql`**: Executes a parameterized SQL query on Turso/LibSQL.
@@ -98,6 +99,16 @@ curl https://your-service-url/api/v1/markets/nasdaq/status
 #### Nasdaq 100 Symbols
 ```bash
 curl https://your-service-url/api/v1/markets/nasdaq/groups/top100
+```
+
+#### Historical Data Proxy
+```bash
+curl -X POST https://your-service-url/api/v1/markets/nasdaq/historical \
+     -H "Content-Type: application/json" \
+     -d '{
+       "symbol": "AAPL",
+       "options": { "period1": "2023-01-01", "interval": "1d" }
+     }'
 ```
 
 ### SQL Query (Turso)
