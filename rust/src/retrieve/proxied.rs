@@ -492,15 +492,22 @@ mod tests {
         assert_eq!(reqs2.len(), 1);
 
         // Verify correct ?url payload mapped
-        assert_eq!(
-            reqs1[0]
-                .url
-                .query_pairs()
-                .find(|(k, _)| k == "url")
-                .unwrap()
-                .1,
-            "https://t1.com"
-        );
+        let mut urls1: Vec<String> = reqs1
+            .iter()
+            .map(|r| {
+                r.url
+                    .query_pairs()
+                    .find(|(k, _)| k == "url")
+                    .unwrap()
+                    .1
+                    .to_string()
+            })
+            .collect();
+        urls1.sort();
+
+        assert_eq!(urls1[0], "https://t1.com");
+        assert_eq!(urls1[1], "https://t3.com");
+
         assert_eq!(
             reqs2[0]
                 .url
@@ -509,15 +516,6 @@ mod tests {
                 .unwrap()
                 .1,
             "https://t2.com"
-        );
-        assert_eq!(
-            reqs1[1]
-                .url
-                .query_pairs()
-                .find(|(k, _)| k == "url")
-                .unwrap()
-                .1,
-            "https://t3.com"
         );
     }
 
