@@ -1,16 +1,3 @@
-// =============================================
-// FILE: ts-core/src/loggers/common/index.ts
-// PURPOSE: Strict logger with telemetry (YOUR EXACT SPEC)
-// - ONLY accepts: logger.info("msg", { extras? })
-// - Throws clear error on any other signature
-// - setTelemetry('on'|'off') – per logger / per child
-// - When on: adds top-level "telemetry" sibling to "extras"
-// - Telemetry refreshed on EVERY log call (SysInfo.get())
-// - Secrets in env are auto-redacted
-// - pino-pretty shows nested extras + telemetry naturally
-// - Child loggers are fully independent
-// =============================================
-
 // ts-core/src/loggers/common/index.ts
 
 import type { Logger as PinoLogger } from "pino";
@@ -51,15 +38,21 @@ export interface StrictLogger {
  */
 export class StrictLoggerWrapper implements StrictLogger {
 	private pinoInstance: PinoLogger;
-	private telemetryEnabled = false;
+	private state: { telemetryEnabled: boolean };
+	private context: Record<string, unknown>;
 
-	constructor(pinoInstance: PinoLogger, inheritTelemetry = false) {
+	constructor(
+		pinoInstance: PinoLogger,
+		state: { telemetryEnabled: boolean } = { telemetryEnabled: false },
+		context: Record<string, unknown> = {},
+	) {
 		this.pinoInstance = pinoInstance;
-		this.telemetryEnabled = inheritTelemetry;
+		this.state = state;
+		this.context = context;
 	}
 
 	private getTelemetry() {
-		return this.telemetryEnabled ? SysInfo.get() : undefined;
+		return this.state.telemetryEnabled ? SysInfo.get() : undefined;
 	}
 
 	private validate(msg: unknown, extras?: unknown) {
@@ -80,41 +73,60 @@ export class StrictLoggerWrapper implements StrictLogger {
 
 	trace(msg: string, extras?: Record<string, unknown>) {
 		this.validate(msg, extras);
-		this.pinoInstance.trace({ ...extras, telemetry: this.getTelemetry() }, msg);
+		this.pinoInstance.trace(
+			{ ...this.context, ...extras, telemetry: this.getTelemetry() },
+			msg,
+		);
 	}
 	debug(msg: string, extras?: Record<string, unknown>) {
 		this.validate(msg, extras);
-		this.pinoInstance.debug({ ...extras, telemetry: this.getTelemetry() }, msg);
+		this.pinoInstance.debug(
+			{ ...this.context, ...extras, telemetry: this.getTelemetry() },
+			msg,
+		);
 	}
 	info(msg: string, extras?: Record<string, unknown>) {
 		this.validate(msg, extras);
-		this.pinoInstance.info({ ...extras, telemetry: this.getTelemetry() }, msg);
+		this.pinoInstance.info(
+			{ ...this.context, ...extras, telemetry: this.getTelemetry() },
+			msg,
+		);
 	}
 	warn(msg: string, extras?: Record<string, unknown>) {
 		this.validate(msg, extras);
-		this.pinoInstance.warn({ ...extras, telemetry: this.getTelemetry() }, msg);
+		this.pinoInstance.warn(
+			{ ...this.context, ...extras, telemetry: this.getTelemetry() },
+			msg,
+		);
 	}
 	error(msg: string, extras?: Record<string, unknown>) {
 		this.validate(msg, extras);
-		this.pinoInstance.error({ ...extras, telemetry: this.getTelemetry() }, msg);
+		this.pinoInstance.error(
+			{ ...this.context, ...extras, telemetry: this.getTelemetry() },
+			msg,
+		);
 	}
 	fatal(msg: string, extras?: Record<string, unknown>) {
 		this.validate(msg, extras);
-		this.pinoInstance.fatal({ ...extras, telemetry: this.getTelemetry() }, msg);
+		this.pinoInstance.fatal(
+			{ ...this.context, ...extras, telemetry: this.getTelemetry() },
+			msg,
+		);
 	}
 
 	child(bindings: Record<string, unknown>): StrictLogger {
-		return new StrictLoggerWrapper(
-			this.pinoInstance.child(bindings),
-			this.telemetryEnabled,
-		);
+		// share same pinoInstance and same state to ensure non-independence
+		return new StrictLoggerWrapper(this.pinoInstance, this.state, {
+			...this.context,
+			...bindings,
+		});
 	}
 
 	setTelemetry(mode: "on" | "off"): void {
 		if (mode !== "on" && mode !== "off") {
 			throw new Error("setTelemetry accepts only 'on' or 'off'");
 		}
-		this.telemetryEnabled = mode === "on";
+		this.state.telemetryEnabled = mode === "on";
 	}
 
 	get level() {
@@ -128,7 +140,7 @@ export class StrictLoggerWrapper implements StrictLogger {
 	}
 
 	bindings(): Record<string, unknown> {
-		return this.pinoInstance.bindings();
+		return { ...this.context };
 	}
 
 	silent(): void {

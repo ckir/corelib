@@ -160,35 +160,41 @@ describe("Logger Implementation (StrictLoggerWrapper)", () => {
 			spy.mockRestore();
 		});
 
-		it("child telemetry is independent from parent after creation", () => {
+		it("child telemetry is NOT independent from parent after creation", () => {
 			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
-			const child = logger!.child({ module: "independent-test" });
+			const child = logger!.child({ module: "not-independent-test" });
 			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
 			logger!.setTelemetry("on");
-			child.setTelemetry("off");
 
 			const spy = vi.spyOn(SysInfo, "get");
 			child.info(testMessage);
-			expect(spy).not.toHaveBeenCalled(); // Child is off even if parent is on
+			expect(spy).toHaveBeenCalled(); // Child is on because parent is on
 
+			// Turning off child should turn off parent (shared state)
+			child.setTelemetry("off");
 			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
 			logger!.info(testMessage);
-			expect(spy).toHaveBeenCalled(); // Parent is still on
+			expect(spy).toHaveBeenCalledTimes(1); // No new call
 
-			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
-			logger!.setTelemetry("off");
 			spy.mockRestore();
 		});
 	});
 
 	describe("Pino Property Integration", () => {
-		it("allows getting and setting the log level", () => {
+		it("allows getting and setting the log level (shared across children)", () => {
 			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
 			const originalLevel = logger!.level;
 			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
-			logger!.level = "debug";
+			const child = logger!.child({ module: "level-test" });
+
 			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
-			expect(logger!.level).toBe("debug");
+			logger!.level = "debug";
+			expect(child.level).toBe("debug");
+
+			child.level = "warn";
+			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
+			expect(logger!.level).toBe("warn");
+
 			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
 			logger!.level = originalLevel;
 		});
@@ -215,7 +221,7 @@ describe("Logger Implementation (StrictLoggerWrapper)", () => {
 	// Edge Environment Implementations
 	// ===================================================================
 	describe("Edge Environment Implementations", () => {
-		it("Cloudflare logger should conform to StrictLogger and use console.log", () => {
+		it("Cloudflare logger should conform to StrictLogger and use console.log with flattened extras", () => {
 			// Intercept console.log to prevent test noise and verify payload
 			const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 			const cfLogger = createCloudflareLogger();
@@ -223,15 +229,27 @@ describe("Logger Implementation (StrictLoggerWrapper)", () => {
 			expect(cfLogger.info).toBeDefined();
 			expect(cfLogger.child).toBeDefined();
 
-			// Test the custom edge serialization structure
-			cfLogger.info("Edge test message", { edgeMode: true });
+			// Test the custom edge serialization structure with child and extras
+			const child = cfLogger.child({ module: "edge-child" });
+			child.info("Edge test message", { edgeMode: true });
 
 			expect(consoleSpy).toHaveBeenCalledTimes(1);
-			const logOutput = JSON.parse(consoleSpy.mock.calls[0][0]);
+			const rawOutput = consoleSpy.mock.calls[0][0];
+			const logOutput = JSON.parse(rawOutput);
 
 			expect(logOutput.msg).toBe("Edge test message");
 			expect(logOutput.level).toBe("info");
-			expect(logOutput.extras.edgeMode).toBe(true);
+			expect(logOutput.module).toBe("edge-child"); // Flattened from child
+			expect(logOutput.edgeMode).toBe(true);       // Flattened from extras
+
+			// Verify key order: msg should be after context/extras
+			const keys = Object.keys(logOutput);
+			const msgIndex = keys.indexOf("msg");
+			const moduleIndex = keys.indexOf("module");
+			const edgeModeIndex = keys.indexOf("edgeMode");
+
+			expect(moduleIndex).toBeLessThan(msgIndex);
+			expect(edgeModeIndex).toBeLessThan(msgIndex);
 
 			consoleSpy.mockRestore();
 		});
