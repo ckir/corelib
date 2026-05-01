@@ -1,15 +1,38 @@
-import { logger } from "@ckir/corelib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NasdaqPolling } from "./NasdaqPolling";
 
+// Mock logger to prevent console noise
+const { mockDebug, mockWarn, mockError, mockInfo, mockChildLogger } =
+	vi.hoisted(() => {
+		const debug = vi.fn();
+		const warn = vi.fn();
+		const error = vi.fn();
+		const info = vi.fn();
+		return {
+			mockDebug: debug,
+			mockWarn: warn,
+			mockError: error,
+			mockInfo: info,
+			mockChildLogger: {
+				debug,
+				warn,
+				error,
+				info,
+			},
+		};
+	});
+
 // Mock the dependencies
-vi.mock("@ckir/corelib", () => ({
-	logger: {
-		info: vi.fn(),
-		warn: vi.fn(),
-		error: vi.fn(),
-	},
-}));
+vi.mock("@ckir/corelib", async () => {
+	const mockLogger = {
+		child: vi.fn(() => mockChildLogger),
+		...mockChildLogger,
+	};
+	return {
+		default: mockLogger,
+		logger: mockLogger,
+	};
+});
 
 vi.mock("../../../ApiNasdaqQuotes", () => {
 	const ApiNasdaqQuotes = vi.fn();
@@ -30,6 +53,12 @@ describe("NasdaqPolling", () => {
 		poller = new NasdaqPolling(interval, sampleProxies);
 		// @ts-expect-error - accessing private for testing purposes
 		mockApiInstance = poller.nasdaqQuotes;
+
+		// Clear mocks on the individual logger functions
+		mockDebug.mockClear();
+		mockWarn.mockClear();
+		mockError.mockClear();
+		mockInfo.mockClear();
 	});
 
 	afterEach(() => {
@@ -93,7 +122,7 @@ describe("NasdaqPolling", () => {
 		it("should not start multiple intervals if start() is called twice", () => {
 			poller.start();
 			poller.start();
-			expect(logger.warn).toHaveBeenCalledWith(
+			expect(mockWarn).toHaveBeenCalledWith(
 				expect.stringContaining("already active"),
 			);
 		});
@@ -153,7 +182,7 @@ describe("NasdaqPolling", () => {
 			await poller.poll();
 
 			expect(errorSpy).toHaveBeenCalledWith(errorReason);
-			expect(logger.error).toHaveBeenCalledWith(
+			expect(mockError).toHaveBeenCalledWith(
 				expect.stringContaining("Error fetching quote"),
 				expect.objectContaining({ error: errorReason }),
 			);
@@ -171,7 +200,7 @@ describe("NasdaqPolling", () => {
 			await poller.poll();
 
 			expect(errorSpy).toHaveBeenCalled();
-			expect(logger.error).toHaveBeenCalledWith(
+			expect(mockError).toHaveBeenCalledWith(
 				expect.stringContaining("Polling execution failed"),
 				expect.any(Object),
 			);

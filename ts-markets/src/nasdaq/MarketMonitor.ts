@@ -14,6 +14,8 @@ import { DateTime } from "luxon";
 import { serializeError } from "serialize-error";
 import { MarketStatus, type NasdaqMarketInfo } from "./MarketStatus";
 
+const marketMonitorLogger = logger.child({ section: "MarketMonitor" });
+
 export type MarketPhase = "open" | "pre-market" | "after-hours" | "closed";
 
 /**
@@ -71,7 +73,7 @@ export class MarketMonitor extends EventEmitter {
 		if (this.isRunning) return;
 		this.isRunning = true;
 		this.failureCount = 0;
-		logger.info("[MarketMonitor] Starting market status monitor");
+		marketMonitorLogger.info("[MarketMonitor] Starting market status monitor");
 		this.poll(); // kick off the first poll immediately
 	}
 
@@ -83,7 +85,7 @@ export class MarketMonitor extends EventEmitter {
 			clearTimeout(this.timeoutId);
 			this.timeoutId = null;
 		}
-		logger.info("[MarketMonitor] Monitor stopped");
+		marketMonitorLogger.info("[MarketMonitor] Monitor stopped");
 		this.emit("stopped");
 	}
 
@@ -119,7 +121,7 @@ export class MarketMonitor extends EventEmitter {
 				this.handleFailure();
 			}
 		} catch (err) {
-			logger.error("[MarketMonitor] Unexpected poll error", {
+			marketMonitorLogger.error("[MarketMonitor] Unexpected poll error", {
 				error: serializeError(err),
 			});
 			this.handleFailure();
@@ -251,7 +253,7 @@ export class MarketMonitor extends EventEmitter {
 	private maybeLogWarn(): void {
 		const now = Date.now();
 		if (now - this.lastWarnTime >= this.warnIntervalSec * 1000) {
-			logger.warn(
+			marketMonitorLogger.warn(
 				"[MarketMonitor] MarketStatus fetch failed – using heuristic data",
 				{
 					failures: this.failureCount,

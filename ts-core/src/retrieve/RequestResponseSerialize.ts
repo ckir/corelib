@@ -2,6 +2,11 @@
 // FILE: ts-core/src/retrieve/RequestResponseSerialize.ts
 // PURPOSE: Utility for serializing Fetch API Responses into a plain, transferable structure.
 // Handles body parsing (JSON or text fallback) and error logging via global logger.
+import logger from "../loggers";
+
+const requestResponseSerializeLogger = logger.child({
+	section: "RequestResponseSerialize",
+});
 // =============================================
 
 /**
@@ -52,7 +57,9 @@ export async function serializeResponse<T = unknown>(
 			body = rawText;
 		}
 	} catch (error) {
-		globalThis.logger?.warn("Failed to read response body", { error });
+		requestResponseSerializeLogger.warn("Failed to read response body", {
+			error,
+		});
 		body = "[Error reading body]";
 	}
 

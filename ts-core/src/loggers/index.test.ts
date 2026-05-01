@@ -240,7 +240,7 @@ describe("Logger Implementation (StrictLoggerWrapper)", () => {
 			expect(logOutput.msg).toBe("Edge test message");
 			expect(logOutput.level).toBe("info");
 			expect(logOutput.module).toBe("edge-child"); // Flattened from child
-			expect(logOutput.edgeMode).toBe(true);       // Flattened from extras
+			expect(logOutput.edgeMode).toBe(true); // Flattened from extras
 
 			// Verify key order: msg should be after context/extras
 			const keys = Object.keys(logOutput);

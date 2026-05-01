@@ -3,6 +3,8 @@ import { logger } from "@ckir/corelib";
 import { serializeError } from "serialize-error";
 import { ApiNasdaqQuotes } from "../../../ApiNasdaqQuotes";
 
+const nasdaqPollingLogger = logger.child({ section: "NasdaqPolling" });
+
 /**
  * NasdaqPolling handles periodic polling of Nasdaq stock quotes.
  * It uses a list of symbols and a set of proxies to fetch data via ApiNasdaqQuotes.
@@ -31,7 +33,7 @@ export class NasdaqPolling extends EventEmitter {
 		// Initialize ApiNasdaqQuotes with the provided proxies and global logger
 		this.nasdaqQuotes = new ApiNasdaqQuotes({
 			proxies: this.proxies,
-			logger: logger,
+			logger: nasdaqPollingLogger,
 		});
 	}
 
@@ -41,7 +43,7 @@ export class NasdaqPolling extends EventEmitter {
 	 * @param value - New interval in milliseconds.
 	 */
 	public setApiInterval(value: number): void {
-		logger.info("[NasdaqPolling] Setting API interval", {
+		nasdaqPollingLogger.info("[NasdaqPolling] Setting API interval", {
 			old: this.apiInterval,
 			new: value,
 		});
@@ -60,7 +62,7 @@ export class NasdaqPolling extends EventEmitter {
 		for (const symbol of symbols) {
 			this.subscriptions.add(symbol.toUpperCase());
 		}
-		logger.info("[NasdaqPolling] Subscribed to symbols", {
+		nasdaqPollingLogger.info("[NasdaqPolling] Subscribed to symbols", {
 			currentCount: this.subscriptions.size,
 		});
 	}
@@ -73,7 +75,7 @@ export class NasdaqPolling extends EventEmitter {
 		for (const symbol of symbols) {
 			this.subscriptions.delete(symbol.toUpperCase());
 		}
-		logger.info("[NasdaqPolling] Unsubscribed from symbols", {
+		nasdaqPollingLogger.info("[NasdaqPolling] Unsubscribed from symbols", {
 			currentCount: this.subscriptions.size,
 		});
 	}
@@ -84,11 +86,11 @@ export class NasdaqPolling extends EventEmitter {
 	 */
 	public start(): void {
 		if (this.intervalId !== null) {
-			logger.warn("[NasdaqPolling] Polling is already active.");
+			nasdaqPollingLogger.warn("[NasdaqPolling] Polling is already active.");
 			return;
 		}
 
-		logger.info("[NasdaqPolling] Starting Nasdaq polling", {
+		nasdaqPollingLogger.info("[NasdaqPolling] Starting Nasdaq polling", {
 			interval: this.apiInterval,
 		});
 		this.emit("status", "started");
@@ -109,7 +111,7 @@ export class NasdaqPolling extends EventEmitter {
 		if (this.intervalId !== null) {
 			clearInterval(this.intervalId);
 			this.intervalId = null;
-			logger.info("[NasdaqPolling] Nasdaq polling stopped.");
+			nasdaqPollingLogger.info("[NasdaqPolling] Nasdaq polling stopped.");
 			this.emit("status", "stopped");
 		}
 	}
@@ -119,7 +121,7 @@ export class NasdaqPolling extends EventEmitter {
 	 */
 	public clear(): void {
 		this.subscriptions.clear();
-		logger.info("[NasdaqPolling] Subscriptions cleared.");
+		nasdaqPollingLogger.info("[NasdaqPolling] Subscriptions cleared.");
 		this.stop();
 	}
 
@@ -144,7 +146,7 @@ export class NasdaqPolling extends EventEmitter {
 					 */
 					this.emit("data", result.value);
 				} else if (result.status === "error") {
-					logger.error("[NasdaqPolling] Error fetching quote", {
+					nasdaqPollingLogger.error("[NasdaqPolling] Error fetching quote", {
 						error: result.reason,
 					});
 					this.emit("error", result.reason);
@@ -152,7 +154,7 @@ export class NasdaqPolling extends EventEmitter {
 			}
 		} catch (error) {
 			const serialized = serializeError(error);
-			logger.error("[NasdaqPolling] Polling execution failed", {
+			nasdaqPollingLogger.error("[NasdaqPolling] Polling execution failed", {
 				error: serialized,
 			});
 			this.emit("error", serialized);

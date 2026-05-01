@@ -10,6 +10,7 @@ import { EventEmitter } from "node:events";
 import { Command } from "commander";
 import { deepmergeCustom } from "deepmerge-ts";
 import { serializeError } from "serialize-error";
+import logger from "../loggers";
 import {
 	detectRuntime,
 	existsSync,
@@ -41,6 +42,7 @@ export class ConfigManager extends EventEmitter {
 	private static instance: ConfigManager;
 	private _config: any = {};
 	private _defaultsPath: string;
+	private static _logger = logger.child({ section: "ConfigManager" });
 
 	private constructor() {
 		super();
@@ -416,11 +418,7 @@ export class ConfigManager extends EventEmitter {
 	 */
 	private logError(msg: string, error?: unknown): void {
 		const serialized = error ? serializeError(error) : undefined;
-		if ((globalThis as any).logger) {
-			(globalThis as any).logger.error(msg, { error: serialized });
-		} else {
-			console.error(`❌ [ConfigManager] ${msg}`, serialized || "");
-		}
+		ConfigManager._logger.error(msg, { error: serialized });
 	}
 
 	// --- Rust Integration Helpers ---

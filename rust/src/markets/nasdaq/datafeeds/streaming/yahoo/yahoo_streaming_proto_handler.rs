@@ -77,6 +77,12 @@ pub struct PricingData {
     /// The type of option (Call or Put).
     #[prost(enumeration = "OptionType", tag = "20")]
     pub option_type: i32,
+    /// Indicates if the option is a mini-option.
+    #[prost(sint64, tag = "21")]
+    pub mini_option: i64,
+    /// The size of the last trade.
+    #[prost(sint64, tag = "22")]
+    pub last_size: i64,
     /// The current bid price.
     #[prost(float, tag = "23")]
     pub bid_price: f32,
@@ -89,6 +95,27 @@ pub struct PricingData {
     /// The current ask size.
     #[prost(sint64, tag = "26")]
     pub ask_size: i64,
+    /// Price hint for display formatting.
+    #[prost(sint64, tag = "27")]
+    pub price_hint: i64,
+    /// 24-hour trading volume.
+    #[prost(sint64, tag = "28")]
+    pub vol_24hr: i64,
+    /// Cumulative volume across all currencies.
+    #[prost(sint64, tag = "29")]
+    pub vol_all_currencies: i64,
+    /// The source currency for conversion.
+    #[prost(string, tag = "30")]
+    pub from_currency: String,
+    /// The market identifier for the last trade.
+    #[prost(string, tag = "31")]
+    pub last_market: String,
+    /// Total circulating supply (e.g., for cryptocurrencies).
+    #[prost(double, tag = "32")]
+    pub circulating_supply: f64,
+    /// Total market capitalization.
+    #[prost(double, tag = "33")]
+    pub market_cap: f64,
 }
 
 /// An N-API compatible object representing pricing data.
@@ -118,10 +145,19 @@ pub struct JsPricingData {
     pub underlying_symbol: String,
     pub open_interest: i64,
     pub option_type: i32,
+    pub mini_option: i64,
+    pub last_size: i64,
     pub bid_price: f64,
     pub bid_size: i64,
     pub ask_price: f64,
     pub ask_size: i64,
+    pub price_hint: i64,
+    pub vol_24hr: i64,
+    pub vol_all_currencies: i64,
+    pub from_currency: String,
+    pub last_market: String,
+    pub circulating_supply: f64,
+    pub market_cap: f64,
 }
 
 impl From<PricingData> for JsPricingData {
@@ -148,10 +184,19 @@ impl From<PricingData> for JsPricingData {
             underlying_symbol: p.underlying_symbol,
             open_interest: p.open_interest,
             option_type: p.option_type,
+            mini_option: p.mini_option,
+            last_size: p.last_size,
             bid_price: p.bid_price as f64,
             bid_size: p.bid_size,
             ask_price: p.ask_price as f64,
             ask_size: p.ask_size,
+            price_hint: p.price_hint,
+            vol_24hr: p.vol_24hr,
+            vol_all_currencies: p.vol_all_currencies,
+            from_currency: p.from_currency,
+            last_market: p.last_market,
+            circulating_supply: p.circulating_supply,
+            market_cap: p.market_cap,
         }
     }
 }
@@ -235,10 +280,19 @@ mod tests {
             underlying_symbol: "".to_string(),
             open_interest: 0,
             option_type: OptionType::Call as i32,
+            mini_option: 0,
+            last_size: 100,
             bid_price: 150.40,
             bid_size: 100,
             ask_price: 150.60,
             ask_size: 200,
+            price_hint: 2,
+            vol_24hr: 60000000,
+            vol_all_currencies: 60000000,
+            from_currency: "".to_string(),
+            last_market: "".to_string(),
+            circulating_supply: 0.0,
+            market_cap: 2500000000000.0,
         };
 
         // // Encode to bytes

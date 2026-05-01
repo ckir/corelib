@@ -58,6 +58,8 @@ The project includes several high-performance CLI binaries for standalone market
 ### 1. Yahoo Streamer (`yahoo_streamer`)
 A supervised WebSocket client for Yahoo Finance. Outputs real-time pricing data as NDJSON to `stdout`.
 
+> **Note**: `bid_price`, `bid_size`, `ask_price`, and `ask_size` fields may appear as `0.0` or `0` for many equity symbols. This is a limitation of the data provided by the Yahoo Finance WebSocket feed for those assets, not a bug in the implementation. These fields are correctly populated for other asset classes, such as cryptocurrency.
+
 ```bash
 # Subscribe to multiple symbols with a 60s silence timeout
 ./target/release/yahoo_streamer --symbols "AAPL,MSFT,TSLA" --silence 60

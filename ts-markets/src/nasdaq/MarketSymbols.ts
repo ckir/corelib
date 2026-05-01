@@ -8,7 +8,18 @@
 // • Open ingestor registry for extended symbol data sources
 // =============================================
 
+// =============================================
+// FILE: ts-markets/src/nasdaq/MarketSymbols.ts
+// PURPOSE: Persistent Nasdaq symbol database (SQLite or Turso) with fallback sources.
+// • Auto-creates table + indexes
+// • Auto-refreshes from official Nasdaq symbol directories if empty or outdated
+// • Uses MAX(ts) vs today (America/New_York) for freshness
+// • Supports edge environments with optimized API/Ingestor fallback sequences
+// • Open ingestor registry for extended symbol data sources
+// =============================================
+
 import {
+	logger as baseLogger,
 	createDatabase,
 	type Database,
 	type DatabaseResult,
@@ -16,13 +27,14 @@ import {
 	endPoint,
 	endPoints,
 	getTempDir,
-	logger,
 	sleep,
 } from "@ckir/corelib";
 import { DateTime } from "luxon";
 import { serializeError } from "serialize-error";
 import { ApiNasdaqUnlimited } from "./ApiNasdaqUnlimited";
 import { Realtime } from "./AssetClass";
+
+const marketSymbolsLogger = baseLogger.child({ section: "MarketSymbols" });
 
 const NASDAQ_LISTED_URL =
 	"https://www.nasdaqtrader.com/dynamic/symdir/nasdaqlisted.txt";
@@ -208,9 +220,12 @@ export class MarketSymbols {
 				}
 			}
 		} catch (e) {
-			logger.warn(`[MarketSymbols] searchNasdaqApi failed for ${symbol}`, {
-				error: serializeError(e),
-			});
+			marketSymbolsLogger.warn(
+				`[MarketSymbols] searchNasdaqApi failed for ${symbol}`,
+				{
+					error: serializeError(e),
+				},
+			);
 		}
 		return null;
 	}
@@ -230,9 +245,12 @@ export class MarketSymbols {
 						const result = await entry.processor(url, symbol);
 						if (result) return result;
 					} catch (e) {
-						logger.warn(`[MarketSymbols] Ingestor failed for ${url}`, {
-							error: serializeError(e),
-						});
+						marketSymbolsLogger.warn(
+							`[MarketSymbols] Ingestor failed for ${url}`,
+							{
+								error: serializeError(e),
+							},
+						);
 					}
 				}
 			}
@@ -288,9 +306,12 @@ export class MarketSymbols {
 				return result.value.rows[0];
 			}
 		} catch (e) {
-			logger.warn(`[MarketSymbols] searchDb query failed for ${symbol}`, {
-				error: serializeError(e),
-			});
+			marketSymbolsLogger.warn(
+				`[MarketSymbols] searchDb query failed for ${symbol}`,
+				{
+					error: serializeError(e),
+				},
+			);
 		}
 		return null;
 	}
@@ -367,7 +388,9 @@ export class MarketSymbols {
 		if (!(await this.needsRefresh())) return;
 		if (!this.db) return;
 
-		logger.info("[MarketSymbols] Starting full symbol directory refresh");
+		marketSymbolsLogger.info(
+			"[MarketSymbols] Starting full symbol directory refresh",
+		);
 
 		const texts = await this.fetchSymbolFilesWithRetry();
 
@@ -469,7 +492,7 @@ export class MarketSymbols {
 					results[0].status === "error" ? results[0] : (results[1] as any);
 				const reason = errorResult.reason;
 
-				logger.warn(
+				marketSymbolsLogger.warn(
 					"[MarketSymbols] Symbol directory fetch failed – retrying",
 					{
 						reason: serializeError(reason),
@@ -490,7 +513,7 @@ export class MarketSymbols {
 			} catch (err: any) {
 				const hasExistingData = await this.hasExistingData();
 				if (hasExistingData) {
-					logger.warn(
+					marketSymbolsLogger.warn(
 						"[MarketSymbols] Symbol directory fetch thrown – retrying",
 						{ error: serializeError(err) },
 					);

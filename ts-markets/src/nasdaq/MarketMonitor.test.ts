@@ -6,8 +6,15 @@
 // Uses vi.useFakeTimers + MSW-mocked MarketStatus.
 // =============================================
 
-import { logger } from "@ckir/corelib";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	afterEach,
+	beforeAll,
+	beforeEach,
+	describe,
+	expect,
+	it,
+	vi,
+} from "vitest";
 import { MarketMonitor } from "./MarketMonitor";
 import { MarketStatus } from "./MarketStatus";
 
@@ -19,6 +26,39 @@ const baseData = {
 	ahCloseRaw: "2026-03-17T20:00:00",
 };
 
+// Mock logger to prevent console noise
+const { mockDebug, mockWarn, mockError, mockInfo, mockChildLogger } =
+	vi.hoisted(() => {
+		const debug = vi.fn();
+		const warn = vi.fn();
+		const error = vi.fn();
+		const info = vi.fn();
+		return {
+			mockDebug: debug,
+			mockWarn: warn,
+			mockError: error,
+			mockInfo: info,
+			mockChildLogger: {
+				debug,
+				warn,
+				error,
+				info,
+			},
+		};
+	});
+
+vi.mock("@ckir/corelib", async () => {
+	const mockLogger = {
+		child: vi.fn(() => mockChildLogger),
+		// Also provide direct methods for cases where child isn't used
+		...mockChildLogger,
+	};
+	return {
+		default: mockLogger,
+		logger: mockLogger,
+	};
+});
+
 // Mock MarketStatus
 vi.mock("./MarketStatus", () => ({
 	MarketStatus: {
@@ -26,33 +66,34 @@ vi.mock("./MarketStatus", () => ({
 	},
 }));
 
-// Mock logger to prevent console noise
-vi.mock("@ckir/corelib", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("@ckir/corelib")>();
-	return {
-		...actual,
-		logger: {
-			debug: vi.fn(),
-			warn: vi.fn(),
-			error: vi.fn(),
-			info: vi.fn(),
-		},
-	};
-});
-
 describe("MarketMonitor (Exhaustive)", () => {
 	let monitor: MarketMonitor;
 	const mockGetStatus = MarketStatus.getStatus as any;
 
+	beforeAll(() => {
+		// Initialize mock functions here to ensure they are defined
+		// These are reassigned in beforeEach to ensure a clean state for each test
+		mockDebug.mockClear(); // Ensure fresh mocks for each test run
+		mockWarn.mockClear();
+		mockError.mockClear();
+		mockInfo.mockClear();
+	});
+
 	beforeEach(() => {
 		vi.useFakeTimers();
 		vi.setSystemTime(new Date("2026-03-17T12:00:00Z")); // Set a fixed time for deterministic tests
-		vi.clearAllMocks();
+		vi.clearAllMocks(); // Clear mocks for all imported modules
+
 		monitor = new MarketMonitor({
 			liveIntervalSec: 5,
 			closedIntervalSec: 30,
 			warnIntervalSec: 10,
 		});
+		// Clear mocks on the individual logger functions
+		mockDebug.mockClear();
+		mockWarn.mockClear();
+		mockError.mockClear();
+		mockInfo.mockClear();
 	});
 
 	afterEach(() => {
@@ -161,7 +202,7 @@ describe("MarketMonitor (Exhaustive)", () => {
 	});
 
 	it("should throttle warnings during persistent failure", async () => {
-		const warnSpy = logger.warn as any;
+		const warnSpy = mockWarn;
 
 		mockGetStatus.mockRejectedValue(new Error("fail"));
 		monitor.start();

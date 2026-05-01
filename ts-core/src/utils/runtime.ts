@@ -15,6 +15,23 @@ export type Runtime =
 	| "gcp-cloudrun"; // Google Cloud Run
 
 export function detectRuntime(): Runtime {
+	// 0. Manual override via environment variable
+	if (typeof process !== "undefined" && process.env && process.env.RUNTIME) {
+		const envRuntime = process.env.RUNTIME.toLowerCase();
+		if (
+			[
+				"node",
+				"bun",
+				"deno",
+				"cloudflare",
+				"aws-lambda",
+				"gcp-cloudrun",
+			].includes(envRuntime)
+		) {
+			return envRuntime as Runtime;
+		}
+	}
+
 	// 1. Cloudflare Workers (High priority)
 	// Check for globalThis.cloudflare (Workerd), __CFW__, caches, or known environment signals
 	if (
@@ -53,8 +70,14 @@ export function detectRuntime(): Runtime {
 	// Bun
 	if (typeof Bun !== "undefined") return "bun";
 
-	// Deno
-	if (typeof Deno !== "undefined") return "deno";
+	// Deno (Strict check to avoid polyfill false positives)
+	if (
+		typeof Deno !== "undefined" &&
+		(Deno as any).version &&
+		(Deno as any).version.deno
+	) {
+		return "deno";
+	}
 
 	// Default = Node.js
 	return "node";

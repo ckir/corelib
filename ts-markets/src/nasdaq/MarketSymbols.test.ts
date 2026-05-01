@@ -20,8 +20,19 @@ vi.mock("@ckir/corelib", async (importOriginal) => {
 		endPoints: vi.fn(),
 		createDatabase: vi.fn(),
 		getTempDir: vi.fn(() => "/tmp"),
-		logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 		sleep: vi.fn(),
+		default: {
+			child: vi.fn(() => ({
+				debug: vi.fn(),
+				warn: vi.fn(),
+				error: vi.fn(),
+				info: vi.fn(),
+			})),
+			debug: vi.fn(),
+			warn: vi.fn(),
+			error: vi.fn(),
+			info: vi.fn(),
+		},
 	};
 });
 

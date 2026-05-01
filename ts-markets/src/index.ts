@@ -40,6 +40,10 @@ export const Markets = {
 };
 
 export * as Luxon from "luxon";
+export type {
+	HistoricalQuote,
+	HistoricalResult,
+} from "./nasdaq/datafeeds/polling/historical/common/types";
 export { Historical } from "./nasdaq/datafeeds/polling/historical/Historical";
 export { NasdaqPolling } from "./nasdaq/datafeeds/polling/nasdaq/NasdaqPolling";
 export { AlpacaStreaming } from "./nasdaq/datafeeds/streaming/alpaca/AlpacaStreaming";

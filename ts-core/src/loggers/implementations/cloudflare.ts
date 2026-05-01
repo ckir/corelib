@@ -1,6 +1,7 @@
 // ts-core/src/loggers/implementations/cloudflare.ts
-import type { StrictLogger } from "../common";
+
 import { getSysInfo } from "../../utils/SysInfo";
+import type { StrictLogger } from "../common";
 
 /**
  * Cloudflare-specific logger implementation.

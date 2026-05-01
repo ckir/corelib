@@ -112,10 +112,19 @@ export interface JsPricingData {
   underlyingSymbol: string
   openInterest: number
   optionType: number
+  miniOption: number
+  lastSize: number
   bidPrice: number
   bidSize: number
   askPrice: number
   askSize: number
+  priceHint: number
+  vol24Hr: number
+  volAllCurrencies: number
+  fromCurrency: string
+  lastMarket: string
+  circulatingSupply: number
+  marketCap: number
 }
 
 /**

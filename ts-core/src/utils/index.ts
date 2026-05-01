@@ -40,50 +40,54 @@ export const Utils = {
 };
 
 export const getEnv = (key: string): string | undefined => {
-	if (detectRuntime() === "deno") {
+	if (typeof Deno !== "undefined" && Deno.env) {
 		return Deno.env.get(key);
-	} else {
+	}
+	if (typeof process !== "undefined" && process.env) {
 		return process.env[key];
 	}
+	return undefined;
 };
 
 export const getAllEnv = (): Record<string, string | undefined> => {
-	if (detectRuntime() === "deno") {
+	if (typeof Deno !== "undefined" && Deno.env) {
 		return Deno.env.toObject();
-	} else {
+	}
+	if (typeof process !== "undefined" && process.env) {
 		return { ...process.env };
 	}
+	return {};
 };
 
 export const readTextFileSync = (file: string): string => {
-	if (detectRuntime() === "deno") {
+	if (typeof Deno !== "undefined" && Deno.readTextFileSync) {
 		return Deno.readTextFileSync(file);
-	} else {
-		const { readFileSync } = getRequire()("node:fs");
-		return readFileSync(file, "utf8");
 	}
+	const { readFileSync } = getRequire()("node:fs");
+	return readFileSync(file, "utf8");
 };
 
 export const existsSync = (file: string): boolean => {
-	if (detectRuntime() === "deno") {
+	if (typeof Deno !== "undefined" && Deno.statSync) {
 		try {
 			Deno.statSync(file);
 			return true;
 		} catch {
 			return false;
 		}
-	} else {
-		const { existsSync } = getRequire()("node:fs");
-		return existsSync(file);
 	}
+	const { existsSync } = getRequire()("node:fs");
+	return existsSync(file);
 };
 
 export const getCwd = (): string => {
-	if (detectRuntime() === "deno") {
+	if (typeof Deno !== "undefined" && Deno.cwd) {
 		return Deno.cwd();
-	} else {
+	}
+	if (typeof process !== "undefined" && process.cwd) {
 		return process.cwd();
 	}
+	return "/";
 };
 
 export const getDirname = () => {

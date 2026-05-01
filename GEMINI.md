@@ -60,3 +60,6 @@ The following tools are available in the development environment and should be u
 - **Surgical Edits**: Prefer `replace` over `write_file` for large files to preserve structure.
 - **Usage Examples**: When adding new features, immediately update `README.md` with clear examples, specifically noting installation via release `.tgz` assets if applicable.
 - **No Regressions**: If a change causes a TypeDoc warning or a Lint violation, it is incomplete. Fix it before reporting success.
+- **Child Loggers:** Each module that requires logging MUST use a child logger to provide context.
+  - *Pattern:* `const moduleLogger = logger.child({ section: '<class name> or <file basename>' });`
+  
