@@ -16,6 +16,19 @@ vi.mock("@ckir/corelib-markets", () => ({
 
 describe("HistoricalCloud Router", () => {
 	const mockOptions = { period1: "2023-01-01", interval: "1d" };
+	const mockLogger = {
+		error: vi.fn(),
+		info: vi.fn(),
+		warn: vi.fn(),
+		debug: vi.fn(),
+		child: vi.fn().mockReturnThis(),
+	};
+
+	historicalRouter.use("*", async (c, next) => {
+		c.set("logger", mockLogger as any);
+		await next();
+	});
+
 	const mockQuotes = [
 		{
 			symbol: "AAPL",

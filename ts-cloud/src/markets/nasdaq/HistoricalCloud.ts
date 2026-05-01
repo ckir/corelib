@@ -15,6 +15,18 @@ import type { AppEnv } from "../../core/types";
  */
 export const historicalRouter = new Hono<AppEnv>();
 
+/**
+ * Middleware to inject a child logger for Historical operations.
+ */
+historicalRouter.use("*", async (c, next) => {
+	const parentLogger = c.get("logger");
+	if (parentLogger?.child) {
+		const historicalLogger = parentLogger.child({ section: "HistoricalCloud" });
+		c.set("logger", historicalLogger);
+	}
+	await next();
+});
+
 // Safely infer types from the Historical module since they aren't explicitly exported in the barrel
 type HistoricalOptions = Parameters<typeof Historical.getData>[1];
 type HistoricalResult = Awaited<ReturnType<typeof Historical.getData>>;

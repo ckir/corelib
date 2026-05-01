@@ -1,7 +1,8 @@
 import { logger } from "@ckir/corelib";
 import { createRouter } from "../../core/router";
 
-const app = createRouter(logger);
+const workerLogger = logger.child({ section: "Worker" });
+const app = createRouter(workerLogger);
 
 app.use("*", async (c, next) => {
 	const logger = c.get("logger");

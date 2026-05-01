@@ -13,6 +13,18 @@ import type { AppEnv } from "../core/types";
 export const kyRouter = new Hono<AppEnv>();
 
 /**
+ * Middleware to inject a child logger for general HTTP proxying.
+ */
+kyRouter.use("*", async (c, next) => {
+	const parentLogger = c.get("logger");
+	if (parentLogger?.child) {
+		const kyLogger = parentLogger.child({ section: "RequestUnlimitedCloud" });
+		c.set("logger", kyLogger);
+	}
+	await next();
+});
+
+/**
  * Maps an arbitrary status code to a Hono-compatible ContentfulStatusCode.
  */
 function toContentfulStatus(code: number): ContentfulStatusCode {

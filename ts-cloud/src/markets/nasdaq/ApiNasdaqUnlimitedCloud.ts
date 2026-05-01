@@ -19,6 +19,20 @@ import type { AppEnv } from "../../core/types";
 export const nasdaqRouter = new Hono<AppEnv>();
 
 /**
+ * Middleware to inject a child logger for Nasdaq operations.
+ */
+nasdaqRouter.use("*", async (c, next) => {
+	const parentLogger = c.get("logger");
+	if (parentLogger?.child) {
+		const nasdaqLogger = parentLogger.child({
+			section: "ApiNasdaqUnlimitedCloud",
+		});
+		c.set("logger", nasdaqLogger);
+	}
+	await next();
+});
+
+/**
  * GET /groups/top100
  * Retrieves the list of Nasdaq 100 symbols.
  */

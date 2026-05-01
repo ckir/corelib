@@ -2,7 +2,8 @@ import { logger } from "@ckir/corelib";
 import { serve } from "@hono/node-server";
 import { createRouter } from "../../core/router";
 
-const app = createRouter(logger);
+const serverLogger = logger.child({ section: "Server" });
+const app = createRouter(serverLogger);
 
 app.use("*", async (c, next) => {
 	const logger = c.get("logger");

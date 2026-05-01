@@ -20,6 +20,18 @@ vi.mock("@ckir/corelib-markets", () => ({
 
 describe("ApiNasdaqUnlimitedCloud (Edge)", () => {
 	const MOCK_URL = "https://api.nasdaq.com/api/quote/AAPL/info";
+	const mockLogger = {
+		error: vi.fn(),
+		info: vi.fn(),
+		warn: vi.fn(),
+		debug: vi.fn(),
+		child: vi.fn().mockReturnThis(),
+	};
+
+	nasdaqRouter.use("*", async (c, next) => {
+		c.set("logger", mockLogger as any);
+		await next();
+	});
 
 	afterEach(() => {
 		vi.clearAllMocks();

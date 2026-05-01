@@ -22,6 +22,19 @@ vi.mock("@ckir/corelib-markets", () => ({
 }));
 
 describe("MarketStatusCloud (Edge)", () => {
+	const mockLogger = {
+		error: vi.fn(),
+		info: vi.fn(),
+		warn: vi.fn(),
+		debug: vi.fn(),
+		child: vi.fn().mockReturnThis(),
+	};
+
+	marketStatusRouter.use("*", async (c, next) => {
+		c.set("logger", mockLogger as any);
+		await next();
+	});
+
 	/**
 	 * Scenario 1: Success
 	 * Correctly typed mockSuccess to NasdaqResult<NasdaqMarketInfo> to satisfy corelib-markets types.

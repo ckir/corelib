@@ -10,6 +10,16 @@ import type { AppEnv } from "../core/types";
 export const sqlRouter = new Hono<any>();
 
 /**
+ * Middleware to inject a child logger for SQL operations.
+ */
+sqlRouter.use("*", async (c, next) => {
+	const parentLogger = c.get("logger");
+	const sqlLogger = parentLogger?.child({ section: "SqlCloud" });
+	if (sqlLogger) c.set("logger", sqlLogger);
+	await next();
+});
+
+/**
  * POST /
  * Executes a parameterized SQL query using createDatabase from @ckir/corelib.
  * Uses CORELIB_TURSO_URL and CORELIB_TURSO_TOKEN from environment.

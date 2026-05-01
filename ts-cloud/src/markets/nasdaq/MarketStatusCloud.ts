@@ -16,6 +16,20 @@ import type { AppEnv } from "../../core/types";
 export const marketStatusRouter = new Hono<AppEnv>();
 
 /**
+ * Middleware to inject a child logger for MarketStatus operations.
+ */
+marketStatusRouter.use("*", async (c, next) => {
+	const parentLogger = c.get("logger");
+	if (parentLogger?.child) {
+		const marketStatusLogger = parentLogger.child({
+			section: "MarketStatusCloud",
+		});
+		c.set("logger", marketStatusLogger);
+	}
+	await next();
+});
+
+/**
  * GET /
  * Proxy for the Nasdaq Market Status API.
  * Uses the resilient getStatus logic from corelib-markets.
