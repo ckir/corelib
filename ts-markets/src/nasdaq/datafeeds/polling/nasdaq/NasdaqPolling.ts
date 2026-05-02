@@ -43,7 +43,7 @@ export class NasdaqPolling extends EventEmitter {
 	 * @param value - New interval in milliseconds.
 	 */
 	public setApiInterval(value: number): void {
-		nasdaqPollingLogger.info("[NasdaqPolling] Setting API interval", {
+		nasdaqPollingLogger.info("Setting API interval", {
 			old: this.apiInterval,
 			new: value,
 		});
@@ -62,7 +62,7 @@ export class NasdaqPolling extends EventEmitter {
 		for (const symbol of symbols) {
 			this.subscriptions.add(symbol.toUpperCase());
 		}
-		nasdaqPollingLogger.info("[NasdaqPolling] Subscribed to symbols", {
+		nasdaqPollingLogger.info("Subscribed to symbols", {
 			currentCount: this.subscriptions.size,
 		});
 	}
@@ -75,7 +75,7 @@ export class NasdaqPolling extends EventEmitter {
 		for (const symbol of symbols) {
 			this.subscriptions.delete(symbol.toUpperCase());
 		}
-		nasdaqPollingLogger.info("[NasdaqPolling] Unsubscribed from symbols", {
+		nasdaqPollingLogger.info("Unsubscribed from symbols", {
 			currentCount: this.subscriptions.size,
 		});
 	}
@@ -86,11 +86,11 @@ export class NasdaqPolling extends EventEmitter {
 	 */
 	public start(): void {
 		if (this.intervalId !== null) {
-			nasdaqPollingLogger.warn("[NasdaqPolling] Polling is already active.");
+			nasdaqPollingLogger.warn("Polling is already active.");
 			return;
 		}
 
-		nasdaqPollingLogger.info("[NasdaqPolling] Starting Nasdaq polling", {
+		nasdaqPollingLogger.info("Starting Nasdaq polling", {
 			interval: this.apiInterval,
 		});
 		this.emit("status", "started");
@@ -111,7 +111,7 @@ export class NasdaqPolling extends EventEmitter {
 		if (this.intervalId !== null) {
 			clearInterval(this.intervalId);
 			this.intervalId = null;
-			nasdaqPollingLogger.info("[NasdaqPolling] Nasdaq polling stopped.");
+			nasdaqPollingLogger.info("Nasdaq polling stopped.");
 			this.emit("status", "stopped");
 		}
 	}
@@ -121,7 +121,7 @@ export class NasdaqPolling extends EventEmitter {
 	 */
 	public clear(): void {
 		this.subscriptions.clear();
-		nasdaqPollingLogger.info("[NasdaqPolling] Subscriptions cleared.");
+		nasdaqPollingLogger.info("Subscriptions cleared.");
 		this.stop();
 	}
 
@@ -146,7 +146,7 @@ export class NasdaqPolling extends EventEmitter {
 					 */
 					this.emit("data", result.value);
 				} else if (result.status === "error") {
-					nasdaqPollingLogger.error("[NasdaqPolling] Error fetching quote", {
+					nasdaqPollingLogger.error("Error fetching quote", {
 						error: result.reason,
 					});
 					this.emit("error", result.reason);
@@ -154,7 +154,7 @@ export class NasdaqPolling extends EventEmitter {
 			}
 		} catch (error) {
 			const serialized = serializeError(error);
-			nasdaqPollingLogger.error("[NasdaqPolling] Polling execution failed", {
+			nasdaqPollingLogger.error("Polling execution failed", {
 				error: serialized,
 			});
 			this.emit("error", serialized);

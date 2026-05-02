@@ -73,7 +73,7 @@ export class MarketMonitor extends EventEmitter {
 		if (this.isRunning) return;
 		this.isRunning = true;
 		this.failureCount = 0;
-		marketMonitorLogger.info("[MarketMonitor] Starting market status monitor");
+		marketMonitorLogger.info("Starting market status monitor");
 		this.poll(); // kick off the first poll immediately
 	}
 
@@ -85,7 +85,7 @@ export class MarketMonitor extends EventEmitter {
 			clearTimeout(this.timeoutId);
 			this.timeoutId = null;
 		}
-		marketMonitorLogger.info("[MarketMonitor] Monitor stopped");
+		marketMonitorLogger.info("Monitor stopped");
 		this.emit("stopped");
 	}
 
@@ -121,7 +121,7 @@ export class MarketMonitor extends EventEmitter {
 				this.handleFailure();
 			}
 		} catch (err) {
-			marketMonitorLogger.error("[MarketMonitor] Unexpected poll error", {
+			marketMonitorLogger.error("Unexpected poll error", {
 				error: serializeError(err),
 			});
 			this.handleFailure();
@@ -254,7 +254,7 @@ export class MarketMonitor extends EventEmitter {
 		const now = Date.now();
 		if (now - this.lastWarnTime >= this.warnIntervalSec * 1000) {
 			marketMonitorLogger.warn(
-				"[MarketMonitor] MarketStatus fetch failed – using heuristic data",
+				"MarketStatus fetch failed – using heuristic data",
 				{
 					failures: this.failureCount,
 				},

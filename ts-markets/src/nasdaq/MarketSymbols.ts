@@ -8,16 +8,6 @@
 // • Open ingestor registry for extended symbol data sources
 // =============================================
 
-// =============================================
-// FILE: ts-markets/src/nasdaq/MarketSymbols.ts
-// PURPOSE: Persistent Nasdaq symbol database (SQLite or Turso) with fallback sources.
-// • Auto-creates table + indexes
-// • Auto-refreshes from official Nasdaq symbol directories if empty or outdated
-// • Uses MAX(ts) vs today (America/New_York) for freshness
-// • Supports edge environments with optimized API/Ingestor fallback sequences
-// • Open ingestor registry for extended symbol data sources
-// =============================================
-
 import {
 	logger as baseLogger,
 	createDatabase,
@@ -69,7 +59,9 @@ interface IngestorEntry {
  */
 export class MarketSymbols {
 	private db: Database | null = null;
-	private readonly config: {
+	private initialized = false;
+	private isDbOwner = true;
+	private readonly config?: {
 		dialect: "sqlite";
 		url: string;
 		mode: "stateful" | "stateless";
@@ -88,16 +80,24 @@ export class MarketSymbols {
 	];
 
 	/**
-	 * @param db - Optional database configuration:
+	 * @param db - Optional database configuration or existing instance:
 	 * - `undefined` → uses `${getTempDir()}/NasdaqSymbols.sqlite`
 	 * - `string` → local SQLite file path
 	 * - `{ dbUrl: string; dbToken: string }` → Turso/LibSQL remote
+	 * - `Database` → An existing instance of a Database driver
 	 * @param ingestors - Array of ingestor URLs (e.g., Google App Script endpoints) to query for missing symbols.
 	 */
 	constructor(
-		db?: string | { dbUrl: string; dbToken: string },
+		db?: string | { dbUrl: string; dbToken: string } | Database,
 		private readonly ingestors: string[] = [],
 	) {
+		if (db && typeof (db as any).query === "function") {
+			this.db = db as Database;
+			this.isDbOwner = false;
+			return;
+		}
+
+		this.isDbOwner = true;
 		if (!db) {
 			const path = `${getTempDir()}/NasdaqSymbols.sqlite`;
 			this.config = {
@@ -115,10 +115,12 @@ export class MarketSymbols {
 				mode: "stateful",
 			};
 		} else {
+			// This branch handles { dbUrl: string; dbToken: string }
+			const turso = db as { dbUrl: string; dbToken: string };
 			this.config = {
 				dialect: "sqlite",
-				url: db.dbUrl,
-				authToken: db.dbToken,
+				url: turso.dbUrl,
+				authToken: turso.dbToken,
 				mode: "stateful",
 			};
 		}
@@ -167,12 +169,15 @@ export class MarketSymbols {
 	}
 
 	/**
-	 * Graceful shutdown – disconnects the database driver.
+	 * Graceful shutdown – disconnects the database driver if it was created internally.
 	 */
 	public async close(): Promise<void> {
 		if (this.db) {
-			await this.db.disconnect();
+			if (this.isDbOwner) {
+				await this.db.disconnect();
+			}
 			this.db = null;
+			this.initialized = false;
 		}
 	}
 
@@ -327,9 +332,16 @@ export class MarketSymbols {
 	 * Called automatically on first use, and before any other operations.
 	 */
 	private async ensureInitialized(): Promise<Database> {
-		if (this.db) return this.db;
+		if (this.db && this.initialized) return this.db;
 
-		this.db = await createDatabase(this.config as any);
+		if (!this.db) {
+			if (!this.config) {
+				throw new Error(
+					"MarketSymbols: Database instance not provided and no configuration available.",
+				);
+			}
+			this.db = await createDatabase(this.config as any);
+		}
 
 		await this.db.query(`
 			CREATE TABLE IF NOT EXISTS nasdaq_symbols (
@@ -345,6 +357,8 @@ export class MarketSymbols {
 		await this.db.query(
 			"CREATE INDEX IF NOT EXISTS idx_nasdaq_symbols_active ON nasdaq_symbols(active)",
 		);
+
+		this.initialized = true;
 
 		// Auto-refresh on first use if needed
 		await this.performRefresh();

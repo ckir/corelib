@@ -103,7 +103,7 @@ describe("MarketStatus", () => {
 				expect(result.value.isBusinessDay).toBe(true);
 			}
 			expect(logger?.trace).toHaveBeenCalledWith(
-				"[MarketStatus] Schema validated successfully",
+				"Schema validated successfully",
 			);
 		});
 

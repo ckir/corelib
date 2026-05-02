@@ -61,6 +61,16 @@ describe("MarketSymbols - Integrated Suite", () => {
 		vi.mocked(corelib.createDatabase).mockResolvedValue(mockDb as any);
 		vi.mocked(corelib.detectRuntime).mockReturnValue("node");
 
+		// Default mock return values to prevent "Cannot read properties of undefined (reading 'status')"
+		vi.mocked(ApiNasdaqUnlimited.endPoint).mockResolvedValue({
+			status: "error",
+			reason: { message: "Mock Error" },
+		} as any);
+		vi.mocked(corelib.endPoint).mockResolvedValue({
+			status: "error",
+			reason: { message: "Mock Error" },
+		} as any);
+
 		// Default behavior: DB is fresh, no refresh needed
 		mockDbQuery.mockImplementation((query: string) => {
 			if (query.includes("SELECT MAX(ts)")) {
@@ -83,6 +93,25 @@ describe("MarketSymbols - Integrated Suite", () => {
 	// 2. Lifecycle & Internal Database Tests (From Original Version)
 	// -----------------------------------------------------------------------
 	describe("Internal Database Lifecycle", () => {
+		it("should support an existing Database instance in the constructor", async () => {
+			const customSymbols = new MarketSymbols(mockDb as any);
+			await customSymbols.get("AAPL");
+
+			// Should not have called createDatabase
+			expect(corelib.createDatabase).not.toHaveBeenCalledWith(
+				expect.objectContaining({ url: expect.any(String) }),
+			);
+
+			// Should still trigger table creation on first use
+			expect(mockDbQuery).toHaveBeenCalledWith(
+				expect.stringContaining("CREATE TABLE IF NOT EXISTS nasdaq_symbols"),
+			);
+
+			await customSymbols.close();
+			// Should NOT have called disconnect since it's not the owner
+			expect(mockDbDisconnect).not.toHaveBeenCalled();
+		});
+
 		it("should initialize tables and indexes on first query", async () => {
 			await marketSymbols.get("AAPL");
 

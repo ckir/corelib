@@ -44,6 +44,8 @@ export interface NasdaqMarketInfo {
 const ENDPOINT = "https://api.nasdaq.com/api/market-info";
 const ZONE = "America/New_York";
 
+const marketStatusLogger = logger.child({ section: "MarketStatus" });
+
 /**
  * Calculates how long to sleep/wait based on market status in milliseconds.
  * Mirrors the logic from marketstatus.rs using Luxon.
@@ -84,7 +86,7 @@ function getSleepDuration(data: NasdaqMarketInfo): number {
 				millisecond: 0,
 			});
 		} else {
-			logger?.warn("[MarketStatus] Failed to parse nextTradeDate", {
+			marketStatusLogger.warn("Failed to parse nextTradeDate", {
 				date: data.nextTradeDate,
 			});
 			return 300 * 1000; // 5 minutes
@@ -94,7 +96,7 @@ function getSleepDuration(data: NasdaqMarketInfo): number {
 	// 6. Calculate Diff
 	if (target > now) {
 		const diff = target.diff(now);
-		logger?.debug(
+		marketStatusLogger.debug(
 			`Target NY Open: ${target.toFormat("yyyy-MM-dd HH:mm:ss")} (${diff.toFormat("hh:mm:ss")} remaining)`,
 		);
 		const ms = diff.as("milliseconds");
@@ -123,7 +125,7 @@ async function getStatus(): Promise<NasdaqResult<NasdaqMarketInfo>> {
 				message: errorData.message || "Nasdaq API returned an error status",
 			};
 
-			logger?.error("[MarketStatus] Fetch Failed", {
+			marketStatusLogger.error("Fetch Failed", {
 				reason: reasonSerialized,
 			});
 			return { status: "error", reason: reasonSerialized };
@@ -141,7 +143,7 @@ async function getStatus(): Promise<NasdaqResult<NasdaqMarketInfo>> {
 			const msg = "STRICT SCHEMA VALIDATION FAILED: Missing required fields";
 			const payload = serializeError(data);
 
-			logger?.warn(msg, { payload });
+			marketStatusLogger.warn(msg, { payload });
 			return {
 				status: "error",
 				reason: { message: msg, payload },
@@ -149,7 +151,7 @@ async function getStatus(): Promise<NasdaqResult<NasdaqMarketInfo>> {
 		}
 
 		// Path 3: Success
-		logger?.trace("[MarketStatus] Schema validated successfully");
+		marketStatusLogger.trace("Schema validated successfully");
 		return {
 			status: "success",
 			value: data,
@@ -163,7 +165,7 @@ async function getStatus(): Promise<NasdaqResult<NasdaqMarketInfo>> {
 			message: errorData.message || "Unexpected MarketStatus Exception",
 		};
 
-		logger?.error("[MarketStatus] Unexpected Error", {
+		marketStatusLogger.error("Unexpected Error", {
 			error: serializedReason,
 		});
 		return {
