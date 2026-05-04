@@ -226,7 +226,7 @@ export class MarketSymbols {
 			}
 		} catch (e) {
 			marketSymbolsLogger.warn(
-				`[MarketSymbols] searchNasdaqApi failed for ${symbol}`,
+				`SearchNasdaqApi failed for ${symbol}`,
 				{
 					error: serializeError(e),
 				},
@@ -251,7 +251,7 @@ export class MarketSymbols {
 						if (result) return result;
 					} catch (e) {
 						marketSymbolsLogger.warn(
-							`[MarketSymbols] Ingestor failed for ${url}`,
+							` Ingestor failed for ${url}`,
 							{
 								error: serializeError(e),
 							},
@@ -312,7 +312,7 @@ export class MarketSymbols {
 			}
 		} catch (e) {
 			marketSymbolsLogger.warn(
-				`[MarketSymbols] searchDb query failed for ${symbol}`,
+				`SearchDb query failed for ${symbol}`,
 				{
 					error: serializeError(e),
 				},
@@ -403,7 +403,7 @@ export class MarketSymbols {
 		if (!this.db) return;
 
 		marketSymbolsLogger.info(
-			"[MarketSymbols] Starting full symbol directory refresh",
+			" Starting full symbol directory refresh",
 		);
 
 		const texts = await this.fetchSymbolFilesWithRetry();
@@ -507,7 +507,7 @@ export class MarketSymbols {
 				const reason = errorResult.reason;
 
 				marketSymbolsLogger.warn(
-					"[MarketSymbols] Symbol directory fetch failed – retrying",
+					"Symbol directory fetch failed – retrying",
 					{
 						reason: serializeError(reason),
 					},
@@ -528,7 +528,7 @@ export class MarketSymbols {
 				const hasExistingData = await this.hasExistingData();
 				if (hasExistingData) {
 					marketSymbolsLogger.warn(
-						"[MarketSymbols] Symbol directory fetch thrown – retrying",
+						"Symbol directory fetch thrown – retrying",
 						{ error: serializeError(err) },
 					);
 					await sleep(backoffMs);
