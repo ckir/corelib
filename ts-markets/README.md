@@ -123,9 +123,10 @@ const symbols = await getSymbolsTop100();
 console.log(`Nasdaq 100 constituents (${symbols.length}):`, symbols);
 ```
 
-### 5. Yahoo Real-Time Streaming (FFI)
+### 5. Real-Time Streaming (FFI)
 High-performance ticker updates using the Rust bridge. Requires `@ckir/corelib` with FFI support.
 
+#### Yahoo Finance Stream
 ```ts
 import { YahooStreaming } from '@ckir/corelib-markets';
 
@@ -153,7 +154,37 @@ stream.clean();
 stream.stop();
 ```
 
-### 5. Persistent Symbol Database (MarketSymbols)
+#### Alpaca Finance Stream
+```ts
+import { AlpacaStreaming } from '@ckir/corelib-markets';
+
+const stream = new AlpacaStreaming();
+
+// Initialize with optional credentials (or use APCA_API_KEY_ID / APCA_API_SECRET_KEY env vars)
+await stream.init({ 
+  keyId: "YOUR_KEY", 
+  secretKey: "YOUR_SECRET",
+  silenceSeconds: 60 
+});
+
+await stream.start();
+
+// Subscribe to symbols
+stream.subscribe(["AAPL", "MSFT"]);
+
+stream.on("pricing", (data) => {
+  console.log(`[${data.message_type}] ${data.symbol}: $${data.price}`);
+});
+
+stream.on("event", (event) => {
+  console.log(`Stream Event: ${event.type}`, event.data);
+});
+
+// Stop the stream
+stream.stop();
+```
+
+### 6. Persistent Symbol Database (MarketSymbols)
 Automated Nasdaq symbol directory with auto-refresh and environment-aware search sequencing.
 
 #### Features

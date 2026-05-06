@@ -108,7 +108,7 @@ impl AlpacaCallbacks for NapiCallbacks {
 /// Internal state holder for the Alpaca streamer logic.
 struct Inner<C: AlpacaCallbacks> {
     /// The persistent local database instance.
-    db: Database,
+    db: Option<Database>,
     /// List of current symbol subscriptions.
     subscriptions: Vec<String>,
     /// Configured silence threshold for reconnections.
@@ -142,39 +142,44 @@ pub struct AlpacaStreamingCore<C: AlpacaCallbacks> {
 }
 
 impl<C: AlpacaCallbacks> AlpacaStreamingCore<C> {
-    /// Creates a new `AlpacaStreamingCore` and initializes the local database.
+    /// Creates a new `AlpacaStreamingCore` and optionally initializes the local database.
     pub fn new(callbacks: C) -> Self {
         // Determine the database path from environment or use a temporary file
-        let db_path = std::env::var("ALPACA_DB").unwrap_or_else(|_| {
+        let db_env = std::env::var("ALPACA_DB").unwrap_or_else(|_| {
             let temp = std::env::temp_dir();
             temp.join("corelib_streaming.redb")
                 .to_string_lossy()
                 .to_string()
         });
 
-        // Open or create the redb database
-        let db = Database::create(&db_path).expect("Failed to open redb");
+        let (db, subscriptions) = if db_env == "NOT_SET" {
+            (None, Vec::new())
+        } else {
+            // Open or create the redb database
+            let db = Database::create(&db_env).expect("Failed to open redb");
 
-        // Ensure the alpaca_subscriptions table exists in the database
-        {
-            let write_txn = db.begin_write().unwrap();
+            // Ensure the alpaca_subscriptions table exists in the database
             {
-                let _ = write_txn.open_table(ALPACA_SUBSCRIPTIONS_TABLE).unwrap();
+                let write_txn = db.begin_write().unwrap();
+                {
+                    let _ = write_txn.open_table(ALPACA_SUBSCRIPTIONS_TABLE).unwrap();
+                }
+                write_txn.commit().unwrap();
             }
-            write_txn.commit().unwrap();
-        }
 
-        // Load existing subscriptions from the database into memory
-        let read_txn = db.begin_read().unwrap();
-        let table = read_txn.open_table(ALPACA_SUBSCRIPTIONS_TABLE).unwrap();
-        let subscriptions = table
-            .iter()
-            .unwrap()
-            .map(|item| {
-                let (k, _) = item.unwrap();
-                k.value().to_string()
-            })
-            .collect();
+            // Load existing subscriptions from the database into memory
+            let read_txn = db.begin_read().unwrap();
+            let table = read_txn.open_table(ALPACA_SUBSCRIPTIONS_TABLE).unwrap();
+            let loaded_subscriptions = table
+                .iter()
+                .unwrap()
+                .map(|item| {
+                    let (k, _) = item.unwrap();
+                    k.value().to_string()
+                })
+                .collect();
+            (Some(db), loaded_subscriptions)
+        };
 
         Self {
             inner: Arc::new(Mutex::new(Inner {
@@ -586,13 +591,15 @@ impl<C: AlpacaCallbacks> AlpacaStreamingCore<C> {
                 guard.subscriptions.push(s.clone());
                 to_send.push(s.clone());
 
-                // Persist the new subscription in redb
-                let write_txn = guard.db.begin_write().unwrap();
-                {
-                    let mut table = write_txn.open_table(ALPACA_SUBSCRIPTIONS_TABLE).unwrap();
-                    table.insert(s.as_str(), true).unwrap();
+                // Persist the new subscription in redb if database is active
+                if let Some(ref db) = guard.db {
+                    let write_txn = db.begin_write().unwrap();
+                    {
+                        let mut table = write_txn.open_table(ALPACA_SUBSCRIPTIONS_TABLE).unwrap();
+                        table.insert(s.as_str(), true).unwrap();
+                    }
+                    write_txn.commit().unwrap();
                 }
-                write_txn.commit().unwrap();
             }
         }
 
@@ -609,15 +616,17 @@ impl<C: AlpacaCallbacks> AlpacaStreamingCore<C> {
         // Remove symbols from memory
         guard.subscriptions.retain(|s| !symbols.contains(s));
 
-        // Remove symbols from the persistent database
-        let write_txn = guard.db.begin_write().unwrap();
-        {
-            let mut table = write_txn.open_table(ALPACA_SUBSCRIPTIONS_TABLE).unwrap();
-            for s in &symbols {
-                table.remove(s.as_str()).unwrap();
+        // Remove symbols from the persistent database if active
+        if let Some(ref db) = guard.db {
+            let write_txn = db.begin_write().unwrap();
+            {
+                let mut table = write_txn.open_table(ALPACA_SUBSCRIPTIONS_TABLE).unwrap();
+                for s in &symbols {
+                    table.remove(s.as_str()).unwrap();
+                }
             }
+            write_txn.commit().unwrap();
         }
-        write_txn.commit().unwrap();
 
         // Send the explicit unsubscribe message if the loop is active
         if let Some(_tx) = &guard.ws_task {
@@ -636,10 +645,12 @@ impl<C: AlpacaCallbacks> AlpacaStreamingCore<C> {
     pub async fn clean(&self) {
         let mut guard = self.inner.lock().await;
 
-        // Delete the entire subscriptions table
-        let write_txn = guard.db.begin_write().unwrap();
-        let _ = write_txn.delete_table(ALPACA_SUBSCRIPTIONS_TABLE);
-        write_txn.commit().unwrap();
+        // Delete the entire subscriptions table if database is active
+        if let Some(ref db) = guard.db {
+            let write_txn = db.begin_write().unwrap();
+            let _ = write_txn.delete_table(ALPACA_SUBSCRIPTIONS_TABLE);
+            write_txn.commit().unwrap();
+        }
 
         // Reset in-memory state
         guard.subscriptions.clear();

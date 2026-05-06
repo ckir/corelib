@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["ApiResponse"],"fn":["end_point","end_points"],"struct":["RequestOptions","SerializedResponse"]};

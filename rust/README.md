@@ -64,11 +64,31 @@ A supervised WebSocket client for Yahoo Finance. Outputs real-time pricing data 
 # Subscribe to multiple symbols with a 60s silence timeout
 ./target/release/yahoo_streamer --symbols "AAPL,MSFT,TSLA" --silence 60
 
+# Specify a custom persistence database
+./target/release/yahoo_streamer --db "./my_streamer.db" --symbols "AAPL"
+
+# Run without any database persistence (ephemeral session)
+./target/release/yahoo_streamer --noPersist --symbols "BTC-USD"
+
 # Clear existing persistent subscriptions and start fresh
 ./target/release/yahoo_streamer --clean --symbols "QQQ,SPY"
 ```
 
-### 2. Nasdaq Polling Daemon (`nasdaq_polling`)
+### 2. Alpaca Streamer (`alpaca_streamer`)
+A supervised WebSocket client for Alpaca Finance (IEX data stream). Outputs real-time pricing data as NDJSON to `stdout`.
+
+```bash
+# Subscribe to multiple symbols
+./target/release/alpaca_streamer --symbols "AAPL,MSFT"
+
+# Provide API credentials via CLI (overrides environment variables)
+./target/release/alpaca_streamer --key "YOUR_KEY" --secret "YOUR_SECRET" --symbols "TSLA"
+
+# Run without database persistence
+./target/release/alpaca_streamer --noPersist --symbols "NVDA"
+```
+
+### 3. Nasdaq Polling Daemon (`nasdaq_polling`)
 A cron-driven daemon for polling the official Nasdaq API. Supports load-balancing via multiple edge proxies.
 
 ```bash

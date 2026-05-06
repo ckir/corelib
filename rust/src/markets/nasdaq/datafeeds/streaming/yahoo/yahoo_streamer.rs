@@ -129,7 +129,7 @@ impl YahooCallbacks for RustCallbacks {
 /// Internal state holder for the streamer logic.
 struct Inner<C: YahooCallbacks> {
     /// The persistent local database instance.
-    db: Database,
+    db: Option<Database>,
     /// List of current symbol subscriptions.
     subscriptions: Vec<String>,
     /// Configured silence threshold for reconnections.
@@ -151,39 +151,44 @@ pub struct YahooStreamingCore<C: YahooCallbacks> {
 }
 
 impl<C: YahooCallbacks> YahooStreamingCore<C> {
-    /// Creates a new `YahooStreamingCore` and initializes the local database.
+    /// Creates a new `YahooStreamingCore` and optionally initializes the local database.
     pub fn new(callbacks: C) -> Self {
-        // Determine the database path from environment or use a temporary file
-        let db_path = std::env::var("YAHOO_DB").unwrap_or_else(|_| {
+        // Determine the database path from environment
+        let db_env = std::env::var("YAHOO_DB").unwrap_or_else(|_| {
             let temp = std::env::temp_dir();
             temp.join("yahoo_streaming.redb")
                 .to_string_lossy()
                 .to_string()
         });
 
-        // Open or create the redb database
-        let db = Database::create(&db_path).expect("Failed to open redb");
+        let (db, subscriptions) = if db_env == "NOT_SET" {
+            (None, Vec::new())
+        } else {
+            // Open or create the redb database
+            let db = Database::create(&db_env).expect("Failed to open redb");
 
-        // Ensure the subscriptions table exists in the database
-        {
-            let write_txn = db.begin_write().unwrap();
+            // Ensure the subscriptions table exists in the database
             {
-                let _ = write_txn.open_table(SUBSCRIPTIONS_TABLE).unwrap();
+                let write_txn = db.begin_write().unwrap();
+                {
+                    let _ = write_txn.open_table(SUBSCRIPTIONS_TABLE).unwrap();
+                }
+                write_txn.commit().unwrap();
             }
-            write_txn.commit().unwrap();
-        }
 
-        // Load existing subscriptions from the database into memory
-        let read_txn = db.begin_read().unwrap();
-        let table = read_txn.open_table(SUBSCRIPTIONS_TABLE).unwrap();
-        let subscriptions = table
-            .iter()
-            .unwrap()
-            .map(|item| {
-                let (k, _) = item.unwrap();
-                k.value().to_string()
-            })
-            .collect();
+            // Load existing subscriptions from the database into memory
+            let read_txn = db.begin_read().unwrap();
+            let table = read_txn.open_table(SUBSCRIPTIONS_TABLE).unwrap();
+            let loaded_subscriptions = table
+                .iter()
+                .unwrap()
+                .map(|item| {
+                    let (k, _) = item.unwrap();
+                    k.value().to_string()
+                })
+                .collect();
+            (Some(db), loaded_subscriptions)
+        };
 
         Self {
             inner: Arc::new(Mutex::new(Inner {
@@ -415,13 +420,15 @@ impl<C: YahooCallbacks> YahooStreamingCore<C> {
                 guard.subscriptions.push(s.clone());
                 to_send.push(s.clone());
 
-                // Persist the new subscription in redb
-                let write_txn = guard.db.begin_write().unwrap();
-                {
-                    let mut table = write_txn.open_table(SUBSCRIPTIONS_TABLE).unwrap();
-                    table.insert(s.as_str(), true).unwrap();
+                // Persist the new subscription in redb if database is active
+                if let Some(ref db) = guard.db {
+                    let write_txn = db.begin_write().unwrap();
+                    {
+                        let mut table = write_txn.open_table(SUBSCRIPTIONS_TABLE).unwrap();
+                        table.insert(s.as_str(), true).unwrap();
+                    }
+                    write_txn.commit().unwrap();
                 }
-                write_txn.commit().unwrap();
             }
         }
         // If the background task is running, send the new symbols via the channel
@@ -436,25 +443,29 @@ impl<C: YahooCallbacks> YahooStreamingCore<C> {
         // Remove symbols from memory
         guard.subscriptions.retain(|s| !symbols.contains(s));
 
-        // Remove symbols from the persistent database
-        let write_txn = guard.db.begin_write().unwrap();
-        {
-            let mut table = write_txn.open_table(SUBSCRIPTIONS_TABLE).unwrap();
-            for s in &symbols {
-                table.remove(s.as_str()).unwrap();
+        // Remove symbols from the persistent database if active
+        if let Some(ref db) = guard.db {
+            let write_txn = db.begin_write().unwrap();
+            {
+                let mut table = write_txn.open_table(SUBSCRIPTIONS_TABLE).unwrap();
+                for s in &symbols {
+                    table.remove(s.as_str()).unwrap();
+                }
             }
+            write_txn.commit().unwrap();
         }
-        write_txn.commit().unwrap();
         // NOTE: Yahoo does not currently support an explicit 'unsubscribe' message via WebSocket.
     }
 
     /// Clears all subscriptions and stops the streamer.
     pub async fn clean(&self) {
         let mut guard = self.inner.lock().await;
-        // Delete the entire subscriptions table
-        let write_txn = guard.db.begin_write().unwrap();
-        let _ = write_txn.delete_table(SUBSCRIPTIONS_TABLE);
-        write_txn.commit().unwrap();
+        // Delete the entire subscriptions table if database is active
+        if let Some(ref db) = guard.db {
+            let write_txn = db.begin_write().unwrap();
+            let _ = write_txn.delete_table(SUBSCRIPTIONS_TABLE);
+            write_txn.commit().unwrap();
+        }
 
         // Reset in-memory state
         guard.subscriptions.clear();

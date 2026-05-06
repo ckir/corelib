@@ -22,12 +22,31 @@ struct Args {
     /// If set, clears all existing persistent subscriptions before starting.
     #[arg(long)]
     clean: bool,
+    /// Optional path to the persistence database.
+    #[arg(long)]
+    db: Option<String>,
+    /// If set, skips database persistence entirely.
+    #[arg(long = "noPersist")]
+    no_persist: bool,
 }
 
 #[tokio::main]
 async fn main() {
     // Parse command-line arguments using clap
     let args = Args::parse();
+
+    // Determine the database path: CLI flag overrides environment variable
+    let db_path = if args.no_persist {
+        "NOT_SET".to_string()
+    } else {
+        args.db.unwrap_or_else(|| {
+            let mut path = std::env::temp_dir();
+            path.push("yahoo_streamer.db");
+            path.to_string_lossy().to_string()
+        })
+    };
+    // Set the environment variable used by YahooStreamingCore
+    std::env::set_var("YAHOO_DB", &db_path);
 
     // Define the native Rust callbacks for handling logs, pricing data, and events
     let callbacks = RustCallbacks {

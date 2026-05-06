@@ -43,7 +43,7 @@ The monorepo uses a strictly staged GitHub Actions pipeline:
 4.  **Release**: Triggered on `v*` tags. Builds and attaches 11 assets:
     - TS Packages (`.tgz` for core, cloud, markets).
     - Rust FFI Nodes (Darwin x64/arm64, Linux x64, Win x64).
-    - `yahoo_streamer` CLI Binaries (Darwin x64/arm64, Linux x64, Win x64).
+    - `yahoo_streamer` and `alpaca_streamer` CLI Binaries (Darwin x64/arm64, Linux x64, Win x64).
 
 ## 5. Development Environment & Tools
 

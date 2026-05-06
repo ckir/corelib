@@ -28,3 +28,7 @@ sam-corelib/*.zip
 sam-corelib/*.tgz
 
 full-modules.svg
+/rust/docs
+/ts-cloud/docs
+/ts-core/docs
+/ts-markets/docs

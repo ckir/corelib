@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["get_version","log_and_double"],"mod":["markets","retrieve","utils"]};

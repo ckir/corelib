@@ -49,12 +49,37 @@ struct Args {
     /// Threshold in seconds for silence detection before reconnecting.
     #[arg(long, default_value = "60")]
     silence: u32,
+
+    /// If set, clears all existing persistent subscriptions before starting.
+    #[arg(long)]
+    clean: bool,
+
+    /// Optional path to the persistence database.
+    #[arg(long)]
+    db: Option<String>,
+
+    /// If set, skips database persistence entirely.
+    #[arg(long = "noPersist")]
+    no_persist: bool,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Parse command line arguments using clap
     let args = Args::parse();
+
+    // Determine the database path: CLI flag overrides environment variable
+    let db_path = if args.no_persist {
+        "NOT_SET".to_string()
+    } else {
+        args.db.unwrap_or_else(|| {
+            let mut path = std::env::temp_dir();
+            path.push("alpaca_streamer.db");
+            path.to_string_lossy().to_string()
+        })
+    };
+    // Set the environment variable used by AlpacaStreamingCore
+    std::env::set_var("ALPACA_DB", &db_path);
 
     // Determine the API Key: CLI flag strictly overrides the Environment Variable
     let key = args
@@ -71,6 +96,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Parse the comma-separated symbols into a collection
     let symbols: Vec<String> = args
         .symbols
+        .clone()
         .map(|s| s.split(',').map(|item| item.trim().to_string()).collect())
         .unwrap_or_default();
 
@@ -91,6 +117,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .await;
 
+    // Handle the --clean flag if provided
+    if args.clean {
+        eprintln!("Cleaning subscriptions...");
+        streamer.clean().await;
+        // If no new symbols were provided, exit after cleaning
+        if args.symbols.is_none() {
+            eprintln!("Done.");
+            return Ok(());
+        }
+    }
+
     // Bootstrap the asynchronous streaming connection
     streamer.start().await;
 
@@ -105,9 +142,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
-    // Keep the asynchronous runtime alive to process incoming WebSocket frames
-    loop {
-        // Sleep the thread in intervals to yield execution back to Tokio
-        tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
-    }
+    eprintln!("Streaming started. Press Ctrl+C to stop.");
+    // Wait for a termination signal (Ctrl+C)
+    tokio::signal::ctrl_c().await.unwrap();
+    eprintln!("Stopping...");
+    // Gracefully stop the streamer before exiting
+    streamer.stop().await;
+
+    Ok(())
 }
