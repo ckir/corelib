@@ -10,7 +10,7 @@ import { type ErrorObject, serializeError } from "serialize-error";
 import {
 	type SerializedResponse,
 	serializeResponse,
-} from "./RequestResponseSerialize";
+} from "./RequestResponseSerialize.js";
 
 /**
  * Custom deepmerge instance that overwrites arrays instead of merging them.

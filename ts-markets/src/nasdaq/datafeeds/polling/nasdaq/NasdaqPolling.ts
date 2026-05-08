@@ -144,18 +144,28 @@ export class NasdaqPolling extends EventEmitter {
 			// Fetch quotes via ApiNasdaqQuotes
 			const results = await this.nasdaqQuotes.getNasdaqQuote(symbolList);
 
+			const validResults: unknown[] = [];
+
 			for (const result of results) {
 				if (result.status === "success" && result.value !== undefined) {
 					/**
 					 * Emits the "body.data" portion of the Nasdaq API response.
 					 */
 					this.emit("data", result.value);
+					validResults.push(result.value);
 				} else if (result.status === "error") {
 					nasdaqPollingLogger.error("Error fetching quote", {
 						error: result.reason,
 					});
 					this.emit("error", result.reason);
 				}
+			}
+
+			/**
+			 * Emits the full set of successfully fetched quotes for this polling cycle.
+			 */
+			if (validResults.length > 0) {
+				this.emit("poll-complete", validResults);
 			}
 		} catch (error) {
 			const serialized = serializeError(error);

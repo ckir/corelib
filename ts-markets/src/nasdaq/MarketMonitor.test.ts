@@ -15,6 +15,7 @@ import {
 	it,
 	vi,
 } from "vitest";
+import { endPoint } from "../../../ts-core/src/retrieve/RequestUnlimited";
 import { MarketMonitor } from "./MarketMonitor";
 import { MarketStatus } from "./MarketStatus";
 
@@ -66,9 +67,15 @@ vi.mock("./MarketStatus", () => ({
 	},
 }));
 
+// Mock RequestUnlimited
+vi.mock("../../../ts-core/src/retrieve/RequestUnlimited", () => ({
+	endPoint: vi.fn(),
+}));
+
 describe("MarketMonitor (Exhaustive)", () => {
 	let monitor: MarketMonitor;
 	const mockGetStatus = MarketStatus.getStatus as any;
+	const mockEndPoint = endPoint as any;
 
 	beforeAll(() => {
 		// Initialize mock functions here to ensure they are defined
@@ -106,6 +113,109 @@ describe("MarketMonitor (Exhaustive)", () => {
 		expect((m as any).liveIntervalSec).toBe(10);
 		expect((m as any).closedIntervalSec).toBe(3600);
 		expect((m as any).warnIntervalSec).toBe(60);
+		expect((m as any).proxies).toEqual([]);
+	});
+
+	it("should append correct path to proxies", () => {
+		const m = new MarketMonitor({
+			proxies: ["http://p1", "http://p2/"],
+		});
+		expect((m as any).proxies).toEqual([
+			"http://p1/api/v1/markets/nasdaq/status",
+			"http://p2/api/v1/markets/nasdaq/status",
+		]);
+	});
+
+	it("should use proxies with round-robin and success (wrapped response)", async () => {
+		const m = new MarketMonitor({
+			proxies: ["http://p1", "http://p2"],
+		});
+		const changeSpy = vi.fn();
+		m.on("status-change", changeSpy);
+
+		// First call: p1 succeeds with wrapped response
+		mockEndPoint.mockResolvedValueOnce({
+			status: "success",
+			value: {
+				body: {
+					status: "success",
+					value: { mrktStatus: "Open", ...baseData },
+				},
+			},
+		});
+
+		m.start();
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(mockEndPoint).toHaveBeenCalledWith(
+			"http://p1/api/v1/markets/nasdaq/status",
+		);
+		expect(changeSpy).toHaveBeenCalledWith("open", expect.anything(), false);
+		expect((m as any).proxyIndex).toBe(1);
+
+		// Second call: p2 succeeds with direct response
+		mockEndPoint.mockResolvedValueOnce({
+			status: "success",
+			value: {
+				body: { mrktStatus: "Closed", ...baseData },
+			},
+		});
+		await vi.advanceTimersByTimeAsync(10000); // Trigger next poll
+
+		expect(mockEndPoint).toHaveBeenCalledWith(
+			"http://p2/api/v1/markets/nasdaq/status",
+		);
+		expect(changeSpy).toHaveBeenCalledWith("closed", expect.anything(), false);
+		expect((m as any).proxyIndex).toBe(0);
+	});
+
+	it("should failover to next proxy if one fails", async () => {
+		const m = new MarketMonitor({
+			proxies: ["http://p1", "http://p2"],
+		});
+
+		// p1 fails, p2 succeeds
+		mockEndPoint
+			.mockResolvedValueOnce({ status: "error", reason: "fail" })
+			.mockResolvedValueOnce({
+				status: "success",
+				value: { body: { mrktStatus: "Open", ...baseData } },
+			});
+
+		m.start();
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(mockEndPoint).toHaveBeenCalledWith(
+			"http://p1/api/v1/markets/nasdaq/status",
+		);
+		expect(mockEndPoint).toHaveBeenCalledWith(
+			"http://p2/api/v1/markets/nasdaq/status",
+		);
+		expect(m.currentPhase).toBe("open");
+		expect((m as any).proxyIndex).toBe(0); // (1+1)%2 = 0
+	});
+
+	it("should revert to local method if all proxies fail", async () => {
+		const m = new MarketMonitor({
+			proxies: ["http://p1"],
+		});
+
+		// p1 fails
+		mockEndPoint.mockResolvedValueOnce({ status: "error", reason: "fail" });
+		// Local succeeds
+		mockGetStatus.mockResolvedValueOnce({
+			status: "success",
+			value: { mrktStatus: "Open", ...baseData },
+		});
+
+		m.start();
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(mockEndPoint).toHaveBeenCalledWith(
+			"http://p1/api/v1/markets/nasdaq/status",
+		);
+		expect(mockGetStatus).toHaveBeenCalled();
+		expect(m.currentPhase).toBe("open");
 	});
 
 	it("should emit nothing on start() until first successful poll", async () => {

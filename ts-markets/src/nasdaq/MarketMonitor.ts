@@ -12,7 +12,8 @@ import { EventEmitter } from "node:events";
 import { logger } from "@ckir/corelib";
 import { DateTime } from "luxon";
 import { serializeError } from "serialize-error";
-import { MarketStatus, type NasdaqMarketInfo } from "./MarketStatus";
+import { endPoint } from "../../../ts-core/src/retrieve/RequestUnlimited.js";
+import { MarketStatus, type NasdaqMarketInfo } from "./MarketStatus.js";
 
 const marketMonitorLogger = logger.child({ section: "MarketMonitor" });
 
@@ -46,6 +47,8 @@ export class MarketMonitor extends EventEmitter {
 	private liveIntervalSec: number;
 	private closedIntervalSec: number;
 	private warnIntervalSec: number;
+	private proxies: string[];
+	private proxyIndex = 0;
 
 	private timeoutId: NodeJS.Timeout | null = null;
 	private isRunning = false;
@@ -60,12 +63,18 @@ export class MarketMonitor extends EventEmitter {
 			liveIntervalSec?: number;
 			closedIntervalSec?: number;
 			warnIntervalSec?: number;
+			proxies?: string[];
 		} = {},
 	) {
 		super();
 		this.liveIntervalSec = options.liveIntervalSec ?? 10;
 		this.closedIntervalSec = options.closedIntervalSec ?? 3600;
 		this.warnIntervalSec = options.warnIntervalSec ?? 60;
+		this.proxies = (options.proxies || []).map((p) =>
+			p.endsWith("/")
+				? `${p}api/v1/markets/nasdaq/status`
+				: `${p}/api/v1/markets/nasdaq/status`,
+		);
 	}
 
 	/** Start the monitor. First emission happens only after the first successful poll. */
@@ -73,7 +82,9 @@ export class MarketMonitor extends EventEmitter {
 		if (this.isRunning) return;
 		this.isRunning = true;
 		this.failureCount = 0;
-		marketMonitorLogger.info("Starting market status monitor");
+		marketMonitorLogger.info("Starting market status monitor", {
+			proxyCount: this.proxies.length,
+		});
 		this.poll(); // kick off the first poll immediately
 	}
 
@@ -112,19 +123,72 @@ export class MarketMonitor extends EventEmitter {
 	private async poll(): Promise<void> {
 		if (!this.isRunning) return;
 
-		try {
-			const result = await MarketStatus.getStatus();
+		let success = false;
 
-			if (result.status === "success") {
-				this.handleSuccess(result.value);
-			} else {
+		// 1. Try proxies first (if any)
+		if (this.proxies.length > 0) {
+			const startIdx = this.proxyIndex;
+			for (let i = 0; i < this.proxies.length; i++) {
+				const currentIdx = (startIdx + i) % this.proxies.length;
+				const proxyUrl = this.proxies[currentIdx];
+
+				try {
+					const result = await endPoint<
+						{ value?: NasdaqMarketInfo } & NasdaqMarketInfo
+					>(proxyUrl);
+					if (
+						result.status === "success" &&
+						typeof result.value.body === "object" &&
+						result.value.body !== null
+					) {
+						const body = result.value.body;
+						// Proxies typically return { status: "success", value: { ...data } }
+						// but some might return the data directly at the root of the body.
+						const data = body.value || body;
+
+						if (
+							data &&
+							typeof data === "object" &&
+							data.mrktStatus &&
+							data.openRaw
+						) {
+							this.handleSuccess(data as NasdaqMarketInfo);
+							// Update proxy index for next round robin (start with next one next time)
+							this.proxyIndex = (currentIdx + 1) % this.proxies.length;
+							success = true;
+							break;
+						}
+					}
+					marketMonitorLogger.warn(
+						"Proxy status fetch failed or returned unexpected format",
+						{ proxyUrl },
+					);
+				} catch (err) {
+					marketMonitorLogger.error("Error fetching via proxy", {
+						proxyUrl,
+						error: serializeError(err),
+					});
+				}
+			}
+		}
+
+		// 2. Revert to local method if proxies failed or no proxies provided
+		if (!success) {
+			try {
+				const result = await MarketStatus.getStatus();
+
+				if (result.status === "success") {
+					this.handleSuccess(result.value);
+					success = true;
+				} else {
+					this.handleFailure();
+				}
+			} catch (err) {
+				marketMonitorLogger.error("Unexpected poll error", {
+					error: serializeError(err),
+				});
 				this.handleFailure();
 			}
-		} catch (err) {
-			marketMonitorLogger.error("Unexpected poll error", {
-				error: serializeError(err),
-			});
-			this.handleFailure();
 		}
 
 		this.scheduleNextPoll();
