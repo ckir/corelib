@@ -28,7 +28,12 @@ export class NasdaqPolling extends EventEmitter {
 	constructor(apiInterval = 10000, proxies: string[] = []) {
 		super();
 		this.apiInterval = apiInterval;
-		this.proxies = proxies;
+		// Append "/api/v1/markets/nasdaq" to each proxy
+		this.proxies = proxies.map((f) =>
+			f.endsWith("/")
+				? `${f}api/v1/markets/nasdaq`
+				: `${f}/api/v1/markets/nasdaq`,
+		);
 
 		// Initialize ApiNasdaqQuotes with the provided proxies and global logger
 		this.nasdaqQuotes = new ApiNasdaqQuotes({

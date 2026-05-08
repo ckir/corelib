@@ -225,12 +225,9 @@ export class MarketSymbols {
 				}
 			}
 		} catch (e) {
-			marketSymbolsLogger.warn(
-				`SearchNasdaqApi failed for ${symbol}`,
-				{
-					error: serializeError(e),
-				},
-			);
+			marketSymbolsLogger.warn(`SearchNasdaqApi failed for ${symbol}`, {
+				error: serializeError(e),
+			});
 		}
 		return null;
 	}
@@ -250,12 +247,9 @@ export class MarketSymbols {
 						const result = await entry.processor(url, symbol);
 						if (result) return result;
 					} catch (e) {
-						marketSymbolsLogger.warn(
-							` Ingestor failed for ${url}`,
-							{
-								error: serializeError(e),
-							},
-						);
+						marketSymbolsLogger.warn(` Ingestor failed for ${url}`, {
+							error: serializeError(e),
+						});
 					}
 				}
 			}
@@ -311,12 +305,9 @@ export class MarketSymbols {
 				return result.value.rows[0];
 			}
 		} catch (e) {
-			marketSymbolsLogger.warn(
-				`SearchDb query failed for ${symbol}`,
-				{
-					error: serializeError(e),
-				},
-			);
+			marketSymbolsLogger.warn(`SearchDb query failed for ${symbol}`, {
+				error: serializeError(e),
+			});
 		}
 		return null;
 	}
@@ -402,9 +393,7 @@ export class MarketSymbols {
 		if (!(await this.needsRefresh())) return;
 		if (!this.db) return;
 
-		marketSymbolsLogger.info(
-			" Starting full symbol directory refresh",
-		);
+		marketSymbolsLogger.info(" Starting full symbol directory refresh");
 
 		const texts = await this.fetchSymbolFilesWithRetry();
 
@@ -506,12 +495,9 @@ export class MarketSymbols {
 					results[0].status === "error" ? results[0] : (results[1] as any);
 				const reason = errorResult.reason;
 
-				marketSymbolsLogger.warn(
-					"Symbol directory fetch failed – retrying",
-					{
-						reason: serializeError(reason),
-					},
-				);
+				marketSymbolsLogger.warn("Symbol directory fetch failed – retrying", {
+					reason: serializeError(reason),
+				});
 
 				const hasExistingData = await this.hasExistingData();
 				if (hasExistingData) {
@@ -527,10 +513,9 @@ export class MarketSymbols {
 			} catch (err: any) {
 				const hasExistingData = await this.hasExistingData();
 				if (hasExistingData) {
-					marketSymbolsLogger.warn(
-						"Symbol directory fetch thrown – retrying",
-						{ error: serializeError(err) },
-					);
+					marketSymbolsLogger.warn("Symbol directory fetch thrown – retrying", {
+						error: serializeError(err),
+					});
 					await sleep(backoffMs);
 					backoffMs = Math.min(backoffMs * 2, 3_600_000);
 					continue;
