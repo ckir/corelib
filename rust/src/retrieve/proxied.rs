@@ -132,12 +132,6 @@ impl RequestProxied {
             {
                 state.current_index = 0;
             }
-
-            // Log the removal to stderr
-            eprintln!(
-                "[RequestProxied] Proxy removed (3 consecutive failures): {}",
-                proxy_base
-            );
         }
     }
 
@@ -164,7 +158,6 @@ impl RequestProxied {
             let state = self.state.lock().unwrap();
             // Return immediately if no proxies are left
             if state.active_proxies.is_empty() {
-                eprintln!("[RequestProxied] No active proxies left");
                 return ApiResponse::Error {
                     reason: serde_json::json!({ "message": "No active proxies left" }),
                 };
@@ -211,7 +204,6 @@ impl RequestProxied {
         }
 
         // Exhausted all proxies without success
-        eprintln!("[RequestProxied] All proxies failed for url: {}", url);
         ApiResponse::Error {
             reason: serde_json::json!({ "message": "All proxies failed" }),
         }

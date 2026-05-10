@@ -36,6 +36,7 @@ async function corelibFetchAdapter(
 		method: init?.method ?? "GET",
 		headers: (init?.headers as Record<string, string>) ?? {},
 		body: init?.body,
+		throwHttpErrors: false,
 	};
 
 	// 2. Execute the resilient corelib request

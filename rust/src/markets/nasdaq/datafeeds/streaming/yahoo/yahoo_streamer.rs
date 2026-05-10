@@ -572,7 +572,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_load_subscriptions_empty() {
-        let db_path = std::env::temp_dir().join("test_empty.redb");
+        let db_path = std::env::temp_dir().join(format!(
+            "test_empty_yahoo_{}_{}.redb",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
         let _ = std::fs::remove_file(&db_path);
         let db = Database::create(&db_path).unwrap();
         {

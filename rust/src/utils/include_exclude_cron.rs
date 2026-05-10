@@ -173,7 +173,7 @@ mod tests {
         handle.stop();
 
         let calls = counter.load(Ordering::SeqCst);
-        assert!(calls >= 3 && calls <= 5);
+        assert!((3..=5).contains(&calls));
     }
 
     #[test]
@@ -211,7 +211,7 @@ mod tests {
         let calls = counter.load(Ordering::SeqCst);
         // In 6 seconds, every 2 seconds should fire ~3 times
         assert!(
-            calls >= 2 && calls <= 4,
+            (2..=4).contains(&calls),
             "Should have fired ~3 times in 6 seconds (every 2s), got {}",
             calls
         );

@@ -46,18 +46,25 @@ export async function serializeResponse<T = unknown>(
 	const contentType = response.headers.get("content-type") || "";
 
 	try {
-		const rawText = await response.text();
-		if (contentType.includes("application/json")) {
-			try {
-				body = JSON.parse(rawText);
-			} catch {
+		if (response.bodyUsed) {
+			body = "[Body already consumed]";
+		} else {
+			const rawText = await response.clone().text();
+			if (contentType.includes("application/json")) {
+				try {
+					body = JSON.parse(rawText);
+				} catch {
+					body = rawText;
+				}
+			} else {
 				body = rawText;
 			}
-		} else {
-			body = rawText;
 		}
 	} catch (error) {
 		requestResponseSerializeLogger.warn("Failed to read response body", {
+			status: response.status,
+			url: response.url,
+			bodyUsed: response.bodyUsed,
 			error,
 		});
 		body = "[Error reading body]";

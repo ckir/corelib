@@ -4,6 +4,14 @@ packages:
   - ts-cloud
   - rust
 
+allowBuilds:
+  esbuild: true
+  msw: true
+  nx: true
+  protobufjs: true
+  sharp: true
+  workerd: true
+
 onlyBuiltDependencies:
   - esbuild
   - msw

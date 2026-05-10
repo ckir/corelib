@@ -285,7 +285,7 @@ mod tests {
     #[test]
     fn test_args_parsing_defaults() {
         // Using clap to parse arguments from an array to verify defaults and structures
-        let args = Args::try_parse_from(&[
+        let args = Args::try_parse_from([
             "nasdaq_polling",
             "--include",
             "* * * * * * *",
@@ -305,7 +305,7 @@ mod tests {
 
     #[test]
     fn test_args_parsing_full() {
-        let args = Args::try_parse_from(&[
+        let args = Args::try_parse_from([
             "nasdaq_polling",
             "-i",
             "*/5 * * * * * *",

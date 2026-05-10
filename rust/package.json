@@ -11,7 +11,7 @@
     },
     "license": "MIT",
     "devDependencies": {
-        "@napi-rs/cli": "^3.0.0"
+        "@napi-rs/cli": "^3.6.2"
     },
     "scripts": {
         "build": "napi build --release --platform",
@@ -21,6 +21,6 @@
         "docs:clean": "cargo clean --doc",
         "format": "cargo fmt",
         "lint": "cargo clippy",
-        "test": "cargo test"        
+        "test": "cargo test --all-features"        
     }
 }

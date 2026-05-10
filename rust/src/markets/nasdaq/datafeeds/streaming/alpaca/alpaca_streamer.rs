@@ -753,6 +753,11 @@ impl AlpacaStreaming {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::LazyLock;
+    use tokio::sync::Mutex;
+
+    // Mutex to ensure tests using the same environment variable/files run serially.
+    static TEST_MUTEX: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
     struct TestCallbacks {
         pricing_calls: Arc<AtomicUsize>,
@@ -796,16 +801,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_db_initialization_and_clean() {
+        let _lock = TEST_MUTEX.lock().await;
         let (cb, _, _, _) = create_test_callbacks();
 
-        // Use a distinct database file for the test
-        std::env::set_var(
-            "ALPACA_DB",
-            format!(
-                "{}/test_alpaca.redb",
-                std::env::temp_dir().to_string_lossy()
-            ),
-        );
+        // Use a distinct, process-unique database file for the test
+        let db_path = std::env::temp_dir().join(format!(
+            "test_alpaca_{}_{}.redb",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let db_path_str = db_path.to_string_lossy().to_string();
+        std::env::set_var("ALPACA_DB", &db_path_str);
 
         let streamer = AlpacaStreamingCore::new(cb);
 
@@ -832,18 +841,26 @@ mod tests {
 
         // Clean up
         streamer.clean().await;
+
+        // Unset to prevent interference with other tests
+        std::env::remove_var("ALPACA_DB");
     }
 
     #[tokio::test]
     async fn test_subscribe_unsubscribe() {
+        let _lock = TEST_MUTEX.lock().await;
         let (cb, _, _, _) = create_test_callbacks();
-        std::env::set_var(
-            "ALPACA_DB",
-            format!(
-                "{}/test_alpaca_sub.redb",
-                std::env::temp_dir().to_string_lossy()
-            ),
-        );
+
+        let db_path = std::env::temp_dir().join(format!(
+            "test_alpaca_sub_{}_{}.redb",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let db_path_str = db_path.to_string_lossy().to_string();
+        std::env::set_var("ALPACA_DB", &db_path_str);
 
         let streamer = AlpacaStreamingCore::new(cb);
         streamer.clean().await;
@@ -862,6 +879,8 @@ mod tests {
             let guard = streamer.inner.lock().await;
             assert!(guard.subscriptions.is_empty());
         }
+
+        std::env::remove_var("ALPACA_DB");
     }
 
     #[test]

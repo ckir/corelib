@@ -32,9 +32,7 @@ use napi_derive::napi;
 /// # Returns
 /// The input `value` multiplied by 2.
 #[napi]
-pub fn log_and_double(msg: String, value: i32) -> i32 {
-    // Print the message to the console with a prefix
-    println!("[Rust FFI] {}", msg);
+pub fn log_and_double(_msg: String, value: i32) -> i32 {
     // Return the doubled value
     value * 2
 }

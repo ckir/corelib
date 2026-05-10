@@ -20,7 +20,7 @@
         "clean": "del dist"
     },
     "dependencies": {
-        "@google-cloud/pino-logging-gcp-config": "^1.3.3",
+        "@google-cloud/pino-logging-gcp-config": "^1.3.5",
         "@libsql/client": "^0.17.3",
         "commander": "^14.0.3",
         "confbox": "^0.2.4",
@@ -36,13 +36,13 @@
         "serialize-error": "^13.0.1"
     },
     "devDependencies": {
-        "@biomejs/biome": "^2.4.13",
+        "@biomejs/biome": "^2.4.15",
         "@types/bun": "^1.3.13",
         "@types/deno": "^2.5.0",
-        "@types/node": "^25.6.0",
+        "@types/node": "^25.6.2",
         "bun-types": "^1.3.13",
         "happy-dom": "^20.9.0",
-        "msw": "^2.13.6",
+        "msw": "^2.14.5",
         "pg-mem": "^3.0.14",
         "tsx": "^4.21.0",
         "typedoc": "^0.28.19",
