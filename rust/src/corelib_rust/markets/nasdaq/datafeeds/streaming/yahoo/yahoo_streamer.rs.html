@@ -572,37 +572,44 @@
 <a href=#572 id=572 data-nosnippet>572</a>
 <a href=#573 id=573 data-nosnippet>573</a>    </span><span class="attr">#[tokio::test]
 <a href=#574 id=574 data-nosnippet>574</a>    </span><span class="kw">async fn </span>test_load_subscriptions_empty() {
-<a href=#575 id=575 data-nosnippet>575</a>        <span class="kw">let </span>db_path = std::env::temp_dir().join(<span class="string">"test_empty.redb"</span>);
-<a href=#576 id=576 data-nosnippet>576</a>        <span class="kw">let _ </span>= std::fs::remove_file(<span class="kw-2">&amp;</span>db_path);
-<a href=#577 id=577 data-nosnippet>577</a>        <span class="kw">let </span>db = Database::create(<span class="kw-2">&amp;</span>db_path).unwrap();
-<a href=#578 id=578 data-nosnippet>578</a>        {
-<a href=#579 id=579 data-nosnippet>579</a>            <span class="kw">let </span>write_txn = db.begin_write().unwrap();
-<a href=#580 id=580 data-nosnippet>580</a>            {
-<a href=#581 id=581 data-nosnippet>581</a>                <span class="kw">let _ </span>= write_txn.open_table(SUBSCRIPTIONS_TABLE).unwrap();
-<a href=#582 id=582 data-nosnippet>582</a>            }
-<a href=#583 id=583 data-nosnippet>583</a>            write_txn.commit().unwrap();
-<a href=#584 id=584 data-nosnippet>584</a>        }
-<a href=#585 id=585 data-nosnippet>585</a>
-<a href=#586 id=586 data-nosnippet>586</a>        <span class="kw">let </span>read_txn = db.begin_read().unwrap();
-<a href=#587 id=587 data-nosnippet>587</a>        <span class="kw">let </span>table = read_txn.open_table(SUBSCRIPTIONS_TABLE).unwrap();
-<a href=#588 id=588 data-nosnippet>588</a>        <span class="kw">let </span>loaded: Vec&lt;String&gt; = table
-<a href=#589 id=589 data-nosnippet>589</a>            .iter()
-<a href=#590 id=590 data-nosnippet>590</a>            .unwrap()
-<a href=#591 id=591 data-nosnippet>591</a>            .map(|item| {
-<a href=#592 id=592 data-nosnippet>592</a>                <span class="kw">let </span>(k, <span class="kw">_</span>) = item.unwrap();
-<a href=#593 id=593 data-nosnippet>593</a>                k.value().to_string()
-<a href=#594 id=594 data-nosnippet>594</a>            })
-<a href=#595 id=595 data-nosnippet>595</a>            .collect();
-<a href=#596 id=596 data-nosnippet>596</a>        <span class="macro">assert_eq!</span>(loaded.len(), <span class="number">0</span>);
-<a href=#597 id=597 data-nosnippet>597</a>    }
-<a href=#598 id=598 data-nosnippet>598</a>
-<a href=#599 id=599 data-nosnippet>599</a>    <span class="attr">#[tokio::test]
-<a href=#600 id=600 data-nosnippet>600</a>    </span><span class="kw">async fn </span>test_decode_pricing_message() {
-<a href=#601 id=601 data-nosnippet>601</a>        <span class="kw">let </span>b64 = <span class="string">"CgRUU0xBFYG9y0MYgM6B7JtnKgNOTVMwCDgCRbV+qr1lANStvtgBBA=="</span>;
-<a href=#602 id=602 data-nosnippet>602</a>        <span class="kw">let </span>decoded = base64::prelude::BASE64_STANDARD.decode(b64).unwrap();
-<a href=#603 id=603 data-nosnippet>603</a>        <span class="kw">let </span>pricing = PricingData::decode(<span class="kw-2">&amp;</span>decoded[..]).unwrap();
-<a href=#604 id=604 data-nosnippet>604</a>        <span class="macro">assert_eq!</span>(pricing.id, <span class="string">"TSLA"</span>);
-<a href=#605 id=605 data-nosnippet>605</a>        <span class="macro">assert!</span>(pricing.price &gt; <span class="number">0.0</span>);
-<a href=#606 id=606 data-nosnippet>606</a>    }
-<a href=#607 id=607 data-nosnippet>607</a>}
+<a href=#575 id=575 data-nosnippet>575</a>        <span class="kw">let </span>db_path = std::env::temp_dir().join(<span class="macro">format!</span>(
+<a href=#576 id=576 data-nosnippet>576</a>            <span class="string">"test_empty_yahoo_{}_{}.redb"</span>,
+<a href=#577 id=577 data-nosnippet>577</a>            std::process::id(),
+<a href=#578 id=578 data-nosnippet>578</a>            std::time::SystemTime::now()
+<a href=#579 id=579 data-nosnippet>579</a>                .duration_since(std::time::UNIX_EPOCH)
+<a href=#580 id=580 data-nosnippet>580</a>                .unwrap()
+<a href=#581 id=581 data-nosnippet>581</a>                .as_nanos()
+<a href=#582 id=582 data-nosnippet>582</a>        ));
+<a href=#583 id=583 data-nosnippet>583</a>        <span class="kw">let _ </span>= std::fs::remove_file(<span class="kw-2">&amp;</span>db_path);
+<a href=#584 id=584 data-nosnippet>584</a>        <span class="kw">let </span>db = Database::create(<span class="kw-2">&amp;</span>db_path).unwrap();
+<a href=#585 id=585 data-nosnippet>585</a>        {
+<a href=#586 id=586 data-nosnippet>586</a>            <span class="kw">let </span>write_txn = db.begin_write().unwrap();
+<a href=#587 id=587 data-nosnippet>587</a>            {
+<a href=#588 id=588 data-nosnippet>588</a>                <span class="kw">let _ </span>= write_txn.open_table(SUBSCRIPTIONS_TABLE).unwrap();
+<a href=#589 id=589 data-nosnippet>589</a>            }
+<a href=#590 id=590 data-nosnippet>590</a>            write_txn.commit().unwrap();
+<a href=#591 id=591 data-nosnippet>591</a>        }
+<a href=#592 id=592 data-nosnippet>592</a>
+<a href=#593 id=593 data-nosnippet>593</a>        <span class="kw">let </span>read_txn = db.begin_read().unwrap();
+<a href=#594 id=594 data-nosnippet>594</a>        <span class="kw">let </span>table = read_txn.open_table(SUBSCRIPTIONS_TABLE).unwrap();
+<a href=#595 id=595 data-nosnippet>595</a>        <span class="kw">let </span>loaded: Vec&lt;String&gt; = table
+<a href=#596 id=596 data-nosnippet>596</a>            .iter()
+<a href=#597 id=597 data-nosnippet>597</a>            .unwrap()
+<a href=#598 id=598 data-nosnippet>598</a>            .map(|item| {
+<a href=#599 id=599 data-nosnippet>599</a>                <span class="kw">let </span>(k, <span class="kw">_</span>) = item.unwrap();
+<a href=#600 id=600 data-nosnippet>600</a>                k.value().to_string()
+<a href=#601 id=601 data-nosnippet>601</a>            })
+<a href=#602 id=602 data-nosnippet>602</a>            .collect();
+<a href=#603 id=603 data-nosnippet>603</a>        <span class="macro">assert_eq!</span>(loaded.len(), <span class="number">0</span>);
+<a href=#604 id=604 data-nosnippet>604</a>    }
+<a href=#605 id=605 data-nosnippet>605</a>
+<a href=#606 id=606 data-nosnippet>606</a>    <span class="attr">#[tokio::test]
+<a href=#607 id=607 data-nosnippet>607</a>    </span><span class="kw">async fn </span>test_decode_pricing_message() {
+<a href=#608 id=608 data-nosnippet>608</a>        <span class="kw">let </span>b64 = <span class="string">"CgRUU0xBFYG9y0MYgM6B7JtnKgNOTVMwCDgCRbV+qr1lANStvtgBBA=="</span>;
+<a href=#609 id=609 data-nosnippet>609</a>        <span class="kw">let </span>decoded = base64::prelude::BASE64_STANDARD.decode(b64).unwrap();
+<a href=#610 id=610 data-nosnippet>610</a>        <span class="kw">let </span>pricing = PricingData::decode(<span class="kw-2">&amp;</span>decoded[..]).unwrap();
+<a href=#611 id=611 data-nosnippet>611</a>        <span class="macro">assert_eq!</span>(pricing.id, <span class="string">"TSLA"</span>);
+<a href=#612 id=612 data-nosnippet>612</a>        <span class="macro">assert!</span>(pricing.price &gt; <span class="number">0.0</span>);
+<a href=#613 id=613 data-nosnippet>613</a>    }
+<a href=#614 id=614 data-nosnippet>614</a>}
 </code></pre></div></section></main></body></html>
