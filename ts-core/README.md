@@ -161,6 +161,14 @@ Core.run("maintenance-task", { verbose: true });
 ### 7. Runtime Utilities
 Platform-agnostic helpers for common tasks.
 
+**Key Helpers**:
+- `detectRuntime()` — returns current runtime (`"node" | "bun" | "deno" | ...`)
+- `sleep(ms)` — cross-runtime delay
+- `getEnv(key)`, `getAllEnv()` — safe environment access
+- `getSysInfo()` — detailed system info with automatic secret redaction
+- `includeExcludeCron` — helpers for complex cron include/exclude patterns
+- File system helpers with graceful fallbacks across runtimes
+
 ```typescript
 import { detectRuntime, sleep, getEnv, getSysInfo } from '@ckir/corelib';
 
