@@ -4,7 +4,23 @@
 // Covers: Success, Logic Errors (rCode), Transport Errors, Headers (Standard vs Charting), Config Overrides, Parallel Requests.
 // =============================================
 
-import { ConfigManager } from "@ckir/corelib";
+vi.mock("@ckir/corelib", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@ckir/corelib")>();
+	return {
+		...actual,
+		logger: {
+			info: vi.fn(),
+			warn: vi.fn(),
+			error: vi.fn(),
+			debug: vi.fn(),
+			trace: vi.fn(),
+			fatal: vi.fn(),
+			child: vi.fn().mockReturnThis(),
+		},
+	};
+});
+
+import { ConfigManager, logger } from "@ckir/corelib";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import {
@@ -112,7 +128,7 @@ describe("ApiNasdaqUnlimited", () => {
 					"code: ERR1 = Symbol Not Found",
 				);
 			}
-			expect(globalThis.logger?.warn).toHaveBeenCalled();
+			expect(logger.warn).toHaveBeenCalled();
 		});
 
 		it("should handle transport errors (e.g. 404)", async () => {
@@ -124,7 +140,7 @@ describe("ApiNasdaqUnlimited", () => {
 			if (result.status === "error") {
 				expect(result.reason.message).toBe("Transport Error");
 			}
-			expect(globalThis.logger?.error).toHaveBeenCalled();
+			expect(logger.error).toHaveBeenCalled();
 		});
 
 		it("should use charting headers for charting URLs", async () => {

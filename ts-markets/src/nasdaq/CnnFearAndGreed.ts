@@ -12,6 +12,9 @@ import {
 	logger,
 	type RequestResult,
 } from "@ckir/corelib";
+
+const cnnLogger = logger.child({ section: "CnnFearAndGreed" });
+
 import type { Options } from "ky";
 import { DateTime } from "luxon";
 import { serializeError } from "serialize-error";
@@ -68,10 +71,6 @@ function getHeaders(): Record<string, string> {
 	return { ...getDefaultHeaders(), ...(configHeaders ?? {}) };
 }
 
-/**
- * Logs using the full StrictLogger levels (debug, info, warn, error, fatal, trace).
- * Console fallback is safe (maps fatal/trace to existing console methods).
- */
 function log(
 	level: "debug" | "info" | "warn" | "error" | "fatal" | "trace",
 	msg: string,
@@ -82,13 +81,7 @@ function log(
 			? { error: serializeError(data) }
 			: (data as Record<string, unknown> | undefined);
 
-	if (logger) {
-		logger[level](`[CNN] ${msg}`, payload);
-	} else {
-		// Safe console fallback – Console type has no "fatal" or "trace"
-		const method = (console as any)[level] ?? console.error;
-		method(`[CNN] ${msg}`, payload ?? "");
-	}
+	cnnLogger[level](msg, payload);
 }
 
 function buildUrl(date?: string | "Historical"): string {
@@ -144,7 +137,7 @@ async function getFearAndGreed(
 	const result: RequestResult = await endPoint(url, { ...options, headers });
 
 	if (result.status === "error") {
-		log("error", `Transport Error for ${url}`, result.reason);
+		log("error", "Transport Error", { url, reason: result.reason });
 		return {
 			status: "error",
 			reason: { message: "Transport Error", original: result.reason },
@@ -162,7 +155,7 @@ async function getFearAndGreed(
 
 	const validationError = validateKeys(body, filter);
 	if (validationError) {
-		log("warn", `Schema validation failed: ${validationError}`, { body });
+		log("warn", "Schema validation failed", { validationError, body });
 		return {
 			status: "error",
 			reason: {
@@ -172,9 +165,7 @@ async function getFearAndGreed(
 	}
 
 	const value = getFilteredValue(body, filter);
-	log("debug", `CNN FearAndGreed fetched successfully [filter=${filter}]`, {
-		url,
-	});
+	log("debug", "CNN FearAndGreed fetched successfully", { filter, url });
 
 	return {
 		status: "success",

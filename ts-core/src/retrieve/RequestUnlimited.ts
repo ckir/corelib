@@ -7,10 +7,13 @@
 import { deepmergeCustom } from "deepmerge-ts";
 import ky, { HTTPError, type Options as KyOptions } from "ky";
 import { type ErrorObject, serializeError } from "serialize-error";
+import logger from "../loggers";
 import {
 	type SerializedResponse,
 	serializeResponse,
 } from "./RequestResponseSerialize.js";
+
+const requestUnlimitedLogger = logger.child({ section: "RequestUnlimited" });
 
 /**
  * Custom deepmerge instance that overwrites arrays instead of merging them.
@@ -56,8 +59,7 @@ export const DEFAULT_REQUEST_OPTIONS: KyOptions = {
 	hooks: {
 		beforeRetry: [
 			async ({ retryCount }) => {
-				const logger = globalThis.logger;
-				logger?.trace(`Retrying API call, retry count: ${retryCount}`);
+				requestUnlimitedLogger.trace("Retrying API call", { retryCount });
 			},
 		],
 	},
@@ -131,8 +133,7 @@ export async function endPoint<T = unknown>(
 				error.response,
 			);
 
-			const logger = globalThis.logger;
-			logger?.warn("RequestUnlimited: HTTP Error", {
+			requestUnlimitedLogger.warn("HTTP Error", {
 				status: errorResponse?.status,
 				url: url.toString(),
 			});
@@ -144,8 +145,7 @@ export async function endPoint<T = unknown>(
 		}
 
 		const serializedError = serializeError(error);
-		const logger = globalThis.logger;
-		logger?.error("RequestUnlimited: Internal/Network Error", serializedError);
+		requestUnlimitedLogger.error("Internal/Network Error", serializedError);
 
 		return {
 			status: "error",

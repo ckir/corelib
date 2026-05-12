@@ -1,6 +1,11 @@
 // ts-markets/src/nasdaq/datafeeds/polling/historical/providers/YahooHistoricalProvider.ts
 
 import { logger } from "@ckir/corelib";
+
+const yahooHistoricalLogger = logger.child({
+	section: "YahooHistoricalProvider",
+});
+
 import { DateTime } from "luxon";
 import { serializeError } from "serialize-error";
 import type {
@@ -46,7 +51,8 @@ export class YahooHistoricalProvider implements HistoricalProvider {
 			return { status: "success", value };
 		} catch (error: unknown) {
 			const serialized = serializeError(error);
-			logger?.error(`[Historical] Yahoo provider failed for ${symbol}`, {
+			yahooHistoricalLogger.error("Yahoo provider failed", {
+				symbol,
 				error: serialized,
 			});
 

@@ -75,7 +75,10 @@ describe("ApiNasdaqQuotes", () => {
 	describe("Constructor", () => {
 		it("should use provided MarketSymbols and Logger", () => {
 			const mockSymbols = new MarketSymbols() as any;
-			const mockLogger = { warn: vi.fn() } as any;
+			const mockLogger = {
+				warn: vi.fn(),
+				child: vi.fn().mockReturnThis(),
+			} as any;
 			const api = new ApiNasdaqQuotes({
 				marketSymbols: mockSymbols,
 				logger: mockLogger,

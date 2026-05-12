@@ -42,7 +42,9 @@ src/
 
 ### Data & Proxy Endpoints
 - **`POST /api/v1/ky`**: Generic resilient HTTP proxy (supports single or bulk parallel requests).
+- **`GET /api/v1/ky`**: Transparent single-URL proxy via `?url=` query parameter. Returns target response body and status directly. Used by `RequestProxied`.
 - **`POST /api/v1/markets/nasdaq`**: Nasdaq-specific resilient market data proxy.
+- **`GET /api/v1/markets/nasdaq`**: Transparent single-URL Nasdaq proxy via `?url=` query parameter. Enforces Nasdaq headers and returns target response body and status directly. Used by `RequestProxied`.
 - **`POST /api/v1/markets/nasdaq/historical`**: Yahoo Finance historical data proxy.
 - **`GET /api/v1/markets/nasdaq/status`**: Fetches current Nasdaq market status (Open/Closed/Pre/After).
 - **`GET /api/v1/markets/nasdaq/groups/top100`**: Retrieves the list of current Nasdaq 100 constituent symbols.
@@ -79,6 +81,11 @@ curl -X POST https://your-service-url/api/v1/ky \
      }'
 ```
 
+#### Transparent GET Proxy (used by RequestProxied)
+```bash
+curl "https://your-service-url/api/v1/ky?url=https://api.github.com/zen"
+```
+
 ### Nasdaq Market Data (ApiNasdaqUnlimitedCloud)
 Specialized proxy for Nasdaq API calls. Enforces correct browser-like headers and provides automatic retries.
 
@@ -89,6 +96,11 @@ curl -X POST https://your-service-url/api/v1/markets/nasdaq \
      -d '{
        "url": "https://api.nasdaq.com/api/quote/AAPL/info?assetclass=stocks"
      }'
+```
+
+#### Transparent GET Proxy (used by RequestProxied)
+```bash
+curl "https://your-service-url/api/v1/markets/nasdaq?url=https://api.nasdaq.com/api/quote/AAPL/info?assetclass=stocks"
 ```
 
 #### Market Status

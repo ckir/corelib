@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get install -y nodejs \
-    && npm install -g pnpm@11.0.9 \
+    && npm install -g pnpm@11.1.1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory

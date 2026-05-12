@@ -225,7 +225,8 @@ export class MarketSymbols {
 				}
 			}
 		} catch (e) {
-			marketSymbolsLogger.warn(`SearchNasdaqApi failed for ${symbol}`, {
+			marketSymbolsLogger.warn("SearchNasdaqApi failed", {
+				symbol,
 				error: serializeError(e),
 			});
 		}
@@ -247,7 +248,8 @@ export class MarketSymbols {
 						const result = await entry.processor(url, symbol);
 						if (result) return result;
 					} catch (e) {
-						marketSymbolsLogger.warn(` Ingestor failed for ${url}`, {
+						marketSymbolsLogger.warn("Ingestor failed", {
+							url,
 							error: serializeError(e),
 						});
 					}
@@ -305,7 +307,8 @@ export class MarketSymbols {
 				return result.value.rows[0];
 			}
 		} catch (e) {
-			marketSymbolsLogger.warn(`SearchDb query failed for ${symbol}`, {
+			marketSymbolsLogger.warn("SearchDb query failed", {
+				symbol,
 				error: serializeError(e),
 			});
 		}

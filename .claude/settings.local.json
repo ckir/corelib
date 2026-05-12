@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\user\\\\Development\\\\Node\\\\corelib\\\\ts-markets\\\\src\" -Recurse -Filter \"*.ts\")",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\user\\\\Development\\\\Node\\\\corelib\\\\ts-core\\\\src\" -Recurse -Filter \"*.ts\" -Exclude \"*.d.ts\", \"*.test.ts\", \"*.spec.ts\")",
+      "Bash(pnpm test-all *)",
+      "Bash(pnpm test *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\user\\\\Development\\\\Node\\\\corelib\\\\ts-cloud\" -Recurse -Directory)",
+      "Bash(Select-Object -First 20)"
+    ]
+  }
+}

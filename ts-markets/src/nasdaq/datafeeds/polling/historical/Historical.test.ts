@@ -20,6 +20,7 @@ vi.mock("@ckir/corelib", async (importOriginal) => {
 		logger: {
 			error: vi.fn(),
 			info: vi.fn(),
+			child: vi.fn().mockReturnThis(),
 		},
 	};
 });

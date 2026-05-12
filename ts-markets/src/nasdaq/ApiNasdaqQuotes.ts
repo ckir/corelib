@@ -33,7 +33,8 @@ export class ApiNasdaqQuotes {
 	 * @param options Configuration options for the module.
 	 */
 	constructor(options: ApiNasdaqQuotesOptions = {}) {
-		this.logger = options.logger || (globalThis as any).logger;
+		const baseLogger = options.logger || (globalThis as any).logger;
+		this.logger = baseLogger?.child({ section: "ApiNasdaqQuotes" });
 		this.concurrencyLimit = options.concurrencyLimit ?? 5;
 
 		if (options.marketSymbols) {
@@ -79,9 +80,10 @@ export class ApiNasdaqQuotes {
 				fetchQueue.push({ symbol, url, index: i });
 			} catch (error: any) {
 				const message = error?.message || String(error);
-				this.logger?.warn(
-					`Error resolving asset class for ${symbol}: ${message}`,
-				);
+				this.logger?.warn("Error resolving asset class", {
+					symbol,
+					error: message,
+				});
 				results[i] = {
 					status: "error",
 					reason: {

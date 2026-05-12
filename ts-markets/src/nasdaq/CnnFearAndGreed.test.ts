@@ -30,6 +30,7 @@ vi.mock("@ckir/corelib", async (importOriginal) => {
 			error: vi.fn(),
 			fatal: vi.fn(),
 			trace: vi.fn(),
+			child: vi.fn().mockReturnThis(),
 		},
 	};
 });
@@ -163,7 +164,7 @@ describe("CnnFearAndGreed (Exhaustive)", () => {
 				expect((res.value as any).rating).toBe("extreme fear");
 			}
 			expect(logger?.debug).toHaveBeenCalledWith(
-				expect.stringContaining("[CNN] CNN FearAndGreed fetched successfully"),
+				"CNN FearAndGreed fetched successfully",
 				expect.any(Object),
 			);
 		});

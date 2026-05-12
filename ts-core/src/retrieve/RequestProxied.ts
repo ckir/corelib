@@ -12,11 +12,14 @@
 // =============================================
 
 import type { Options as KyOptions } from "ky";
+import logger from "../loggers";
 import {
 	type RequestResult,
 	endPoint as unlimitedEndPoint,
 	endPoints as unlimitedEndPoints,
 } from "./RequestUnlimited";
+
+const requestProxiedLogger = logger.child({ section: "RequestProxied" });
 
 /**
  * Proxied HTTP client with automatic rotation, fallback, and load-balancing.
@@ -90,12 +93,9 @@ export class RequestProxied {
 				this.currentIndex = 0;
 			}
 
-			const logger = globalThis.logger;
-			const msg = `[RequestProxied] Proxy removed (3 consecutive failures): ${proxyBase}`;
-			logger?.warn(msg, {
+			requestProxiedLogger.warn("Proxy removed after 3 consecutive failures", {
 				proxy: proxyBase,
 			});
-			console.log(msg);
 		}
 	}
 
@@ -112,8 +112,7 @@ export class RequestProxied {
 		options: KyOptions = {},
 	): Promise<RequestResult<T>> {
 		if (this.activeProxies.length === 0) {
-			const logger = globalThis.logger;
-			logger?.error("[RequestProxied] No active proxies left");
+			requestProxiedLogger.error("No active proxies left");
 			return {
 				status: "error",
 				reason: { message: "No active proxies left" } as any,
@@ -150,8 +149,7 @@ export class RequestProxied {
 		}
 
 		// All proxies failed
-		const logger = globalThis.logger;
-		logger?.error("[RequestProxied] All proxies failed", {
+		requestProxiedLogger.error("All proxies failed", {
 			originalUrl: targetStr,
 		});
 		return {

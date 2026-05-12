@@ -4,7 +4,15 @@
 // Integrates with ConfigManager for optional header overrides.
 // =============================================
 
-import { ConfigManager, endPoint, type RequestResult } from "@ckir/corelib";
+import {
+	ConfigManager,
+	endPoint,
+	logger,
+	type RequestResult,
+} from "@ckir/corelib";
+
+const nasdaqUnlimitedLogger = logger.child({ section: "ApiNasdaqUnlimited" });
+
 import type { Options } from "ky";
 import { serializeError } from "serialize-error";
 
@@ -34,17 +42,12 @@ function log(
 	msg: string,
 	data?: unknown,
 ): void {
-	const logger = globalThis.logger;
 	const payload =
 		data instanceof Error
 			? { error: serializeError(data) }
 			: (data as Record<string, unknown> | undefined);
 
-	if (logger) {
-		logger[level](`[Nasdaq] ${msg}`, payload);
-	} else {
-		console[level](`[Nasdaq] ${msg}`, payload ?? "");
-	}
+	nasdaqUnlimitedLogger[level](msg, payload);
 }
 
 /**
@@ -94,7 +97,7 @@ async function nasdaqEndPoint<T = unknown>(
 	const result: RequestResult = await endPoint(url, { ...options, headers });
 
 	if (result.status === "error") {
-		log("error", `Transport Error for ${urlStr}`, result.reason);
+		log("error", "Transport Error", { url: urlStr, reason: result.reason });
 		return {
 			status: "error",
 			reason: { message: "Transport Error", original: result.reason },
@@ -110,7 +113,8 @@ async function nasdaqEndPoint<T = unknown>(
 		"status" in nasdaqBody &&
 		nasdaqBody.status?.rCode !== 200
 	) {
-		log("warn", `Request to ${urlStr} failed logic check`, {
+		log("warn", "Request failed logic check", {
+			url: urlStr,
 			status: nasdaqBody.status,
 		});
 

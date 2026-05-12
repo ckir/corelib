@@ -6,6 +6,8 @@
 import { logger } from "@ckir/corelib";
 import { ApiNasdaqUnlimited } from "../ApiNasdaqUnlimited";
 
+const top100Logger = logger.child({ section: "Top100" });
+
 // ---------------------------------------------------------------------------
 // Local Type Definitions
 // ---------------------------------------------------------------------------
@@ -89,7 +91,7 @@ export async function getSymbolsTop100(): Promise<string[]> {
 
 			// Handle API-level errors
 			if (response.status === "error") {
-				logger?.warn("Failed to fetch Nasdaq 100 symbols via API", {
+				top100Logger.warn("Failed to fetch Nasdaq 100 symbols via API", {
 					reason: response.reason,
 				});
 				return [];
@@ -99,9 +101,12 @@ export async function getSymbolsTop100(): Promise<string[]> {
 
 			// Handle empty or malformed data
 			if (!Array.isArray(rows) || rows.length === 0) {
-				logger?.warn("Nasdaq 100 API returned an empty or invalid dataset", {
-					payload: response.value,
-				});
+				top100Logger.warn(
+					"Nasdaq 100 API returned an empty or invalid dataset",
+					{
+						payload: response.value,
+					},
+				);
 				return [];
 			}
 
@@ -116,7 +121,7 @@ export async function getSymbolsTop100(): Promise<string[]> {
 			return symbols;
 		} catch (error) {
 			// Handle unexpected runtime errors (network timeouts, etc.)
-			logger?.warn("Unexpected error in Top100 module", {
+			top100Logger.warn("Unexpected error in Top100 module", {
 				error: error instanceof Error ? error.message : String(error),
 			});
 			return [];

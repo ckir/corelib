@@ -16,6 +16,7 @@ import { ApiNasdaqUnlimited } from "../ApiNasdaqUnlimited";
 vi.mock("@ckir/corelib", () => ({
 	logger: {
 		warn: vi.fn(),
+		child: vi.fn().mockReturnThis(),
 	},
 }));
 
