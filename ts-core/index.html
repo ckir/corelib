@@ -47,6 +47,15 @@
 
 <h3 id="7-runtime-utilities" class="tsd-anchor-link">7. Runtime Utilities<a href="#7-runtime-utilities" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <p>Platform-agnostic helpers for common tasks.</p>
+<p><strong>Key Helpers</strong>:</p>
+<ul>
+<li><code>detectRuntime()</code> — returns current runtime (<code>&quot;node&quot; | &quot;bun&quot; | &quot;deno&quot; | ...</code>)</li>
+<li><code>sleep(ms)</code> — cross-runtime delay</li>
+<li><code>getEnv(key)</code>, <code>getAllEnv()</code> — safe environment access</li>
+<li><code>getSysInfo()</code> — detailed system info with automatic secret redaction</li>
+<li><code>includeExcludeCron</code> — helpers for complex cron include/exclude patterns</li>
+<li>File system helpers with graceful fallbacks across runtimes</li>
+</ul>
 <pre><code class="typescript"><span class="hl-3">import</span><span class="hl-1"> { </span><span class="hl-4">detectRuntime</span><span class="hl-1">, </span><span class="hl-4">sleep</span><span class="hl-1">, </span><span class="hl-4">getEnv</span><span class="hl-1">, </span><span class="hl-4">getSysInfo</span><span class="hl-1"> } </span><span class="hl-3">from</span><span class="hl-1"> </span><span class="hl-2">&#39;@ckir/corelib&#39;</span><span class="hl-1">;</span><br/><br/><span class="hl-7">// Detect where we are (node, bun, deno, cloudflare, aws-lambda, etc.)</span><br/><span class="hl-5">const</span><span class="hl-1"> </span><span class="hl-6">runtime</span><span class="hl-1"> = </span><span class="hl-0">detectRuntime</span><span class="hl-1">();</span><br/><br/><span class="hl-7">// Resilient sleep</span><br/><span class="hl-3">await</span><span class="hl-1"> </span><span class="hl-0">sleep</span><span class="hl-1">(</span><span class="hl-8">1000</span><span class="hl-1">);</span><br/><br/><span class="hl-7">// Platform-agnostic env access</span><br/><span class="hl-5">const</span><span class="hl-1"> </span><span class="hl-6">apiKey</span><span class="hl-1"> = </span><span class="hl-0">getEnv</span><span class="hl-1">(</span><span class="hl-2">&#39;API_KEY&#39;</span><span class="hl-1">);</span><br/><br/><span class="hl-7">// Detailed system and process telemetry (auto-redacts secrets)</span><br/><span class="hl-5">const</span><span class="hl-1"> </span><span class="hl-6">sysInfo</span><span class="hl-1"> = </span><span class="hl-0">getSysInfo</span><span class="hl-1">();</span><br/><span class="hl-4">console</span><span class="hl-1">.</span><span class="hl-0">log</span><span class="hl-1">(</span><span class="hl-2">&#39;Memory Usage:&#39;</span><span class="hl-1">, </span><span class="hl-4">sysInfo</span><span class="hl-1">.</span><span class="hl-4">memory</span><span class="hl-1">.</span><span class="hl-4">rss</span><span class="hl-1">);</span>
 </code><button type="button">Copy</button></pre>
 
