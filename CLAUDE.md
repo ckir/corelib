@@ -1,4 +1,4 @@
-# Gemini Code Assistant Context
+# Claude Code Context
 
 **This file is deprecated.**
 
@@ -14,3 +14,4 @@ Please refer to that file for all project information, conventions, and guidelin
  All future context updates should be made to `AGENTS.md`.<br>
 **Do not move or delete this file.**
  This file needs to remain here for its corresponding AI agent.
+ 
