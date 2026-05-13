@@ -9,7 +9,7 @@
 // =============================================
 
 import { EventEmitter } from "node:events";
-import { logger } from "@ckir/corelib";
+import { ConfigManager, logger } from "@ckir/corelib";
 import { DateTime } from "luxon";
 import { serializeError } from "serialize-error";
 import { endPoint } from "../../../ts-core/src/retrieve/RequestUnlimited.js";
@@ -71,10 +71,24 @@ export class MarketMonitor extends EventEmitter {
 		} = {},
 	) {
 		super();
-		this.liveIntervalSec = options.liveIntervalSec ?? DEFAULT_LIVE_INTERVAL_SEC;
+		this.liveIntervalSec =
+			options.liveIntervalSec ??
+			(ConfigManager.get("markets.nasdaq.monitor.liveIntervalSec") as
+				| number
+				| undefined) ??
+			DEFAULT_LIVE_INTERVAL_SEC;
 		this.closedIntervalSec =
-			options.closedIntervalSec ?? DEFAULT_CLOSED_INTERVAL_SEC;
-		this.warnIntervalSec = options.warnIntervalSec ?? DEFAULT_WARN_INTERVAL_SEC;
+			options.closedIntervalSec ??
+			(ConfigManager.get("markets.nasdaq.monitor.closedIntervalSec") as
+				| number
+				| undefined) ??
+			DEFAULT_CLOSED_INTERVAL_SEC;
+		this.warnIntervalSec =
+			options.warnIntervalSec ??
+			(ConfigManager.get("markets.nasdaq.monitor.warnIntervalSec") as
+				| number
+				| undefined) ??
+			DEFAULT_WARN_INTERVAL_SEC;
 		this.proxies = (options.proxies || []).map((p) =>
 			p.endsWith("/")
 				? `${p}api/v1/markets/nasdaq/status`

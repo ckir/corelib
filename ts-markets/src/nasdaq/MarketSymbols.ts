@@ -10,6 +10,7 @@
 
 import {
 	logger as baseLogger,
+	ConfigManager,
 	createDatabase,
 	type Database,
 	type DatabaseResult,
@@ -26,14 +27,14 @@ import { Realtime } from "./AssetClass";
 
 const marketSymbolsLogger = baseLogger.child({ section: "MarketSymbols" });
 
-const NASDAQ_LISTED_URL =
+const DEFAULT_NASDAQ_LISTED_URL =
 	"https://www.nasdaqtrader.com/dynamic/symdir/nasdaqlisted.txt";
-const OTHER_LISTED_URL =
+const DEFAULT_OTHER_LISTED_URL =
 	"https://www.nasdaqtrader.com/dynamic/symdir/otherlisted.txt";
 
-const INITIAL_BACKOFF_MS = 1_000;
-const MAX_RETRY_BACKOFF_MS = 3_600_000; // 1 hour cap per retry interval
-const MAX_FETCH_RETRIES = 10; // circuit breaker: give up after this many consecutive failures
+const DEFAULT_INITIAL_BACKOFF_MS = 1_000;
+const DEFAULT_MAX_RETRY_BACKOFF_MS = 3_600_000; // 1 hour cap per retry interval
+const DEFAULT_MAX_FETCH_RETRIES = 10; // circuit breaker: give up after this many consecutive failures
 
 export interface MarketSymbolRow {
 	symbol: string;
@@ -478,21 +479,40 @@ export class MarketSymbols {
 
 	/**
 	 * Downloads the official Nasdaq symbol directories with retry and circuit breaker.
-	 * Retries with exponential backoff up to MAX_RETRY_BACKOFF_MS per interval.
-	 * Stops after MAX_FETCH_RETRIES consecutive failures even when existing data is present.
+	 * Retries with exponential backoff up to `markets.nasdaq.symbols.maxRetryBackoffMs` per interval.
+	 * Stops after `markets.nasdaq.symbols.maxFetchRetries` consecutive failures even when existing data is present.
 	 * Throws immediately on first failure when no existing data exists.
 	 */
 	private async fetchSymbolFilesWithRetry(): Promise<{
 		nasdaqText: string;
 		otherText: string;
 	}> {
-		let backoffMs = INITIAL_BACKOFF_MS;
+		const nasdaqListedUrl =
+			(ConfigManager.get("markets.nasdaq.symbols.nasdaqListedUrl") as
+				| string
+				| undefined) ?? DEFAULT_NASDAQ_LISTED_URL;
+		const otherListedUrl =
+			(ConfigManager.get("markets.nasdaq.symbols.otherListedUrl") as
+				| string
+				| undefined) ?? DEFAULT_OTHER_LISTED_URL;
+		const maxRetryBackoffMs =
+			(ConfigManager.get("markets.nasdaq.symbols.maxRetryBackoffMs") as
+				| number
+				| undefined) ?? DEFAULT_MAX_RETRY_BACKOFF_MS;
+		const maxFetchRetries =
+			(ConfigManager.get("markets.nasdaq.symbols.maxFetchRetries") as
+				| number
+				| undefined) ?? DEFAULT_MAX_FETCH_RETRIES;
+		let backoffMs =
+			(ConfigManager.get("markets.nasdaq.symbols.initialBackoffMs") as
+				| number
+				| undefined) ?? DEFAULT_INITIAL_BACKOFF_MS;
 		let retryCount = 0;
 
-		while (retryCount <= MAX_FETCH_RETRIES) {
+		while (retryCount <= maxFetchRetries) {
 			try {
 				const results = await endPoints<string>(
-					[NASDAQ_LISTED_URL, OTHER_LISTED_URL],
+					[nasdaqListedUrl, otherListedUrl],
 					{
 						headers: {
 							accept: "text/plain, */*",
@@ -527,23 +547,23 @@ export class MarketSymbols {
 						`Failed to construct symbols db - ${(reason as Record<string, unknown>).message ?? JSON.stringify(serializeError(reason))}`,
 					);
 				}
-				if (retryCount >= MAX_FETCH_RETRIES) {
+				if (retryCount >= maxFetchRetries) {
 					throw new Error(
-						`Symbol fetch circuit breaker: gave up after ${MAX_FETCH_RETRIES} retries`,
+						`Symbol fetch circuit breaker: gave up after ${maxFetchRetries} retries`,
 					);
 				}
 				await sleep(backoffMs);
-				backoffMs = Math.min(backoffMs * 2, MAX_RETRY_BACKOFF_MS);
+				backoffMs = Math.min(backoffMs * 2, maxRetryBackoffMs);
 				retryCount++;
 			} catch (err: unknown) {
 				const hasExistingData = await this.hasExistingData();
-				if (hasExistingData && retryCount < MAX_FETCH_RETRIES) {
+				if (hasExistingData && retryCount < maxFetchRetries) {
 					marketSymbolsLogger.warn("Symbol directory fetch thrown – retrying", {
 						retryCount,
 						error: serializeError(err),
 					});
 					await sleep(backoffMs);
-					backoffMs = Math.min(backoffMs * 2, MAX_RETRY_BACKOFF_MS);
+					backoffMs = Math.min(backoffMs * 2, maxRetryBackoffMs);
 					retryCount++;
 					continue;
 				}
@@ -552,7 +572,7 @@ export class MarketSymbols {
 		}
 		// Unreachable, but satisfies TypeScript exhaustiveness
 		throw new Error(
-			`Symbol fetch circuit breaker: gave up after ${MAX_FETCH_RETRIES} retries`,
+			`Symbol fetch circuit breaker: gave up after ${maxFetchRetries} retries`,
 		);
 	}
 

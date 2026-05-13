@@ -1,4 +1,8 @@
-import { RequestProxied, type StrictLogger } from "@ckir/corelib";
+import {
+	ConfigManager,
+	RequestProxied,
+	type StrictLogger,
+} from "@ckir/corelib";
 import { ApiNasdaqUnlimited, type NasdaqResult } from "./ApiNasdaqUnlimited";
 import { MarketSymbols } from "./MarketSymbols";
 
@@ -38,7 +42,11 @@ export class ApiNasdaqQuotes {
 		const baseLogger = options.logger || (globalThis as any).logger;
 		this.logger = baseLogger?.child({ section: "ApiNasdaqQuotes" });
 		this.concurrencyLimit =
-			options.concurrencyLimit ?? DEFAULT_CONCURRENCY_LIMIT;
+			options.concurrencyLimit ??
+			(ConfigManager.get("markets.nasdaq.quotes.concurrencyLimit") as
+				| number
+				| undefined) ??
+			DEFAULT_CONCURRENCY_LIMIT;
 
 		if (options.marketSymbols) {
 			this.marketSymbols = options.marketSymbols;

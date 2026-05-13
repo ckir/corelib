@@ -57,6 +57,9 @@ vi.mock("@ckir/corelib", async () => {
 	return {
 		default: mockLogger,
 		logger: mockLogger,
+		ConfigManager: {
+			get: vi.fn().mockReturnValue(undefined),
+		},
 	};
 });
 

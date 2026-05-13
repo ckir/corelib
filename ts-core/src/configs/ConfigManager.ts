@@ -22,6 +22,7 @@ import {
 	getRequire,
 	readTextFileSync,
 } from "../utils";
+import builtinDefaults from "./ConfigManager.json";
 import { decryptConfig } from "./ConfigUtils";
 
 /**
@@ -186,9 +187,14 @@ export class ConfigManager extends EventEmitter {
 	}
 
 	/**
-	 * Loads the base ConfigManager.json from the local directory
+	 * Loads the base ConfigManager.json from the local directory.
+	 * Always seeds from the bundled JSON (available in all runtimes, including edge).
+	 * If the JSON file is also found on disk, it replaces the bundled defaults.
 	 */
 	private loadDefaults(): void {
+		this._config = {
+			...(builtinDefaults as unknown as Record<string, unknown>),
+		};
 		if (existsSync(this._defaultsPath)) {
 			try {
 				const raw = readTextFileSync(this._defaultsPath);

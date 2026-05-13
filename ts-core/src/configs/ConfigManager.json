@@ -1,0 +1,30 @@
+{
+  "markets": {
+    "chromeVersion": "146",
+    "nasdaq": {
+      "statusEndpoint": "https://api.nasdaq.com/api/market-info",
+      "monitor": {
+        "liveIntervalSec": 10,
+        "closedIntervalSec": 3600,
+        "warnIntervalSec": 60
+      },
+      "symbols": {
+        "nasdaqListedUrl": "https://www.nasdaqtrader.com/dynamic/symdir/nasdaqlisted.txt",
+        "otherListedUrl": "https://www.nasdaqtrader.com/dynamic/symdir/otherlisted.txt",
+        "initialBackoffMs": 1000,
+        "maxRetryBackoffMs": 3600000,
+        "maxFetchRetries": 10
+      },
+      "quotes": {
+        "concurrencyLimit": 5
+      }
+    }
+  },
+  "retrieve": {
+    "timeout": 50000,
+    "retry": {
+      "limit": 5,
+      "backoffLimit": 3000
+    }
+  }
+}

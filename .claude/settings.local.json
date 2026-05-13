@@ -13,7 +13,12 @@
       "Bash(pnpm build-all *)",
       "Bash(pnpm lint-all *)",
       "Bash(pnpm format-all *)",
-      "Bash(pnpm docs-all *)"
+      "Bash(pnpm docs-all *)",
+      "Read(//tmp/**)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\('scripts',{}\\), indent=2\\)\\)\")",
+      "Bash(npx vitest *)",
+      "Bash(tee /tmp/vitest_out.txt)",
+      "Bash(echo \"EXIT: $?\")"
     ]
   }
 }

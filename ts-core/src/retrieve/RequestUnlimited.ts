@@ -7,6 +7,7 @@
 import { deepmergeCustom } from "deepmerge-ts";
 import ky, { HTTPError, type Options as KyOptions } from "ky";
 import { type ErrorObject, serializeError } from "serialize-error";
+import { ConfigManager } from "../configs";
 import logger from "../loggers";
 import {
 	type SerializedResponse,
@@ -105,17 +106,39 @@ export async function endPoint<T = unknown>(
 	// 2. Separate headers and hooks from options to handle them manually
 	const { headers, hooks, ...remainingOptions } = options;
 
-	// 3. Construct final options.
+	// 3. Read config-driven overrides (fall back to hardcoded defaults when ConfigManager is not initialized)
+	const cfgTimeout =
+		(ConfigManager.get("retrieve.timeout") as number | undefined) ?? 50000;
+	const cfgRetryLimit =
+		(ConfigManager.get("retrieve.retry.limit") as number | undefined) ?? 5;
+	const cfgBackoffLimit =
+		(ConfigManager.get("retrieve.retry.backoffLimit") as number | undefined) ??
+		3000;
+	const defaultRetry = DEFAULT_REQUEST_OPTIONS.retry as Record<string, unknown>;
+
+	// 4. Construct final options. Config overrides win over defaults; caller options win over config.
 	// Manually concat hooks to ensure default 'beforeRetry' is preserved.
-	const kyOptions = customDeepmerge(DEFAULT_REQUEST_OPTIONS, remainingOptions, {
-		headers: { ...normalizedDefaultHeaders, ...normalizedInputHeaders },
-		hooks: {
-			beforeRetry: [
-				...(DEFAULT_REQUEST_OPTIONS.hooks?.beforeRetry || []),
-				...(hooks?.beforeRetry || []),
-			],
+	const kyOptions = customDeepmerge(
+		DEFAULT_REQUEST_OPTIONS,
+		{
+			timeout: cfgTimeout,
+			retry: {
+				...defaultRetry,
+				limit: cfgRetryLimit,
+				backoffLimit: cfgBackoffLimit,
+			},
 		},
-	}) as KyOptions;
+		remainingOptions,
+		{
+			headers: { ...normalizedDefaultHeaders, ...normalizedInputHeaders },
+			hooks: {
+				beforeRetry: [
+					...(DEFAULT_REQUEST_OPTIONS.hooks?.beforeRetry || []),
+					...(hooks?.beforeRetry || []),
+				],
+			},
+		},
+	) as KyOptions;
 
 	try {
 		const responseObject = await ky(url, kyOptions);

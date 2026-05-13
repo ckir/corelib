@@ -26,8 +26,6 @@ export type NasdaqResult<T = unknown> =
 	| { status: "success"; value: T; details?: unknown }
 	| { status: "error"; reason: { message: string; [key: string]: unknown } };
 
-const CHROME_VERSION = "145";
-
 function apiErrorToString(status: NasdaqStatus): string {
 	if (!status.bCodeMessage || status.bCodeMessage.length === 0) {
 		return status.developerMessage || "Unknown Nasdaq API Error";
@@ -54,6 +52,8 @@ function log(
  * Generates spoofed headers for Nasdaq API requests.
  */
 export function getNasdaqHeaders(url: string): Record<string, string> {
+	const chromeVersion =
+		(ConfigManager.get("markets.chromeVersion") as string | undefined) ?? "145";
 	const isCharting = url.includes("charting");
 	const headers: Record<string, string> = isCharting
 		? {
@@ -62,24 +62,24 @@ export function getNasdaqHeaders(url: string): Record<string, string> {
 				"cache-control": "no-cache",
 				pragma: "no-cache",
 				priority: "u=1, i",
-				"sec-ch-ua": `"Google Chrome";v="${CHROME_VERSION}", "Not-A.Brand";v="8", "Chromium";v="${CHROME_VERSION}"`,
+				"sec-ch-ua": `"Google Chrome";v="${chromeVersion}", "Not-A.Brand";v="8", "Chromium";v="${chromeVersion}"`,
 				"sec-ch-ua-mobile": "?0",
 				"sec-ch-ua-platform": '"Windows"',
 				"sec-fetch-dest": "empty",
 				"sec-fetch-mode": "cors",
 				"sec-fetch-site": "same-origin",
 				referer: "https://charting.nasdaq.com/dynamic/chart.html",
-				"user-agent": `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_VERSION}.0.0.0 Safari/537.36`,
+				"user-agent": `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion}.0.0.0 Safari/537.36`,
 			}
 		: {
 				accept: "application/json, text/plain, */*",
 				"accept-language": "en-US,en;q=0.9",
 				origin: "https://www.nasdaq.com",
 				referer: "https://www.nasdaq.com/",
-				"sec-ch-ua": `"Google Chrome";v="${CHROME_VERSION}", "Not-A.Brand";v="8", "Chromium";v="${CHROME_VERSION}"`,
+				"sec-ch-ua": `"Google Chrome";v="${chromeVersion}", "Not-A.Brand";v="8", "Chromium";v="${chromeVersion}"`,
 				"sec-ch-ua-mobile": "?0",
 				"sec-ch-ua-platform": '"Windows"',
-				"user-agent": `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_VERSION}.0.0.0 Safari/537.36`,
+				"user-agent": `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion}.0.0.0 Safari/537.36`,
 			};
 
 	const configHeaders = ConfigManager.get("markets.nasdaq.headers") as

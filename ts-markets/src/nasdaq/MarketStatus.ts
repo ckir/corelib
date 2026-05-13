@@ -4,7 +4,7 @@
 // Uses Luxon for date/time handling and integrates with ApiNasdaqUnlimited.
 // =============================================
 
-import { logger } from "@ckir/corelib";
+import { ConfigManager, logger } from "@ckir/corelib";
 import { DateTime } from "luxon";
 import { serializeError } from "serialize-error";
 import { ApiNasdaqUnlimited, type NasdaqResult } from "./ApiNasdaqUnlimited";
@@ -41,7 +41,7 @@ export interface NasdaqMarketInfo {
 	isBusinessDay: boolean;
 }
 
-const ENDPOINT = "https://api.nasdaq.com/api/market-info";
+const DEFAULT_ENDPOINT = "https://api.nasdaq.com/api/market-info";
 const ZONE = "America/New_York";
 
 const marketStatusLogger = logger.child({ section: "MarketStatus" });
@@ -113,9 +113,13 @@ function getSleepDuration(data: NasdaqMarketInfo): number {
  * Guaranteed to return a NasdaqResult without "falling through" to undefined.
  */
 async function getStatus(): Promise<NasdaqResult<NasdaqMarketInfo>> {
+	const endpoint =
+		(ConfigManager.get("markets.nasdaq.statusEndpoint") as
+			| string
+			| undefined) ?? DEFAULT_ENDPOINT;
 	try {
 		const result =
-			await ApiNasdaqUnlimited.endPoint<NasdaqMarketInfo>(ENDPOINT);
+			await ApiNasdaqUnlimited.endPoint<NasdaqMarketInfo>(endpoint);
 
 		// Path 1: API returned an error status
 		if (result.status === "error") {

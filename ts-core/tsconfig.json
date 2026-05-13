@@ -1,7 +1,8 @@
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "types": ["bun-types", "deno", "node"]
+    "types": ["bun-types", "deno", "node"],
+    "resolveJsonModule": true
   },
   "include": ["src", "tsup.config.ts", "vitest.config.ts"]
 }

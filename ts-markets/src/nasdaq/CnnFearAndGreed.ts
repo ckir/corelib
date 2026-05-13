@@ -45,22 +45,22 @@ export type CnnFilterInput =
 const ALL_KEYS = Object.values(
 	CnnFearAndGreedFilter,
 ) as CnnFearAndGreedFilter[];
-const CHROME_VERSION = "146";
-
 function getDefaultHeaders(): Record<string, string> {
+	const chromeVersion =
+		(ConfigManager.get("markets.chromeVersion") as string | undefined) ?? "146";
 	return {
 		accept: "*/*",
 		"accept-language": "en,el;q=0.9",
 		origin: "https://edition.cnn.com",
 		priority: "u=1, i",
 		referer: "https://edition.cnn.com/",
-		"sec-ch-ua": `"Chromium";v="${CHROME_VERSION}", "Not-A.Brand";v="24", "Google Chrome";v="${CHROME_VERSION}"`,
+		"sec-ch-ua": `"Chromium";v="${chromeVersion}", "Not-A.Brand";v="24", "Google Chrome";v="${chromeVersion}"`,
 		"sec-ch-ua-mobile": "?0",
 		"sec-ch-ua-platform": '"Windows"',
 		"sec-fetch-dest": "empty",
 		"sec-fetch-mode": "cors",
 		"sec-fetch-site": "cross-site",
-		"user-agent": `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_VERSION}.0.0.0 Safari/537.36`,
+		"user-agent": `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion}.0.0.0 Safari/537.36`,
 	};
 }
 
