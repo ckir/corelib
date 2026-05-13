@@ -6,7 +6,11 @@
 // =============================================
 
 import { createRequire } from "node:module";
+import { serializeError } from "serialize-error";
+import logger from "../loggers";
 import { detectRuntime } from "../utils/runtime";
+
+const coreLogger = logger.child({ section: "Core" });
 
 const runtime = detectRuntime();
 // CJS require returns an untyped module — any on the return is intentional
@@ -82,8 +86,8 @@ async function loadFFI() {
 
 	if (!libPath) {
 		// Instead of throwing, we return null so the package can still be used without FFI features
-		console.warn(
-			`[CORE] Could not find ${binaryName}. FFI features will be disabled.`,
+		coreLogger.warn(
+			`Could not find ${binaryName}. FFI features will be disabled.`,
 		);
 		return null;
 	}
@@ -103,7 +107,9 @@ async function loadFFI() {
 		}
 		return ffi;
 	} catch (error) {
-		console.error(`[CORE] Failed to load FFI from ${libPath}:`, error);
+		coreLogger.error(`Failed to load FFI from ${libPath}`, {
+			error: serializeError(error),
+		});
 		return null;
 	}
 }
@@ -147,9 +153,9 @@ export const Core = {
 	getVersion,
 	logAndDouble,
 	run: (task?: string, options?: Record<string, unknown>) => {
-		console.log(`[CORE] Running on ${runtime}. FFI: ${isFfiAvailable()}`);
+		coreLogger.info(`Running on ${runtime}. FFI: ${isFfiAvailable()}`);
 		if (task) {
-			console.log(`[CORE] Task: ${task}`, options || "");
+			coreLogger.info(`Task: ${task}`, options);
 		}
 	},
 };

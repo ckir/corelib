@@ -8,7 +8,10 @@
 // =============================================
 
 import { createRequire } from "node:module";
+import logger from "../loggers";
 import { detectRuntime } from "./runtime";
+
+const utilsLogger = logger.child({ section: "Utils" });
 
 let _require: any;
 export const getRequire = () => {
@@ -36,7 +39,7 @@ export { detectRuntime, type Runtime } from "./runtime";
 export { getSysInfo, SysInfo } from "./SysInfo";
 
 export const Utils = {
-	run: () => console.log(`[UTILS] Running on ${detectRuntime()}`),
+	run: () => utilsLogger.info(`Running on ${detectRuntime()}`),
 };
 
 export const getEnv = (key: string): string | undefined => {

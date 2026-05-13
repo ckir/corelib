@@ -41,13 +41,11 @@ export const createRouter = (logger?: StrictLogger): Hono<AppEnv> => {
 			c.env.CORELIB_TURSO_TOKEN || process.env.CORELIB_TURSO_TOKEN || "";
 		c.env.PLATFORM = c.env.PLATFORM || "aws-lambda";
 
-		// Optional: Console log for debugging local SAM runs
 		if (process.env.MODE === "development") {
-			console.log("DEBUG ENV URL:", c.env.CORELIB_TURSO_URL);
-			console.log(
-				"DEBUG ENV TOKEN:",
-				c.env.CORELIB_TURSO_TOKEN ? "present" : "missing",
-			);
+			logger?.debug("DEV ENV", {
+				url: c.env.CORELIB_TURSO_URL,
+				token: c.env.CORELIB_TURSO_TOKEN ? "present" : "missing",
+			});
 		}
 
 		await next();

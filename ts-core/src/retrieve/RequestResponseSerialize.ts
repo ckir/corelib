@@ -2,6 +2,7 @@
 // FILE: ts-core/src/retrieve/RequestResponseSerialize.ts
 // PURPOSE: Utility for serializing Fetch API Responses into a plain, transferable structure.
 // Handles body parsing (JSON or text fallback) and error logging via global logger.
+import { serializeError } from "serialize-error";
 import logger from "../loggers";
 
 const requestResponseSerializeLogger = logger.child({
@@ -65,7 +66,7 @@ export async function serializeResponse<T = unknown>(
 			status: response.status,
 			url: response.url,
 			bodyUsed: response.bodyUsed,
-			error,
+			error: serializeError(error),
 		});
 		body = "[Error reading body]";
 	}

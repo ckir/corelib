@@ -48,7 +48,9 @@ export class NasdaqPolling extends EventEmitter {
 	 * @param value - New interval in milliseconds.
 	 */
 	public setApiInterval(value: number): void {
-		nasdaqPollingLogger.info(`Setting API interval from ${this.apiInterval}ms to ${value}ms`);
+		nasdaqPollingLogger.info(
+			`Setting API interval from ${this.apiInterval}ms to ${value}ms`,
+		);
 		this.apiInterval = value;
 		if (this.intervalId !== null) {
 			this.stop();
@@ -64,7 +66,9 @@ export class NasdaqPolling extends EventEmitter {
 		for (const symbol of symbols) {
 			this.subscriptions.add(symbol.toUpperCase());
 		}
-		nasdaqPollingLogger.info(`Subscribed to ${this.subscriptions.size} symbols`);
+		nasdaqPollingLogger.info(
+			`Subscribed to ${this.subscriptions.size} symbols`,
+		);
 	}
 
 	/**
@@ -75,7 +79,9 @@ export class NasdaqPolling extends EventEmitter {
 		for (const symbol of symbols) {
 			this.subscriptions.delete(symbol.toUpperCase());
 		}
-		nasdaqPollingLogger.info(`Unsubscribed from ${this.subscriptions.size} symbols`);
+		nasdaqPollingLogger.info(
+			`Unsubscribed from ${this.subscriptions.size} symbols`,
+		);
 	}
 
 	/**
@@ -88,7 +94,9 @@ export class NasdaqPolling extends EventEmitter {
 			return;
 		}
 
-		nasdaqPollingLogger.info(`Starting Nasdaq polling with interval ${this.apiInterval}ms and ${this.proxies.length} proxies.`);
+		nasdaqPollingLogger.info(
+			`Starting Nasdaq polling with interval ${this.apiInterval}ms and ${this.proxies.length} proxies.`,
+		);
 		this.emit("status", "started");
 
 		// Initial poll execution

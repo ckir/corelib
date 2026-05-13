@@ -1,5 +1,6 @@
 import { logger } from "@ckir/corelib";
 import { serve } from "@hono/node-server";
+import { serializeError } from "serialize-error";
 import { createRouter } from "../../core/router";
 
 const serverLogger = logger.child({ section: "Server" });
@@ -18,25 +19,27 @@ app.use("*", async (c, next) => {
 const port = Number(process.env.PORT) || 3000;
 const hostname = "0.0.0.0";
 
-console.log(`[BOOT] Initializing server on ${hostname}:${port}...`);
+serverLogger.info(`Initializing server on ${hostname}:${port}`);
 
 try {
 	serve(
 		{
 			fetch: (req) => {
-				console.log(`[SERVE] Incoming: ${req.method} ${req.url}`);
+				serverLogger.info(`Incoming: ${req.method} ${req.url}`);
 				return app.fetch(req, process.env);
 			},
 			hostname,
 			port,
 		},
 		(info) => {
-			console.log(
-				`[BOOT] ✅ Server is successfully listening on http://${info.address}:${info.port}`,
+			serverLogger.info(
+				`Server listening on http://${info.address}:${info.port}`,
 			);
 		},
 	);
 } catch (err) {
-	console.error("[BOOT] ❌ Fatal error during serve():", err);
+	serverLogger.error("Fatal error during serve()", {
+		error: serializeError(err),
+	});
 	process.exit(1);
 }

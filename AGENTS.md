@@ -9,7 +9,11 @@ This document defines the foundational architectural rules and development stand
     - `ts-core`: Base logic, FFI, logging, and resilient HTTP.
     - `ts-cloud` / `ts-markets`: Extension packages that depend on `ts-core`.
     - `rust`: Private Rust core exposed via N-API (FFI).
-- **Strict Logger API**: The logger must strictly follow the `(msg: string, extras?: object)` signature. Never revert to unstructured logging.
+- **Strict Logger API**: The logger must strictly follow the `(msg: string, extras?: object)` signature. Rules:
+    - Simple scalar values (strings, numbers, booleans) may be interpolated directly into the message string.
+    - Structured objects — serialized errors, payloads, metadata — must go into `extras` as named keys (e.g., `{ error: serializeError(e), payload: data }`). Never stringify them into the message.
+    - Raw `Error` objects placed in `extras` must first be serialized via `serializeError()`.
+    - `console.log/warn/error/info/debug` must never be used in application code. Always use the module's child logger.
 - **Resilient Retrieval**: Use `RequestUnlimited` (wrapper around `ky`) for all external HTTP calls to ensure automatic retries and consistent error serialization.
 - **Transparent Proxy Pattern**: Edge proxy endpoints (in `ts-cloud`) must be transparent for single-URL requests, returning the target response body and status directly. Bulk requests should continue to return arrays of `RequestResult` objects.
 

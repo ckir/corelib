@@ -1,5 +1,9 @@
+import { serializeError } from "serialize-error";
+import logger from "../../loggers/index.js";
 import { detectRuntime } from "../../utils/runtime.js";
 import type { DbDriver } from "./driver.js";
+
+const transactionLogger = logger.child({ section: "TransactionContext" });
 
 /**
  * High-performance polyfill/loader for AsyncLocalStorage across runtimes.
@@ -28,7 +32,9 @@ async function loadAsyncLocalStorage<T>(): Promise<
 		const { AsyncLocalStorage } = await import("node:async_hooks");
 		return new AsyncLocalStorage<T>();
 	} catch (e) {
-		console.error("[TransactionContext] Failed to load AsyncLocalStorage", e);
+		transactionLogger.error("Failed to load AsyncLocalStorage", {
+			error: serializeError(e),
+		});
 		return undefined;
 	}
 }

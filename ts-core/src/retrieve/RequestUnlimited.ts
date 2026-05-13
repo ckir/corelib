@@ -145,7 +145,9 @@ export async function endPoint<T = unknown>(
 		}
 
 		const serializedError = serializeError(error);
-		requestUnlimitedLogger.error("Internal/Network Error", serializedError);
+		requestUnlimitedLogger.error("Internal/Network Error", {
+			error: serializedError,
+		});
 
 		return {
 			status: "error",
