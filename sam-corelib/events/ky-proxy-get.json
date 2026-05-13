@@ -1,0 +1,13 @@
+{
+  "queryStringParameters": {
+    "url": "https://jsonplaceholder.typicode.com/posts/1"
+  },
+  "resource": "/{proxy+}",
+  "path": "/api/v1/ky",
+  "httpMethod": "GET",
+  "requestContext": {
+    "resourcePath": "/{proxy+}",
+    "httpMethod": "GET",
+    "path": "/api/v1/ky"
+  }
+}

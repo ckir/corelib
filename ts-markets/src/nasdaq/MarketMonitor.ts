@@ -87,9 +87,9 @@ export class MarketMonitor extends EventEmitter {
 		if (this.isRunning) return;
 		this.isRunning = true;
 		this.failureCount = 0;
-		marketMonitorLogger.info("Starting market status monitor", {
-			proxyCount: this.proxies.length,
-		});
+		marketMonitorLogger.info(
+			`Starting market status monitor. Using ${this.proxies.length} proxies.`,
+		);
 		this.poll(); // kick off the first poll immediately
 	}
 

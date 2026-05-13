@@ -67,9 +67,7 @@ export class NasdaqPolling extends EventEmitter {
 		for (const symbol of symbols) {
 			this.subscriptions.add(symbol.toUpperCase());
 		}
-		nasdaqPollingLogger.info("Subscribed to symbols", {
-			currentCount: this.subscriptions.size,
-		});
+		nasdaqPollingLogger.info(`Subscribed to ${this.subscriptions.size} symbols`);
 	}
 
 	/**

@@ -1,0 +1,14 @@
+{
+  "body": "{\"requests\":[{\"symbol\":\"AAPL\",\"options\":{\"period1\":\"2023-01-01\",\"period2\":\"2023-01-10\",\"interval\":\"1d\"}},{\"symbol\":\"MSFT\",\"options\":{\"period1\":\"2023-01-01\",\"period2\":\"2023-01-10\",\"interval\":\"1d\"}}]}",
+  "resource": "/{proxy+}",
+  "path": "/api/v1/markets/nasdaq/historical",
+  "httpMethod": "POST",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "requestContext": {
+    "resourcePath": "/{proxy+}",
+    "httpMethod": "POST",
+    "path": "/api/v1/markets/nasdaq/historical"
+  }
+}

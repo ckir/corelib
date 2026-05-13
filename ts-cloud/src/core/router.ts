@@ -101,6 +101,26 @@ export const createRouter = (logger?: StrictLogger): Hono<AppEnv> => {
 	apiV1.route("/markets/nasdaq/historical", historicalRouter);
 
 	/**
+	 * Diagnostic Endpoints
+	 * Grouped under /tests/ for system verification.
+	 */
+	const tests = new Hono<AppEnv>();
+
+	/**
+	 * GET /tests/logger
+	 * Verifies that the injected logger is working correctly.
+	 */
+	tests.get("/logger", (c) => {
+		const logger = c.get("logger");
+		logger?.info("Test Log: Information level", { test: true, level: "info" });
+		logger?.warn("Test Log: Warning level", { test: true, level: "warn" });
+		logger?.error("Test Log: Error level", { test: true, level: "error" });
+		return c.json({ status: "success", message: "Logs emitted" });
+	});
+
+	apiV1.route("/tests", tests);
+
+	/**
 	 * SQL Query (Turso) Endpoint
 	 * Executes a parametrized query using createDatabase from @ckir/corelib.
 	 */
