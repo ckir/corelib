@@ -7,7 +7,13 @@
       "Bash(pnpm test-all *)",
       "Bash(pnpm test *)",
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\user\\\\Development\\\\Node\\\\corelib\\\\ts-cloud\" -Recurse -Directory)",
-      "Bash(Select-Object -First 20)"
+      "Bash(Select-Object -First 20)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\user\\\\Development\\\\Node\\\\corelib\" -Directory)",
+      "Bash(Select-Object Name)",
+      "Bash(pnpm build-all *)",
+      "Bash(pnpm lint-all *)",
+      "Bash(pnpm format-all *)",
+      "Bash(pnpm docs-all *)"
     ]
   }
 }

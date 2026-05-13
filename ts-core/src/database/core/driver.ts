@@ -5,7 +5,7 @@ import type { QueryParams, QueryResponse } from "./types.js";
  * Interface for prepared statements in the driver.
  */
 export interface PreparedDriverStatement {
-	execute<T = any>(
+	execute<T = unknown>(
 		params?: QueryParams,
 	): Promise<DatabaseResult<QueryResponse<T>>>;
 	close(): Promise<void>;
@@ -17,7 +17,7 @@ export interface PreparedDriverStatement {
 export interface DbDriver {
 	connect(): Promise<void>;
 	disconnect(): Promise<void>;
-	query<T = any>(
+	query<T = unknown>(
 		sql: string,
 		params?: QueryParams,
 	): Promise<DatabaseResult<QueryResponse<T>>>;
@@ -25,7 +25,7 @@ export interface DbDriver {
 	beginTransaction(): Promise<void>;
 	commitTransaction(): Promise<void>;
 	rollbackTransaction(): Promise<void>;
-	stream<T = any>(
+	stream<T = unknown>(
 		sql: string,
 		params: QueryParams,
 		onRow: (row: T) => void,

@@ -105,34 +105,32 @@ async function nasdaqEndPoint<T = unknown>(
 	}
 
 	const val = result.value;
-	const nasdaqBody = val.body as Record<string, any> | null;
+	const nasdaqBody = val.body as Record<string, unknown> | null;
 
-	if (
-		nasdaqBody &&
-		typeof nasdaqBody === "object" &&
-		"status" in nasdaqBody &&
-		nasdaqBody.status?.rCode !== 200
-	) {
-		log("warn", "Request failed logic check", {
-			url: urlStr,
-			status: nasdaqBody.status,
-		});
+	if (nasdaqBody && typeof nasdaqBody === "object" && "status" in nasdaqBody) {
+		const statusObj = nasdaqBody.status as Record<string, unknown> | undefined;
+		if (statusObj?.rCode !== 200) {
+			log("warn", "Request failed logic check", {
+				url: urlStr,
+				status: nasdaqBody.status,
+			});
 
-		const errorMessage = nasdaqBody.status
-			? apiErrorToString(nasdaqBody.status as NasdaqStatus)
-			: "Malformed Nasdaq Response";
+			const errorMessage = statusObj
+				? apiErrorToString(statusObj as unknown as NasdaqStatus)
+				: "Malformed Nasdaq Response";
 
-		return {
-			status: "error",
-			reason: { message: errorMessage },
-		};
+			return {
+				status: "error",
+				reason: { message: errorMessage },
+			};
+		}
 	}
 
 	const { body, ...details } = val;
 
 	return {
 		status: "success",
-		value: (body as any)?.data as T,
+		value: (body as Record<string, unknown>)?.data as T,
 		details,
 	};
 }

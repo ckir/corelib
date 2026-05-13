@@ -11,7 +11,9 @@
 import { createRequire } from "node:module";
 import { detectRuntime } from "./runtime";
 
-let _require: any;
+// CJS require returns an untyped module — any on the return is intentional
+type RequireFn = (id: string) => any;
+let _require: RequireFn | undefined;
 const getRequire = () => {
 	if (!_require) {
 		const runtime = detectRuntime();
@@ -60,7 +62,7 @@ function redactEnv(
 function fromNodeLike(runtime: "node" | "bun") {
 	const os = getRequire()("node:os");
 
-	const mem: any =
+	const mem: ReturnType<typeof process.memoryUsage> | Record<string, never> =
 		typeof process.memoryUsage === "function" ? process.memoryUsage() : {};
 
 	return {

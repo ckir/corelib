@@ -29,10 +29,10 @@ export interface BaseDbConfig {
 }
 
 /** Parameters for SQL queries (positional or named). */
-export type QueryParams = any[] | Record<string, any>;
+export type QueryParams = unknown[] | Record<string, unknown>;
 
 /** Standard data structure for successful query results. */
-export interface QueryResponse<T = any> {
+export interface QueryResponse<T = unknown> {
 	rows: T[];
 	affectedRows?: number;
 	/** Last insert ID (optional for Postgres; use RETURNING clauses). */
@@ -43,7 +43,7 @@ export interface QueryResponse<T = any> {
  * Common interface for high-level Database implementations (SqliteDb, PostgresDb).
  */
 export interface Database {
-	query<T = any>(
+	query<T = unknown>(
 		sql: string,
 		params?: QueryParams,
 	): Promise<import("./result").DatabaseResult<QueryResponse<T>>>;

@@ -94,15 +94,15 @@ function buildUrl(date?: string | "Historical"): string {
 }
 
 function getFilteredValue(
-	body: Record<string, any>,
+	body: Record<string, unknown>,
 	filter: CnnFilterInput,
-): any {
+): unknown {
 	if (filter === "full") return body;
 	const keys = Array.isArray(filter) ? filter : [filter];
 	if (keys.length === 1 && !Array.isArray(filter)) {
 		return body[keys[0]];
 	}
-	const result: Record<string, any> = {};
+	const result: Record<string, unknown> = {};
 	keys.forEach((k) => {
 		if (k in body) result[k] = body[k];
 	});
@@ -110,7 +110,7 @@ function getFilteredValue(
 }
 
 function validateKeys(
-	body: Record<string, any>,
+	body: Record<string, unknown>,
 	filter: CnnFilterInput,
 ): string | null {
 	const keysToCheck =
@@ -131,7 +131,7 @@ async function getFearAndGreed(
 	date?: string | "Historical",
 	filter: CnnFilterInput = CnnFearAndGreedFilter.FearAndGreed,
 	options: Options = {},
-): Promise<CnnResult<any>> {
+): Promise<CnnResult<unknown>> {
 	const url = buildUrl(date);
 	const headers = { ...getHeaders(), ...(options.headers ?? {}) };
 	const result: RequestResult = await endPoint(url, { ...options, headers });
@@ -145,7 +145,7 @@ async function getFearAndGreed(
 	}
 
 	const val = result.value;
-	const body = val.body as Record<string, any> | null;
+	const body = val.body as Record<string, unknown> | null;
 
 	if (!body || typeof body !== "object") {
 		const msg = "Malformed CNN Response";

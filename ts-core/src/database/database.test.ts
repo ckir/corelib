@@ -89,7 +89,7 @@ describe("Database Integration Tests (Mocked Drivers)", () => {
 				mode: "stateful",
 				logger: mockLogger,
 			});
-			const result = await db.query("SELECT 1 as num");
+			const result = await db.query<{ num: number }>("SELECT 1 as num");
 			expect(result.status).toBe("success");
 			if (result.status === "success") {
 				expect(result.value.rows[0].num).toBe(1);
@@ -105,7 +105,7 @@ describe("Database Integration Tests (Mocked Drivers)", () => {
 				mode: "stateful",
 				logger: mockLogger,
 			});
-			const result = await db.query("SELECT 1 as num");
+			const result = await db.query<{ num: number }>("SELECT 1 as num");
 			expect(result.status).toBe("success");
 			if (result.status === "success") {
 				expect(result.value.rows[0].num).toBe(1);
@@ -210,11 +210,51 @@ describe("Database Integration Tests (Mocked Drivers)", () => {
 				mode: "stateful",
 				logger: mockLogger,
 			});
-			const result = await db.query("INSERT INTO test RETURNING id");
+			const result = await db.query<{ id: number }>(
+				"INSERT INTO test RETURNING id",
+			);
 			expect(result.status).toBe("success");
 			if (result.status === "success") {
 				expect(result.value.rows[0].id).toBe(1);
 			}
+		});
+
+		it("should fail gracefully when savepoint creation fails in nested transaction", async () => {
+			const db = await createDatabase({
+				dialect: "postgres",
+				url: "dummy",
+				mode: "stateful",
+				logger: mockLogger,
+			});
+			// Override query mock so SAVEPOINT returns an error
+			const driver = (
+				db as unknown as { driver: { query: ReturnType<typeof vi.fn> } }
+			).driver;
+			const originalQuery = driver.query;
+			driver.query = vi.fn().mockImplementation(async (sql: string) => {
+				if (sql.startsWith("SAVEPOINT")) {
+					return {
+						status: "error",
+						reason: { message: "savepoint not supported" },
+					};
+				}
+				return (originalQuery as unknown as (sql: string) => Promise<unknown>)(
+					sql,
+				);
+			});
+
+			// Outer transaction must begin first so getActiveTransaction() returns a driver
+			const outerResult = await db.transaction(async () => {
+				// Inner (nested) transaction — savepoint creation will fail
+				const innerResult = await db.transaction(async () => {
+					return wrapSuccess("inner");
+				});
+				return innerResult;
+			});
+
+			// The outer succeeds (begins a real transaction), the inner fails due to savepoint
+			expect(outerResult.status).toBe("error");
+			expect(mockLogger.error).toHaveBeenCalled();
 		});
 	});
 });

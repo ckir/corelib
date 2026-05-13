@@ -40,7 +40,7 @@ const leafMerger = deepmergeCustom({
  */
 export class ConfigManager extends EventEmitter {
 	private static instance: ConfigManager;
-	private _config: any = {};
+	private _config: Record<string, unknown> = {};
 	private _defaultsPath: string;
 	private static _logger = logger.child({ section: "ConfigManager" });
 
@@ -78,21 +78,21 @@ export class ConfigManager extends EventEmitter {
 	/**
 	 * Retrieves a nested configuration value by string path (e.g., "db.mysql.port").
 	 * @param {string} path - The dot-notation path to the configuration value.
-	 * @returns {any} The value at the specified path, or undefined if not found.
+	 * @returns The value at the specified path, or undefined if not found.
 	 */
-	public get(path: string): any {
+	public get(path: string): unknown {
 		const keys = path.split(".");
-		let current = this._config;
+		let current: unknown = this._config;
 
 		for (const key of keys) {
 			if (
 				current === null ||
 				typeof current !== "object" ||
-				!(key in current)
+				!(key in (current as Record<string, unknown>))
 			) {
 				return undefined;
 			}
-			current = current[key];
+			current = (current as Record<string, unknown>)[key];
 		}
 
 		return current;
@@ -101,7 +101,7 @@ export class ConfigManager extends EventEmitter {
 	/**
 	 * Static helper to retrieve a configuration value from the singleton instance.
 	 */
-	public static get(path: string): any {
+	public static get(path: string): unknown {
 		return ConfigManager.getInstance().get(path);
 	}
 
@@ -147,9 +147,8 @@ export class ConfigManager extends EventEmitter {
 
 	/**
 	 * Retrieves the current active configuration object.
-	 * @returns {any} The current configuration state.
 	 */
-	public getConfig(): any {
+	public getConfig(): Record<string, unknown> {
 		return this._config;
 	}
 
@@ -193,7 +192,7 @@ export class ConfigManager extends EventEmitter {
 		if (existsSync(this._defaultsPath)) {
 			try {
 				const raw = readTextFileSync(this._defaultsPath);
-				this._config = JSON.parse(raw);
+				this._config = JSON.parse(raw) as Record<string, unknown>;
 			} catch (e) {
 				this.logError("Failed to load defaults", e);
 			}
@@ -204,7 +203,9 @@ export class ConfigManager extends EventEmitter {
 	 * Fetches and parses configuration from a URL or Local Path.
 	 * Supports .enc decryption and dynamic confbox parsing by extension.
 	 */
-	private async fetchExternalConfig(source: string): Promise<any> {
+	private async fetchExternalConfig(
+		source: string,
+	): Promise<Record<string, unknown>> {
 		let content: string;
 
 		if (source.startsWith("http")) {
@@ -221,7 +222,7 @@ export class ConfigManager extends EventEmitter {
 		const lowerSource = source.toLowerCase();
 
 		if (lowerSource.endsWith(".enc")) {
-			return await decryptConfig(content);
+			return this.validateConfigObject(await decryptConfig(content), source);
 		}
 
 		// Tree-shakable dynamic import for confbox
@@ -229,30 +230,46 @@ export class ConfigManager extends EventEmitter {
 
 		// Detect filetype and parse
 		if (lowerSource.endsWith(".yaml") || lowerSource.endsWith(".yml")) {
-			return confbox.parseYAML(content);
+			return this.validateConfigObject(confbox.parseYAML(content), source);
 		}
 		if (lowerSource.endsWith(".toml")) {
-			return confbox.parseTOML(content);
+			return this.validateConfigObject(confbox.parseTOML(content), source);
 		}
 		if (lowerSource.endsWith(".json5")) {
-			return confbox.parseJSON5(content);
+			return this.validateConfigObject(confbox.parseJSON5(content), source);
 		}
 		if (lowerSource.endsWith(".jsonc")) {
-			return confbox.parseJSONC(content);
+			return this.validateConfigObject(confbox.parseJSONC(content), source);
 		}
 		if (lowerSource.endsWith(".ini")) {
-			return confbox.parseINI(content);
+			return this.validateConfigObject(confbox.parseINI(content), source);
 		}
 
 		// Fallback to standard JSON
-		return confbox.parseJSON(content);
+		return this.validateConfigObject(confbox.parseJSON(content), source);
+	}
+
+	private validateConfigObject(
+		parsed: unknown,
+		source: string,
+	): Record<string, unknown> {
+		if (
+			parsed === null ||
+			typeof parsed !== "object" ||
+			Array.isArray(parsed)
+		) {
+			throw new Error(
+				`Config from "${source}" must be a JSON object, got ${Array.isArray(parsed) ? "array" : typeof parsed}`,
+			);
+		}
+		return parsed as Record<string, unknown>;
 	}
 
 	/**
 	 * Processes the specific hierarchy:
 	 * commonAll -> [AppName].common -> [AppName].[platform] -> [AppName].[platform].[mode]
 	 */
-	private processHierarchy(data: any): void {
+	private processHierarchy(data: Record<string, unknown>): void {
 		if (!data) return;
 
 		const appName = this.getAppName();
@@ -260,32 +277,44 @@ export class ConfigManager extends EventEmitter {
 		const mode = getMode(); // development | production
 
 		// Start with commonAll as base
-		let layeredConfig = data.commonAll || {};
+		let layeredConfig = (data.commonAll as Record<string, unknown>) || {};
 
 		// Find App Section (Case Insensitive)
 		const appKey = Object.keys(data).find(
 			(k) => k.toLowerCase() === appName.toLowerCase(),
 		);
-		const appSection = appKey ? data[appKey] : null;
+		const appSection = appKey
+			? (data[appKey] as Record<string, unknown>)
+			: null;
 
 		if (appSection) {
 			// Layer 1: App Common
 			if (appSection.common) {
-				layeredConfig = leafMerger(layeredConfig, appSection.common);
+				layeredConfig = leafMerger(
+					layeredConfig,
+					appSection.common as Record<string, unknown>,
+				);
 			}
 
 			// Layer 2: Platform
-			const platformSection = appSection[platform];
+			const platformSection = appSection[platform] as
+				| Record<string, unknown>
+				| undefined;
 			if (platformSection) {
 				// Layer 3: Mode
-				const modeSection = platformSection[mode];
+				const modeSection = platformSection[mode] as
+					| Record<string, unknown>
+					| undefined;
 				if (modeSection) {
 					layeredConfig = leafMerger(layeredConfig, modeSection);
 				}
 			}
 		}
 
-		this._config = leafMerger(this._config, layeredConfig);
+		this._config = leafMerger(this._config, layeredConfig) as Record<
+			string,
+			unknown
+		>;
 	}
 
 	/**
@@ -343,7 +372,7 @@ export class ConfigManager extends EventEmitter {
 	 * Core update method that updates both the local object
 	 * and the active globalThis object, then emits events.
 	 */
-	public updateValue(path: string, value: any): void {
+	public updateValue(path: string, value: unknown): void {
 		this.setPath(this._config, path, value);
 		this.emit("change", { path, value });
 		this.emit(`change:${path}`, value);
@@ -352,14 +381,24 @@ export class ConfigManager extends EventEmitter {
 	/**
 	 * Helper to set nested object values by string path (e.g., "db.mysql.port")
 	 */
-	private setPath(obj: any, path: string, value: any): void {
+	private setPath(
+		obj: Record<string, unknown>,
+		path: string,
+		value: unknown,
+	): void {
 		const keys = path.split(".");
-		let current = obj;
+		let current: Record<string, unknown> = obj;
 
 		while (keys.length > 1) {
 			const key = keys.shift() as string;
-			if (!(key in current)) current[key] = {};
-			current = current[key];
+			if (
+				!(key in current) ||
+				typeof current[key] !== "object" ||
+				current[key] === null
+			) {
+				current[key] = {};
+			}
+			current = current[key] as Record<string, unknown>;
 		}
 
 		current[keys[0]] = value;

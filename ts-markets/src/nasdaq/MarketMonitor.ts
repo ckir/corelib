@@ -17,6 +17,10 @@ import { MarketStatus, type NasdaqMarketInfo } from "./MarketStatus.js";
 
 const marketMonitorLogger = logger.child({ section: "MarketMonitor" });
 
+const DEFAULT_LIVE_INTERVAL_SEC = 10;
+const DEFAULT_CLOSED_INTERVAL_SEC = 3600;
+const DEFAULT_WARN_INTERVAL_SEC = 60;
+
 export type MarketPhase = "open" | "pre-market" | "after-hours" | "closed";
 
 /**
@@ -67,9 +71,10 @@ export class MarketMonitor extends EventEmitter {
 		} = {},
 	) {
 		super();
-		this.liveIntervalSec = options.liveIntervalSec ?? 10;
-		this.closedIntervalSec = options.closedIntervalSec ?? 3600;
-		this.warnIntervalSec = options.warnIntervalSec ?? 60;
+		this.liveIntervalSec = options.liveIntervalSec ?? DEFAULT_LIVE_INTERVAL_SEC;
+		this.closedIntervalSec =
+			options.closedIntervalSec ?? DEFAULT_CLOSED_INTERVAL_SEC;
+		this.warnIntervalSec = options.warnIntervalSec ?? DEFAULT_WARN_INTERVAL_SEC;
 		this.proxies = (options.proxies || []).map((p) =>
 			p.endsWith("/")
 				? `${p}api/v1/markets/nasdaq/status`

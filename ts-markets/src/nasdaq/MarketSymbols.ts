@@ -31,6 +31,10 @@ const NASDAQ_LISTED_URL =
 const OTHER_LISTED_URL =
 	"https://www.nasdaqtrader.com/dynamic/symdir/otherlisted.txt";
 
+const INITIAL_BACKOFF_MS = 1_000;
+const MAX_RETRY_BACKOFF_MS = 3_600_000; // 1 hour cap per retry interval
+const MAX_FETCH_RETRIES = 10; // circuit breaker: give up after this many consecutive failures
+
 export interface MarketSymbolRow {
 	symbol: string;
 	name: string;
@@ -334,7 +338,7 @@ export class MarketSymbols {
 					"MarketSymbols: Database instance not provided and no configuration available.",
 				);
 			}
-			this.db = await createDatabase(this.config as any);
+			this.db = await createDatabase(this.config);
 		}
 
 		await this.db.query(`
@@ -396,9 +400,24 @@ export class MarketSymbols {
 		if (!(await this.needsRefresh())) return;
 		if (!this.db) return;
 
-		marketSymbolsLogger.info(" Starting full symbol directory refresh");
+		marketSymbolsLogger.info("Starting full symbol directory refresh");
 
-		const texts = await this.fetchSymbolFilesWithRetry();
+		let texts: { nasdaqText: string; otherText: string };
+		try {
+			texts = await this.fetchSymbolFilesWithRetry();
+		} catch (err) {
+			// Circuit breaker fired with existing data — continue with stale symbols
+			if (await this.hasExistingData()) {
+				marketSymbolsLogger.warn(
+					"Symbol refresh abandoned, using existing data",
+					{
+						error: serializeError(err),
+					},
+				);
+				return;
+			}
+			throw err;
+		}
 
 		const nasdaqRows = this.parseNasdaqListed(texts.nasdaqText);
 		const otherRows = this.parseOtherListed(texts.otherText);
@@ -458,19 +477,19 @@ export class MarketSymbols {
 	}
 
 	/**
-	 * Downloads the official Nasdaq symbol directories with retry.
-	 * If any of the fetches fail, the function will retry with an exponential backoff (up to 1 hour).
-	 * If there is existing data in the database, the function will retry indefinitely.
-	 * If there is no existing data, the function will throw an error on the first failure.
-	 * @returns {Promise<{ nasdaqText: string; otherText: string }>} resolves with the content of the two files as strings
+	 * Downloads the official Nasdaq symbol directories with retry and circuit breaker.
+	 * Retries with exponential backoff up to MAX_RETRY_BACKOFF_MS per interval.
+	 * Stops after MAX_FETCH_RETRIES consecutive failures even when existing data is present.
+	 * Throws immediately on first failure when no existing data exists.
 	 */
 	private async fetchSymbolFilesWithRetry(): Promise<{
 		nasdaqText: string;
 		otherText: string;
 	}> {
-		let backoffMs = 1000;
+		let backoffMs = INITIAL_BACKOFF_MS;
+		let retryCount = 0;
 
-		while (true) {
+		while (retryCount <= MAX_FETCH_RETRIES) {
 			try {
 				const results = await endPoints<string>(
 					[NASDAQ_LISTED_URL, OTHER_LISTED_URL],
@@ -493,39 +512,48 @@ export class MarketSymbols {
 					};
 				}
 
-				// Identify which one failed (or both)
 				const errorResult =
-					results[0].status === "error" ? results[0] : (results[1] as any);
-				const reason = errorResult.reason;
+					results[0].status === "error" ? results[0] : results[1];
+				const reason = errorResult.status === "error" ? errorResult.reason : {};
 
 				marketSymbolsLogger.warn("Symbol directory fetch failed – retrying", {
+					retryCount,
 					reason: serializeError(reason),
 				});
 
 				const hasExistingData = await this.hasExistingData();
-				if (hasExistingData) {
-					await sleep(backoffMs);
-					backoffMs = Math.min(backoffMs * 2, 3_600_000); // max 1 hour
-					continue;
+				if (!hasExistingData) {
+					throw new Error(
+						`Failed to construct symbols db - ${(reason as Record<string, unknown>).message ?? JSON.stringify(serializeError(reason))}`,
+					);
 				}
-
-				// Fatal on first-time failure
-				throw new Error(
-					`Failed to construct symbols db - ${reason.message || JSON.stringify(serializeError(reason))}`,
-				);
-			} catch (err: any) {
+				if (retryCount >= MAX_FETCH_RETRIES) {
+					throw new Error(
+						`Symbol fetch circuit breaker: gave up after ${MAX_FETCH_RETRIES} retries`,
+					);
+				}
+				await sleep(backoffMs);
+				backoffMs = Math.min(backoffMs * 2, MAX_RETRY_BACKOFF_MS);
+				retryCount++;
+			} catch (err: unknown) {
 				const hasExistingData = await this.hasExistingData();
-				if (hasExistingData) {
+				if (hasExistingData && retryCount < MAX_FETCH_RETRIES) {
 					marketSymbolsLogger.warn("Symbol directory fetch thrown – retrying", {
+						retryCount,
 						error: serializeError(err),
 					});
 					await sleep(backoffMs);
-					backoffMs = Math.min(backoffMs * 2, 3_600_000);
+					backoffMs = Math.min(backoffMs * 2, MAX_RETRY_BACKOFF_MS);
+					retryCount++;
 					continue;
 				}
 				throw err;
 			}
 		}
+		// Unreachable, but satisfies TypeScript exhaustiveness
+		throw new Error(
+			`Symbol fetch circuit breaker: gave up after ${MAX_FETCH_RETRIES} retries`,
+		);
 	}
 
 	/**

@@ -1,10 +1,12 @@
+import type { Sql } from "postgres";
 import type { DbDriver, PreparedDriverStatement } from "../core/driver";
 import { type DatabaseResult, wrapError, wrapSuccess } from "../core/result";
 import type { QueryParams, QueryResponse } from "../core/types";
 import type { PostgresConfig } from "./postgres-config";
 
 export class PostgresDriver implements DbDriver {
-	private client: any = null;
+	// Typed after dynamic import; null until connect() is called
+	private client: Sql | null = null;
 
 	constructor(private config: PostgresConfig) {}
 
@@ -27,18 +29,20 @@ export class PostgresDriver implements DbDriver {
 		}
 	}
 
-	async query<T = any>(
+	async query<T = unknown>(
 		sql: string,
 		params?: QueryParams,
 	): Promise<DatabaseResult<QueryResponse<T>>> {
 		try {
-			// use unsafe() because we receive raw strings from the higher level Database API
-			const queryParams = Array.isArray(params)
-				? params
-				: params
-					? Object.values(params)
-					: [];
-			const res = await this.client.unsafe(sql, queryParams);
+			// use unsafe() because we receive raw strings from the higher level Database API.
+			// QueryParams values are runtime-validated by callers; bridge to postgres.js expected type.
+			// postgres.js ParameterOrJSON[] is incompatible with unknown[], cast required
+			const queryParams = (
+				Array.isArray(params) ? params : params ? Object.values(params) : []
+			) as any[];
+			const client = this.client;
+			if (!client) throw new Error("Not connected");
+			const res = await client.unsafe(sql, queryParams);
 			return wrapSuccess({
 				rows: res as unknown as T[],
 				affectedRows: res.count,
@@ -56,12 +60,17 @@ export class PostgresDriver implements DbDriver {
 			return wrapSuccess({
 				execute: async <T>(params?: QueryParams) => {
 					try {
-						const queryParams = Array.isArray(params)
-							? params
-							: params
-								? Object.values(params)
-								: [];
-						const res = await this.client.unsafe(sql, queryParams);
+						// postgres.js ParameterOrJSON[] is incompatible with unknown[], cast required
+						const queryParams = (
+							Array.isArray(params)
+								? params
+								: params
+									? Object.values(params)
+									: []
+						) as any[];
+						const prepClient = this.client;
+						if (!prepClient) throw new Error("Not connected");
+						const res = await prepClient.unsafe(sql, queryParams);
 						return wrapSuccess({
 							rows: res as unknown as T[],
 							affectedRows: res.count,
@@ -80,13 +89,13 @@ export class PostgresDriver implements DbDriver {
 	}
 
 	async beginTransaction(): Promise<void> {
-		await this.client.unsafe("BEGIN");
+		await this.client?.unsafe("BEGIN");
 	}
 	async commitTransaction(): Promise<void> {
-		await this.client.unsafe("COMMIT");
+		await this.client?.unsafe("COMMIT");
 	}
 	async rollbackTransaction(): Promise<void> {
-		await this.client.unsafe("ROLLBACK");
+		await this.client?.unsafe("ROLLBACK");
 	}
 
 	async stream<T>(
@@ -95,12 +104,13 @@ export class PostgresDriver implements DbDriver {
 		onRow: (row: T) => void,
 	): Promise<DatabaseResult<void>> {
 		try {
-			const queryParams = Array.isArray(params)
-				? params
-				: params
-					? Object.values(params)
-					: [];
-			for await (const row of this.client.unsafe(sql, queryParams).cursor()) {
+			// postgres.js ParameterOrJSON[] is incompatible with unknown[], cast required
+			const queryParams = (
+				Array.isArray(params) ? params : params ? Object.values(params) : []
+			) as any[];
+			const client = this.client;
+			if (!client) throw new Error("Not connected");
+			for await (const row of client.unsafe(sql, queryParams).cursor()) {
 				onRow(row as T);
 			}
 			return wrapSuccess(undefined);

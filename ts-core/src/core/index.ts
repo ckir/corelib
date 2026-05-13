@@ -9,7 +9,9 @@ import { createRequire } from "node:module";
 import { detectRuntime } from "../utils/runtime";
 
 const runtime = detectRuntime();
-let _require: any;
+// CJS require returns an untyped module — any on the return is intentional
+type RequireFn = (id: string) => any;
+let _require: RequireFn | undefined;
 
 const getRequire = () => {
 	if (!_require) {
@@ -51,7 +53,8 @@ async function loadFFI() {
 	if (runtime !== "deno") {
 		try {
 			const path = getRequire()("node:path");
-			const dirname = (import.meta as any).dirname;
+			const dirname = (import.meta as ImportMeta & { dirname?: string })
+				.dirname;
 			if (dirname) {
 				pathsToTry.push(
 					path.resolve(dirname, binaryName),
@@ -143,7 +146,7 @@ export const Core = {
 	isFfiAvailable,
 	getVersion,
 	logAndDouble,
-	run: (task?: string, options?: any) => {
+	run: (task?: string, options?: Record<string, unknown>) => {
 		console.log(`[CORE] Running on ${runtime}. FFI: ${isFfiAvailable()}`);
 		if (task) {
 			console.log(`[CORE] Task: ${task}`, options || "");

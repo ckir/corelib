@@ -3,6 +3,7 @@
  * @description Edge-compatible Hono sub-router exposing corelib's createDatabase logic.
  */
 
+import type { SqliteConfig } from "@ckir/corelib";
 import { createDatabase } from "@ckir/corelib";
 import { Hono } from "hono";
 import type { AppEnv } from "../core/types";
@@ -38,13 +39,14 @@ sqlRouter.post("/", async (c: any) => {
 		const bindings = c.env as AppEnv["Bindings"];
 		const logger = c.get("logger") as AppEnv["Variables"]["logger"];
 
-		const db = await createDatabase({
+		const dbConfig: SqliteConfig = {
 			dialect: "sqlite",
 			mode: "stateless",
 			url: bindings.CORELIB_TURSO_URL,
 			authToken: bindings.CORELIB_TURSO_TOKEN,
-			logger: logger,
-		} as any);
+			logger,
+		};
+		const db = await createDatabase(dbConfig);
 
 		const result = await db.query(sql, params);
 		return c.json(result);

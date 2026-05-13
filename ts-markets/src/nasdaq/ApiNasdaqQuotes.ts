@@ -2,6 +2,8 @@ import { RequestProxied, type StrictLogger } from "@ckir/corelib";
 import { ApiNasdaqUnlimited, type NasdaqResult } from "./ApiNasdaqUnlimited";
 import { MarketSymbols } from "./MarketSymbols";
 
+const DEFAULT_CONCURRENCY_LIMIT = 5;
+
 /**
  * Configuration options for the ApiNasdaqQuotes module.
  */
@@ -35,7 +37,8 @@ export class ApiNasdaqQuotes {
 	constructor(options: ApiNasdaqQuotesOptions = {}) {
 		const baseLogger = options.logger || (globalThis as any).logger;
 		this.logger = baseLogger?.child({ section: "ApiNasdaqQuotes" });
-		this.concurrencyLimit = options.concurrencyLimit ?? 5;
+		this.concurrencyLimit =
+			options.concurrencyLimit ?? DEFAULT_CONCURRENCY_LIMIT;
 
 		if (options.marketSymbols) {
 			this.marketSymbols = options.marketSymbols;
@@ -56,7 +59,7 @@ export class ApiNasdaqQuotes {
 	 * @param symbols An array of ticker symbols (e.g. ['AAPL', 'MSFT']).
 	 * @returns A promise resolving to an array of NasdaqResult objects.
 	 */
-	public async getNasdaqQuote<T = any>(
+	public async getNasdaqQuote<T = unknown>(
 		symbols: string[],
 	): Promise<NasdaqResult<T>[]> {
 		const results: NasdaqResult<T>[] = new Array(symbols.length);
@@ -78,8 +81,8 @@ export class ApiNasdaqQuotes {
 				const assetClass = symbolData.class || "stocks";
 				const url = `https://api.nasdaq.com/api/quote/${symbol}/info?assetclass=${assetClass.toLowerCase()}`;
 				fetchQueue.push({ symbol, url, index: i });
-			} catch (error: any) {
-				const message = error?.message || String(error);
+			} catch (error: unknown) {
+				const message = error instanceof Error ? error.message : String(error);
 				this.logger?.warn("Error resolving asset class", {
 					symbol,
 					error: message,
@@ -107,28 +110,31 @@ export class ApiNasdaqQuotes {
 
 				if (pRes.status === "success") {
 					// We need to verify if the Nasdaq API returned an error in the body
-					const body = pRes.value.body as any;
-					if (body?.status?.rCode === 200) {
+					const body = pRes.value.body as Record<string, unknown>;
+					const statusObj = body?.status as Record<string, unknown> | undefined;
+					if (statusObj?.rCode === 200) {
 						results[q.index] = {
 							status: "success",
 							value: body.data as T,
 							details: pRes.value,
 						};
 					} else {
+						const devMsg =
+							typeof statusObj?.developerMessage === "string"
+								? statusObj.developerMessage
+								: "Nasdaq API Error via Proxy";
 						results[q.index] = {
 							status: "error",
-							reason: {
-								message:
-									body?.status?.developerMessage ||
-									"Nasdaq API Error via Proxy",
-							},
+							reason: { message: devMsg },
 						};
 					}
 				} else {
+					const errMsg = (pRes.reason as Record<string, unknown>)?.message;
 					results[q.index] = {
 						status: "error",
 						reason: {
-							message: (pRes.reason as any)?.message || "Proxy request failed",
+							message:
+								typeof errMsg === "string" ? errMsg : "Proxy request failed",
 						},
 					};
 				}
@@ -141,10 +147,15 @@ export class ApiNasdaqQuotes {
 					try {
 						const res = await ApiNasdaqUnlimited.endPoint<T>(q.url);
 						results[q.index] = res;
-					} catch (error: any) {
+					} catch (error: unknown) {
 						results[q.index] = {
 							status: "error",
-							reason: { message: error?.message || "Unlimited fetch failed" },
+							reason: {
+								message:
+									error instanceof Error
+										? error.message
+										: "Unlimited fetch failed",
+							},
 						};
 					}
 				});

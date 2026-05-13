@@ -22,7 +22,7 @@ export class SqliteDb {
 	 * Executes a single SQL query.
 	 * Joins active transaction if called within a transaction block.
 	 */
-	async query<T = any>(
+	async query<T = unknown>(
 		sql: string,
 		params?: QueryParams,
 	): Promise<DatabaseResult<QueryResponse<T>>> {
@@ -77,7 +77,12 @@ export class SqliteDb {
 		try {
 			await driver.connect();
 			if (isNested) {
-				await driver.query(`SAVEPOINT ${savepointName}`);
+				const spResult = await driver.query(`SAVEPOINT ${savepointName}`);
+				if (spResult.status === "error") {
+					throw new Error(
+						`Failed to create savepoint: ${JSON.stringify(spResult.reason)}`,
+					);
+				}
 			} else {
 				await driver.beginTransaction();
 			}

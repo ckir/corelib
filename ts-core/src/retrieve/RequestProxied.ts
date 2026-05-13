@@ -12,6 +12,7 @@
 // =============================================
 
 import type { Options as KyOptions } from "ky";
+import { serializeError } from "serialize-error";
 import logger from "../loggers";
 import {
 	type RequestResult,
@@ -115,7 +116,7 @@ export class RequestProxied {
 			requestProxiedLogger.error("No active proxies left");
 			return {
 				status: "error",
-				reason: { message: "No active proxies left" } as any,
+				reason: serializeError(new Error("No active proxies left")),
 			};
 		}
 
@@ -154,7 +155,7 @@ export class RequestProxied {
 		});
 		return {
 			status: "error",
-			reason: { message: "All proxies failed" } as any,
+			reason: serializeError(new Error("All proxies failed")),
 		};
 	}
 
@@ -177,9 +178,10 @@ export class RequestProxied {
 		options: KyOptions = {},
 	): Promise<RequestResult<T>[]> {
 		if (this.activeProxies.length === 0 || urls.length === 0) {
+			const noProxiesReason = serializeError(new Error("No active proxies"));
 			return urls.map(() => ({
-				status: "error",
-				reason: { message: "No active proxies" } as any,
+				status: "error" as const,
+				reason: noProxiesReason,
 			}));
 		}
 

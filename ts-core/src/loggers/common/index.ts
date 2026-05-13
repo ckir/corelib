@@ -36,10 +36,16 @@ export interface StrictLogger {
  * Wraps a standard Pino instance to enforce the StrictLogger interface
  * and inject system telemetry when enabled.
  */
+const TELEMETRY_CACHE_TTL_MS = 5_000;
+
 export class StrictLoggerWrapper implements StrictLogger {
 	private pinoInstance: PinoLogger;
 	private state: { telemetryEnabled: boolean };
 	private context: Record<string, unknown>;
+	private telemetryCache: {
+		value: ReturnType<typeof SysInfo.get>;
+		expiresAt: number;
+	} | null = null;
 
 	constructor(
 		pinoInstance: PinoLogger,
@@ -52,7 +58,15 @@ export class StrictLoggerWrapper implements StrictLogger {
 	}
 
 	private getTelemetry() {
-		return this.state.telemetryEnabled ? SysInfo.get() : undefined;
+		if (!this.state.telemetryEnabled) return undefined;
+		const now = Date.now();
+		if (!this.telemetryCache || now >= this.telemetryCache.expiresAt) {
+			this.telemetryCache = {
+				value: SysInfo.get(),
+				expiresAt: now + TELEMETRY_CACHE_TTL_MS,
+			};
+		}
+		return this.telemetryCache.value;
 	}
 
 	private validate(msg: unknown, extras?: unknown) {
