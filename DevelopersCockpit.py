@@ -7,6 +7,11 @@ import os
 import subprocess
 import sys
 import json
+import platform
+
+# Detect OS for command separators
+IS_WINDOWS = platform.system() == "Windows"
+CMD_SEP = ";" if IS_WINDOWS else "&&"
 
 def load_env():
     config = {}
@@ -14,9 +19,12 @@ def load_env():
         with open('.env', 'r') as f:
             for line in f:
                 line = line.strip()
-                if line and not line.startswith('#'):
-                    key, value = line.split('=', 1)
-                    config[key.strip()] = value.strip().strip("\"'")
+                if line and not line.startswith('#') and '=' in line:
+                    try:
+                        key, value = line.split('=', 1)
+                        config[key.strip()] = value.strip().strip("\"'")
+                    except ValueError:
+                        continue
     except FileNotFoundError:
         print("[CLI] .env not found; using defaults.")
     return config
@@ -36,20 +44,20 @@ config = load_env()
 choices = [
     {'letter': 'P', 'desc': 'Check Prerequisites & Health'},
     {'letter': 'C', 'desc': 'Clean project & Reinstall Prerequisites (Fresh Start)', 'cmd': 'pnpm run clean-all'},
-    {'letter': 'W', 'desc': 'Watch TypeScript', 'cmd': 'pnpm -r watch --parallel'},
-    {'letter': 'B', 'desc': 'Build TypeScript', 'cmd': 'pnpm -r build'},
-    {'letter': 'L', 'desc': 'Lint TypeScript Code', 'cmd': 'pnpm -r lint'},
-    {'letter': 'M', 'desc': 'Lint to File', 'cmd': 'pnpm -r lint --fix > lint-output.txt'},
-    {'letter': 'T', 'desc': 'Run Typescript Tests', 'cmd': 'pnpm -r test'},
+    {'letter': 'W', 'desc': 'Watch TypeScript', 'cmd': 'pnpm -r run watch --parallel'},
+    {'letter': 'B', 'desc': 'Build TypeScript', 'cmd': 'pnpm -r run build'},
+    {'letter': 'L', 'desc': 'Lint TypeScript Code', 'cmd': 'pnpm -r run lint'},
+    {'letter': 'M', 'desc': 'Lint to File', 'cmd': f'pnpm -r run lint --fix > lint-output.txt'},
+    {'letter': 'T', 'desc': 'Run Typescript Tests', 'cmd': 'pnpm -r run test'},
     {'letter': 'R', 'desc': 'Build Rust (Windows/Local)', 'cmd': None},
     {'letter': 'X', 'desc': 'Build Linux Rust FFI (via Docker for Cloud Deployment)', 'cmd': None},
     {'letter': 'U', 'desc': 'Run Rust Tests', 'cmd': 'cargo test --manifest-path rust/Cargo.toml'},
-    {'letter': 'F', 'desc': 'Format Code', 'cmd': 'pnpm -r format'},
-    {'letter': 'V', 'desc': 'Bump version', 'cmd': 'pnpm -r version patch'},
+    {'letter': 'F', 'desc': 'Format Code', 'cmd': 'pnpm -r run format'},
+    {'letter': 'V', 'desc': 'Bump version', 'cmd': 'pnpm -r run version patch'},
     {'letter': 'K', 'desc': 'Tag & Push Version to Origin', 'cmd': None},
     {'letter': 'H', 'desc': 'Trigger GitHub Release Workflow', 'cmd': 'gh workflow run release.yml'},
     {'letter': 'G', 'desc': 'Verify GitHub Release Assets', 'cmd': 'pwsh -ExecutionPolicy Bypass -File ./TestRelease.ps1'},
-    {'letter': 'D', 'desc': 'Generate Documentation', 'cmd': 'pnpm -r docs'},
+    {'letter': 'D', 'desc': 'Generate Documentation', 'cmd': 'pnpm run docs'},
     {'letter': 'A', 'desc': 'Analyze Module Dependencies (SVG)', 'cmd': 'npx depcruise --config .dependency-cruiser.js --output-type dot ts-core/src ts-markets/src ts-cloud/src | dot -T svg > full-modules.svg'},
     {'letter': 'E', 'desc': 'Create Local release package (Zip/Tar)'},
     {'letter': 'Q', 'desc': 'Quit', 'cmd': None},
@@ -67,10 +75,20 @@ def run_cmd(cmd, ignore_error=False):
 
 def build_rust_windows():
     print("[CLI] Building Rust FFI for Windows...")
-    if run_cmd('cd rust && pnpm exec napi build --release'):
+    # Use napi build directly in rust dir for better isolation
+    if run_cmd(f'cd rust {CMD_SEP} pnpm exec napi build --release'):
         # Copy to ts-core for local development
-        run_cmd('copy rust\\corelib-rust.node ts-core\\corelib-rust.node')
-        print("[CLI] ✅ Windows binary updated in ts-core/ for local development.")
+        src = os.path.join('rust', 'corelib-rust.node')
+        dst = os.path.join('ts-core', 'corelib-rust.node')
+        if os.path.exists(src):
+            try:
+                import shutil
+                shutil.copy2(src, dst)
+                print(f"[CLI] ✅ Windows binary updated in {dst} for local development.")
+            except Exception as e:
+                print(f"[CLI] Error copying binary: {e}")
+        else:
+            print("[CLI] Error: corelib-rust.node not found after build.")
 
 def build_rust_linux():
     print("[CLI] Building Linux Rust FFI via Docker...")
@@ -100,42 +118,49 @@ def build_rust_linux():
         run_cmd('docker rm -f corelib-temp', ignore_error=True)
 
 def get_health_cmd():
-    cmds = [
+    tools = [
         'pnpm --version', 'cargo --version', 'python --version', 'gh --version',
         'pnpm -C ts-cloud exec wrangler --version', 'gcloud --version', 'sam --version', 'docker --version',
         'act --version', 'wsl --version', 'fd --version', 'sd --version', 'rip --version', 'sops --version --check-for-updates'
     ]
+    
     runtime = config.get('RUNTIME', 'node').lower()
-    if runtime == 'bun': cmds.append('bun --version')
-    elif runtime == 'deno': cmds.append('deno --version')
-    elif runtime == 'node': cmds.append('node --version')
-    return ' && '.join(cmds)
+    if runtime == 'bun': tools.append('bun --version')
+    elif runtime == 'deno': tools.append('deno --version')
+    elif runtime == 'node': tools.append('node --version')
+    
+    # Run tools individually so one failure doesn't stop the whole health check
+    return f' {CMD_SEP} '.join([f'{t} || echo "[CLI] Tool {t.split()[0]} failed check"' for t in tools])
 
 def get_release_cmd():
-    platform = config.get('PLATFORM', 'linux').lower()
+    platform_name = config.get('PLATFORM', 'linux').lower()
     files = 'ts-core/dist ts-cloud/dist ts-markets/dist rust/target/release package.json LICENSE README.md'
-    if platform == 'windows':
-        return f'pwsh Compress-Archive -Path {files} -DestinationPath release.zip -Force'
+    if platform_name == 'windows' or IS_WINDOWS:
+        return f'pwsh -Command "Compress-Archive -Path {files.split()} -DestinationPath release.zip -Force"'
     else:
         return f'tar -czf release.tar.gz {files}'
 
 def get_tag_push_cmd():
     version = get_current_version()
     tag = f"v{version}"
-    return f'git tag {tag} && git push origin {tag}'
+    return f'git tag {tag} {CMD_SEP} git push origin {tag}'
 
 def display_menu():
     config_str = ' | '.join([f"{k}={v}" for k, v in config.items()])
     version = get_current_version()
     title = f"Developers Cockpit [v{version}] [Config: {config_str}]"
     print(f"\n[CLI] {title}")
+    print("-" * len(title))
     print("Select an option:")
     for choice in choices:
         print(f"{choice['letter']}: {choice['desc']}")
 
 while True:
     display_menu()
-    action = input("Enter the letter: ").strip().upper()
+    try:
+        action = input("\nEnter the letter (Q to quit): ").strip().upper()
+    except EOFError:
+        break
 
     selected = next((c for c in choices if c['letter'] == action), None)
     if not selected:

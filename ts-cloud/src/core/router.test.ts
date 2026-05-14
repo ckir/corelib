@@ -6,7 +6,7 @@ describe("Router", () => {
 		const app = createRouter();
 		const res = await app.request("/health");
 		expect(res.status).toBe(200);
-		const body = await res.json();
+		const body = (await res.json()) as any;
 		expect(body.status).toBe("ok");
 	});
 
@@ -14,7 +14,7 @@ describe("Router", () => {
 		const app = createRouter();
 		const res = await app.request("/api/v1/health");
 		expect(res.status).toBe(200);
-		const body = await res.json();
+		const body = (await res.json()) as any;
 		expect(body.status).toBe("ok");
 		expect(body.version).toBe("v1");
 	});
@@ -32,7 +32,7 @@ describe("Router", () => {
 		const res = await app.request("/api/v1/tests/logger");
 
 		expect(res.status).toBe(200);
-		const body = await res.json();
+		const body = (await res.json()) as any;
 		expect(body.status).toBe("success");
 		expect(body.message).toBe("Logs emitted");
 

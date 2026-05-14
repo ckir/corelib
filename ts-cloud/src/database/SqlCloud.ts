@@ -5,7 +5,7 @@
 
 import type { SqliteConfig } from "@ckir/corelib";
 import { createDatabase } from "@ckir/corelib";
-import { type Context, Hono } from "hono";
+import { Hono } from "hono";
 import type { AppEnv } from "../core/types";
 
 export const sqlRouter = new Hono<AppEnv>();
@@ -25,7 +25,7 @@ sqlRouter.use("*", async (c, next) => {
  * Executes a parameterized SQL query using createDatabase from @ckir/corelib.
  * Uses CORELIB_TURSO_URL and CORELIB_TURSO_TOKEN from environment.
  */
-sqlRouter.post("/", async (c: Context<AppEnv>) => {
+sqlRouter.post("/", async (c: any) => {
 	try {
 		const body = await c.req.json().catch(() => null);
 

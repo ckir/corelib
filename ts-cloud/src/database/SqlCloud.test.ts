@@ -42,7 +42,7 @@ describe("SqlCloud Router", () => {
 	it("should return 400 if sql query is missing", async () => {
 		const res = await performPost({ params: [] });
 		expect(res.status).toBe(400);
-		const body = await res.json();
+		const body = (await res.json()) as any;
 		expect(body.status).toBe("error");
 		expect(body.reason.message).toBe("Missing SQL query");
 	});
@@ -50,7 +50,7 @@ describe("SqlCloud Router", () => {
 	it("should return 400 if the body is invalid or empty", async () => {
 		const res = await performPost(null);
 		expect(res.status).toBe(400);
-		const body = await res.json();
+		const body = (await res.json()) as any;
 		expect(body.status).toBe("error");
 		expect(body.reason.message).toBe("Missing request body");
 	});
@@ -66,15 +66,17 @@ describe("SqlCloud Router", () => {
 
 		const res = await performPost({ sql: "SELECT 1 + 1", params: [] });
 		expect(res.status).toBe(200);
-		
-		const body = await res.json();
+
+		const body = (await res.json()) as any;
 		expect(body.status).toBe("success");
 		expect(body.value).toEqual([{ result: 2 }]);
-		
-		expect(createDatabase).toHaveBeenCalledWith(expect.objectContaining({
-			url: "test-url",
-			authToken: "test-token",
-		}));
+
+		expect(createDatabase).toHaveBeenCalledWith(
+			expect.objectContaining({
+				url: "test-url",
+				authToken: "test-token",
+			}),
+		);
 	});
 
 	it("should return 500 if database query fails", async () => {
@@ -85,8 +87,8 @@ describe("SqlCloud Router", () => {
 
 		const res = await performPost({ sql: "SELECT oops" });
 		expect(res.status).toBe(500);
-		
-		const body = await res.json();
+
+		const body = (await res.json()) as any;
 		expect(body.status).toBe("error");
 		expect(body.reason.message).toBe("Internal SQL Error");
 		expect(mockLogger.error).toHaveBeenCalled();

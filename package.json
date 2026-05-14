@@ -16,6 +16,7 @@
         "test-all": "pnpm -r test",
         "lint-all": "pnpm -r lint",
         "format-all": "pnpm -r format",
+        "docs": "pnpm run docs-all",
         "docs-all": "pnpm -r run docs",
         "clean-all": "pnpm exec npx del-cli --force node_modules dist rust\\target .nx"
     }
