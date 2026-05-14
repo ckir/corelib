@@ -5,5 +5,21 @@ export default defineConfig({
 	format: ["esm"],
 	dts: true,
 	clean: true,
-	minify: process.env.MODE === "production", // FIXED (2026-03-07): Added conditional minify based on .env MODE=production for optimized builds. All unrelated features (e.g., entry points, format, dts, clean) remain fully maintained and unchanged.
+	minify: process.env.MODE === "production",
+	external: [
+		"pino",
+		"pino-pretty",
+		"serialize-error",
+		"luxon",
+		"deepmerge-ts",
+		"confbox",
+		"commander",
+		"croner",
+		"ky",
+		"@libsql/client",
+		"postgres",
+		"@google-cloud/pino-logging-gcp-config",
+		"pino-lambda",
+		"pino-socket",
+	],
 });

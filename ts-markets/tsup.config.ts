@@ -6,4 +6,18 @@ export default defineConfig({
 	dts: true,
 	clean: true,
 	minify: process.env.MODE === "production",
+	external: [
+		"@ckir/corelib",
+		"@ckir/corelib-markets",
+		"pino",
+		"pino-pretty",
+		"luxon",
+		"serialize-error",
+		"@alpacahq/alpaca-trade-api",
+		"@bufbuild/protobuf",
+		"@gadicc/yahoo-finance2",
+		"ky",
+		"protobufjs",
+		"ws",
+	],
 });
