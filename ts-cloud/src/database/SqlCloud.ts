@@ -5,10 +5,10 @@
 
 import type { SqliteConfig } from "@ckir/corelib";
 import { createDatabase } from "@ckir/corelib";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import type { AppEnv } from "../core/types";
 
-export const sqlRouter = new Hono<any>();
+export const sqlRouter = new Hono<AppEnv>();
 
 /**
  * Middleware to inject a child logger for SQL operations.
@@ -25,9 +25,18 @@ sqlRouter.use("*", async (c, next) => {
  * Executes a parameterized SQL query using createDatabase from @ckir/corelib.
  * Uses CORELIB_TURSO_URL and CORELIB_TURSO_TOKEN from environment.
  */
-sqlRouter.post("/", async (c: any) => {
+sqlRouter.post("/", async (c: Context<AppEnv>) => {
 	try {
-		const { sql, params } = await c.req.json();
+		const body = await c.req.json().catch(() => null);
+
+		if (!body) {
+			return c.json(
+				{ status: "error", reason: { message: "Missing request body" } },
+				400,
+			);
+		}
+
+		const { sql, params } = body;
 
 		if (!sql) {
 			return c.json(
