@@ -4,6 +4,12 @@
     "main": "dist/index.js",
     "type": "module",
     "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "browser": "./dist/browser.js",
+            "default": "./dist/index.js"
+        }
+    },
     "files": [
         "dist",
         "scripts",
