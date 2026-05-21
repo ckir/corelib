@@ -29,6 +29,8 @@ export interface StrictLogger {
 	levelVal: number;
 	bindings: () => Record<string, unknown>;
 	silent: () => void;
+	/** Flush any buffered log output (e.g. pino's sonic-boom buffer). Safe to call as a no-op when no buffer is in use. */
+	flush: (cb?: (err?: Error | null) => void) => void;
 }
 
 /**
@@ -159,6 +161,14 @@ export class StrictLoggerWrapper implements StrictLogger {
 
 	silent(): void {
 		this.pinoInstance.level = "silent";
+	}
+
+	flush(cb?: (err?: Error | null) => void): void {
+		if (typeof this.pinoInstance.flush === "function") {
+			this.pinoInstance.flush(cb);
+		} else {
+			cb?.();
+		}
 	}
 }
 

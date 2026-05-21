@@ -84,6 +84,10 @@ class BrowserLogger implements StrictLogger {
 	silent(): void {
 		this.state.level = "silent";
 	}
+
+	flush(cb?: (err?: Error | null) => void): void {
+		cb?.();
+	}
 }
 
 const logger: StrictLogger = new BrowserLogger();
