@@ -11,16 +11,32 @@ const LEVEL_MAP: Record<string, number> = {
 	silent: Infinity,
 };
 
+// Safe env read: works in Node/Bun/Deno and gracefully falls back in browsers.
+const envLevel: string =
+	(typeof process !== "undefined" ? process.env?.LOG_LEVEL : undefined) ||
+	"info";
+
 class BrowserLogger implements StrictLogger {
 	private readonly ctx: Record<string, unknown>;
-	level = "info";
+	// Shared state object so children reflect parent level changes (non-independent).
+	private readonly state: { level: string };
 
-	constructor(ctx: Record<string, unknown> = {}) {
+	constructor(
+		ctx: Record<string, unknown> = {},
+		state: { level: string } = { level: envLevel },
+	) {
 		this.ctx = ctx;
+		this.state = state;
 	}
 
+	get level(): string {
+		return this.state.level;
+	}
+	set level(val: string) {
+		this.state.level = val;
+	}
 	get levelVal(): number {
-		return LEVEL_MAP[this.level] ?? 30;
+		return LEVEL_MAP[this.state.level] ?? 30;
 	}
 
 	private emit(
@@ -29,7 +45,7 @@ class BrowserLogger implements StrictLogger {
 		msg: string,
 		extras?: Record<string, unknown>,
 	): void {
-		if (LEVEL_MAP[lvl] < this.levelVal) return;
+		if ((LEVEL_MAP[lvl] ?? 30) < this.levelVal) return;
 		consoleFn(`[${lvl.toUpperCase()}]`, msg, { ...this.ctx, ...extras });
 	}
 
@@ -53,7 +69,8 @@ class BrowserLogger implements StrictLogger {
 	}
 
 	child(bindings: Record<string, unknown>): StrictLogger {
-		return new BrowserLogger({ ...this.ctx, ...bindings });
+		// Share the same state so children reflect parent level changes.
+		return new BrowserLogger({ ...this.ctx, ...bindings }, this.state);
 	}
 
 	setTelemetry(_mode: "on" | "off"): void {
@@ -65,7 +82,7 @@ class BrowserLogger implements StrictLogger {
 	}
 
 	silent(): void {
-		this.level = "silent";
+		this.state.level = "silent";
 	}
 }
 

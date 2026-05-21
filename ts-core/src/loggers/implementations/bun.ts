@@ -32,6 +32,7 @@ const wsProxy = new Writable({
 
 const dest = pino.multistream([
 	{
+		level,
 		stream: isPretty
 			? pretty({
 					colorize: true,
@@ -40,7 +41,7 @@ const dest = pino.multistream([
 				})
 			: process.stdout,
 	},
-	{ stream: wsProxy },
+	{ level, stream: wsProxy },
 ]);
 
 const pinoInstance = pino(

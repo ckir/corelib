@@ -3,6 +3,16 @@
 import { getSysInfo } from "../../utils/SysInfo";
 import type { StrictLogger } from "../common";
 
+const LEVEL_MAP: Record<string, number> = {
+	trace: 10,
+	debug: 20,
+	info: 30,
+	warn: 40,
+	error: 50,
+	fatal: 60,
+	silent: Infinity,
+};
+
 /**
  * Cloudflare-specific logger implementation.
  * Does not use Pino to ensure maximum compatibility with Cloudflare Workers.
@@ -11,8 +21,7 @@ import type { StrictLogger } from "../common";
 class CloudflareLogger implements StrictLogger {
 	private state: { telemetryEnabled: boolean };
 	private context: Record<string, unknown>;
-	private _level = "info";
-	private _levelVal = 30;
+	private _level = process.env.LOG_LEVEL || "info";
 
 	constructor(
 		state: { telemetryEnabled: boolean } = { telemetryEnabled: false },
@@ -43,7 +52,7 @@ class CloudflareLogger implements StrictLogger {
 	}
 
 	private log(level: string, msg: string, extras?: Record<string, unknown>) {
-		if (this._level === "silent") return;
+		if ((LEVEL_MAP[level] ?? 30) < this.levelVal) return;
 		this.validate(msg, extras);
 
 		const output = {
@@ -95,7 +104,7 @@ class CloudflareLogger implements StrictLogger {
 		this._level = val;
 	}
 	get levelVal() {
-		return this._levelVal;
+		return LEVEL_MAP[this._level] ?? 30;
 	}
 
 	bindings(): Record<string, unknown> {
