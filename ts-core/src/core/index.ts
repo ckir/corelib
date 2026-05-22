@@ -19,9 +19,13 @@ let _require: RequireFn | undefined;
 
 const getRequire = () => {
 	if (!_require) {
-		const isNodeLike = ["node", "bun", "aws-lambda", "gcp-cloudrun"].includes(
-			runtime,
-		);
+		const isNodeLike = [
+			"node",
+			"bun",
+			"deno",
+			"aws-lambda",
+			"gcp-cloudrun",
+		].includes(runtime);
 
 		// createRequire(import.meta.url) crashes in Cloudflare Workers if import.meta.url is undefined
 		if (isNodeLike && typeof import.meta !== "undefined" && import.meta.url) {
@@ -74,6 +78,14 @@ async function loadFFI() {
 		} catch (_e) {
 			// Ignore if path/fs/os can't be required (e.g. in edge runtimes)
 		}
+	} else {
+		// Deno specific paths - since we are likely running with 'deno run'
+		// We can still try relative paths or CWD
+		pathsToTry.push(
+			`./${binaryName}`,
+			`../${binaryName}`,
+			`../../${binaryName}`,
+		);
 	}
 
 	let libPath: string | undefined;
@@ -93,19 +105,8 @@ async function loadFFI() {
 	}
 
 	try {
-		let ffi: unknown;
-		if (runtime === "deno") {
-			// Deno: Try dlopen on .node (may need --allow-ffi --unstable)
-			// If fails, build plain cdylib and adjust symbols
-			ffi = (Deno as any).dlopen(libPath, {
-				log_and_double: { parameters: ["buffer", "i32"], result: "i32" },
-				get_version: { parameters: [], result: "buffer" },
-			});
-		} else {
-			// Node/Bun: napi-rs via bindings
-			ffi = getRequire()(libPath); // Or bindings('corelib-rust')
-		}
-		return ffi;
+		// Use require for all Node-compatible runtimes (Node, Bun, Deno 2+)
+		return getRequire()(libPath);
 	} catch (error) {
 		coreLogger.error(`Failed to load FFI from ${libPath}`, {
 			error: serializeError(error),
