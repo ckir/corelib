@@ -84,8 +84,8 @@ jobs:
         run: |
           case "${{ matrix.runtime }}" in
             node) pnpm test-all ;;
-            bun)  pnpm -r --filter '!rust' exec bun x vitest run ;;
-            deno) pnpm -r --filter '!rust' exec deno run -A npm:vitest run ;;
+            bun)  RUNTIME=bun pnpm --filter '@ckir/*' exec bun x vitest run ;;
+            deno) RUNTIME=deno pnpm --filter '@ckir/*' exec deno run -A npm:vitest run ;;
           esac
 
   # ---------------------------------------------------------
