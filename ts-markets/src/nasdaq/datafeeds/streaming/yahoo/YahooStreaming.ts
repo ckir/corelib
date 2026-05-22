@@ -10,6 +10,11 @@ import { coreFFI, getMode, getTempDir } from "@ckir/corelib";
 
 const RustYahoo = (coreFFI as any)?.YahooStreaming;
 
+/**
+ * YahooStreaming
+ * Provides a real-time data stream from Yahoo Finance using the native Rust library via FFI.
+ * Emits events for pricing, logging, and connection status.
+ */
 export class YahooStreaming extends EventEmitter {
 	private rust: any;
 	private initialized = false;
@@ -40,8 +45,12 @@ export class YahooStreaming extends EventEmitter {
 	}
 
 	/**
-	 * Initialize configuration.
-	 * Default DB path = system temp + yahoo_streaming.redb
+	 * Initializes the configuration for the Yahoo streaming client.
+	 *
+	 * @param {object} [config] - Configuration options.
+	 * @param {string} [config.dbPath] - Path to the local persistence database.
+	 * @param {number} [config.silenceSeconds] - Duration of silence (in seconds) before triggering a reconnect.
+	 * @returns {Promise<void>}
 	 */
 	async init(config: { dbPath?: string; silenceSeconds?: number } = {}) {
 		const finalConfig = {
@@ -52,23 +61,41 @@ export class YahooStreaming extends EventEmitter {
 		this.initialized = true;
 	}
 
+	/**
+	 * Starts the streaming client and begins connecting.
+	 * @returns {Promise<void>}
+	 */
 	async start() {
 		if (!this.initialized) await this.init();
 		await this.rust.start();
 	}
 
+	/**
+	 * Subscribes to real-time updates for the specified symbols.
+	 * @param {string[]} symbols - Array of trading symbols.
+	 */
 	subscribe(symbols: string[]) {
 		this.rust.subscribe(symbols);
 	}
 
+	/**
+	 * Unsubscribes from updates for the specified symbols.
+	 * @param {string[]} symbols - Array of trading symbols.
+	 */
 	unsubscribe(symbols: string[]) {
 		this.rust.unsubscribe(symbols);
 	}
 
+	/**
+	 * Cleans up the local state/database.
+	 */
 	clean() {
 		this.rust.clean();
 	}
 
+	/**
+	 * Stops the streaming client and disconnects.
+	 */
 	stop() {
 		this.rust.stop();
 	}

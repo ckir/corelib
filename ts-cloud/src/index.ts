@@ -20,14 +20,39 @@ export {
 	sqlRouter,
 };
 
+/**
+ * Main entry point for the Cloud package.
+ * Groups all edge-compatible routers and utilities.
+ */
 export const Cloud = {
+	/**
+	 * Factory function to create the main Hono router.
+	 */
 	createRouter,
+	/**
+	 * Nasdaq market data routers.
+	 */
 	nasdaq: {
+		/**
+		 * Router for high-performance Nasdaq API proxying.
+		 */
 		unlimited: nasdaqRouter,
+		/**
+		 * Router for historical data fetching.
+		 */
 		historical: historicalRouter,
+		/**
+		 * Router for market status information.
+		 */
 		status: marketStatusRouter,
 	},
+	/**
+	 * Router for generic HTTP proxying via RequestUnlimited.
+	 */
 	ky: kyRouter,
+	/**
+	 * Router for SQL query execution (Turso/LibSQL).
+	 */
 	sql: sqlRouter,
 };
 

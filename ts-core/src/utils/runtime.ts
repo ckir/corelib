@@ -6,6 +6,10 @@
 //   • Replaced (globalThis as any) with typeof checks for known globals (Bun, Deno)
 //   • Added declarations for EdgeRuntime and __CFW__ to avoid any
 // =============================================
+
+/**
+ * Supported runtimes for the core library.
+ */
 export type Runtime =
 	| "node"
 	| "bun"
@@ -14,6 +18,13 @@ export type Runtime =
 	| "aws-lambda" // AWS Lambda
 	| "gcp-cloudrun"; // Google Cloud Run
 
+/**
+ * Detects the current execution environment.
+ * Uses various global signals and environment variables to distinguish between Node.js, Bun, Deno,
+ * and different cloud platforms like Cloudflare Workers, AWS Lambda, and Google Cloud Run.
+ *
+ * @returns {Runtime} The detected runtime identifier. Defaults to 'node' if unable to determine.
+ */
 export function detectRuntime(): Runtime {
 	// 0. Manual override via environment variable
 	if (typeof process !== "undefined" && process.env && process.env.RUNTIME) {

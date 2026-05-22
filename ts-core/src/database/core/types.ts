@@ -33,7 +33,9 @@ export type QueryParams = unknown[] | Record<string, unknown>;
 
 /** Standard data structure for successful query results. */
 export interface QueryResponse<T = unknown> {
+	/** Array of rows returned by the query. */
 	rows: T[];
+	/** Number of rows affected by the operation (e.g. on INSERT, UPDATE, DELETE). */
 	affectedRows?: number;
 	/** Last insert ID (optional for Postgres; use RETURNING clauses). */
 	lastInsertId?: string | number | bigint;
@@ -41,19 +43,34 @@ export interface QueryResponse<T = unknown> {
 
 /**
  * Common interface for high-level Database implementations (SqliteDb, PostgresDb).
+ * Provides methods for querying and transaction management.
  */
 export interface Database {
+	/**
+	 * Executes an SQL query and returns the results.
+	 * @template T The expected type of the rows.
+	 * @param {string} sql The SQL query string.
+	 * @param {QueryParams} [params] Optional query parameters.
+	 * @returns {Promise<import("./result").DatabaseResult<QueryResponse<T>>>} A promise resolving to the query result.
+	 */
 	query<T = unknown>(
 		sql: string,
 		params?: QueryParams,
 	): Promise<import("./result").DatabaseResult<QueryResponse<T>>>;
 
+	/**
+	 * Executes a callback within a database transaction.
+	 * @template T The return type of the callback.
+	 * @param {() => Promise<import("./result").DatabaseResult<T>>} callback The function to execute within the transaction.
+	 * @returns {Promise<import("./result").DatabaseResult<T>>} A promise resolving to the result of the callback.
+	 */
 	transaction<T>(
 		callback: () => Promise<import("./result").DatabaseResult<T>>,
 	): Promise<import("./result").DatabaseResult<T>>;
 
 	/**
 	 * Disconnects from the database (only useful in 'stateful' mode).
+	 * @returns {Promise<void>}
 	 */
 	disconnect(): Promise<void>;
 }

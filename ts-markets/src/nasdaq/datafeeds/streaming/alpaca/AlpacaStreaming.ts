@@ -10,6 +10,11 @@ import { coreFFI, getMode, getTempDir } from "@ckir/corelib";
 
 const RustAlpaca = (coreFFI as any)?.AlpacaStreaming;
 
+/**
+ * AlpacaStreaming
+ * Provides a real-time data stream from Alpaca using the native Rust library via FFI.
+ * Emits events for pricing, logging, and connection status.
+ */
 export class AlpacaStreaming extends EventEmitter {
 	private rust: any;
 	private initialized = false;
@@ -40,8 +45,15 @@ export class AlpacaStreaming extends EventEmitter {
 	}
 
 	/**
-	 * Initialize configuration for Alpaca.
-	 * Default DB path = system temp + alpaca_streaming.redb
+	 * Initializes the configuration for the Alpaca streaming client.
+	 *
+	 * @param {object} [config] - Configuration options.
+	 * @param {string} [config.dbPath] - Path to the local persistence database. Defaults to system temp.
+	 * @param {number} [config.silenceSeconds] - Duration of silence (in seconds) before triggering a reconnect.
+	 * @param {string} [config.baseUrl] - Alpaca API base URL.
+	 * @param {string} [config.keyId] - Alpaca API Key ID.
+	 * @param {string} [config.secretKey] - Alpaca API Secret Key.
+	 * @returns {Promise<void>}
 	 */
 	async init(
 		config: {
@@ -63,23 +75,41 @@ export class AlpacaStreaming extends EventEmitter {
 		this.initialized = true;
 	}
 
+	/**
+	 * Starts the streaming client and begins connecting to Alpaca.
+	 * @returns {Promise<void>}
+	 */
 	async start() {
 		if (!this.initialized) await this.init();
 		await this.rust.start();
 	}
 
+	/**
+	 * Subscribes to real-time updates for the specified symbols.
+	 * @param {string[]} symbols - Array of trading symbols.
+	 */
 	subscribe(symbols: string[]) {
 		this.rust.subscribe(symbols);
 	}
 
+	/**
+	 * Unsubscribes from updates for the specified symbols.
+	 * @param {string[]} symbols - Array of trading symbols.
+	 */
 	unsubscribe(symbols: string[]) {
 		this.rust.unsubscribe(symbols);
 	}
 
+	/**
+	 * Cleans up the local state/database.
+	 */
 	clean() {
 		this.rust.clean();
 	}
 
+	/**
+	 * Stops the streaming client and disconnects.
+	 */
 	stop() {
 		this.rust.stop();
 	}

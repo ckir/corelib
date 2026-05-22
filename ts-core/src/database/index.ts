@@ -1,5 +1,6 @@
 /**
- * @file packages/tsdk/packages/database/src/index.ts
+ * @file ts-core/src/database/index.ts
+ * @description Main entry point for the database module, exporting factory functions and core components.
  */
 
 import type { BaseDbConfig, Database } from "./core/types.js";
@@ -16,6 +17,10 @@ export * from "./sqlite/index.js";
 
 /**
  * Factory function to create a database instance based on the configuration.
+ * It automatically selects the correct implementation (Postgres or SQLite) based on the `dialect` field.
+ *
+ * @param {BaseDbConfig} config - The database configuration.
+ * @returns {Promise<Database>} A promise resolving to a Database instance.
  */
 export async function createDatabase(config: BaseDbConfig): Promise<Database> {
 	if (config.dialect === "postgres") {
@@ -24,8 +29,20 @@ export async function createDatabase(config: BaseDbConfig): Promise<Database> {
 	return new SqliteDb(config as any);
 }
 
+/**
+ * Database section containing metadata and core components.
+ */
 export const DatabaseSection = {
+	/**
+	 * Current status of the database section.
+	 */
 	status: "active" as const,
+	/**
+	 * Reference to the default Database implementation (SqliteDb).
+	 */
 	Database: SqliteDb,
+	/**
+	 * Factory function to create a database instance.
+	 */
 	createDatabase,
 };

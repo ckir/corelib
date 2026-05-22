@@ -34,6 +34,12 @@ const getRequire = () => {
 	return _require;
 };
 
+/**
+ * Redacts sensitive environment variables to prevent accidental leakage in logs.
+ *
+ * @param {Record<string, string | undefined>} env - The environment variables to redact.
+ * @returns {Record<string, string>} A new object with sensitive values replaced by "[REDACTED]".
+ */
 function redactEnv(
 	env: Record<string, string | undefined>,
 ): Record<string, string> {
@@ -59,6 +65,12 @@ function redactEnv(
 	return redacted;
 }
 
+/**
+ * Collects system information in Node-like environments (Node.js, Bun).
+ *
+ * @param {"node" | "bun"} runtime - The current runtime.
+ * @returns {object} System information object.
+ */
 function fromNodeLike(runtime: "node" | "bun") {
 	const os = getRequire()("node:os");
 
@@ -66,25 +78,44 @@ function fromNodeLike(runtime: "node" | "bun") {
 		typeof process.memoryUsage === "function" ? process.memoryUsage() : {};
 
 	return {
+		/** Current runtime name. */
 		runtime,
+		/** Operating system platform. */
 		os: process.platform,
+		/** System architecture. */
 		arch: process.arch,
+		/** Process ID. */
 		pid: process.pid,
+		/** Parent process ID. */
 		ppid: process.ppid ?? null,
+		/** Current working directory. */
 		cwd: process.cwd(),
+		/** Process uptime in seconds. */
 		uptime: process.uptime(),
+		/** Operating system version/release. */
 		osVersion: os.release?.() ?? null,
+		/** System load averages for 1, 5, and 15 minutes. */
 		loadAvg: os.loadavg?.() ?? [0, 0, 0],
+		/** Memory usage statistics. */
 		memory: {
+			/** Resident Set Size. */
 			rss: mem.rss ?? null,
+			/** Total heap size. */
 			heapTotal: mem.heapTotal ?? null,
+			/** Used heap size. */
 			heapUsed: mem.heapUsed ?? null,
+			/** Memory used by C++ objects bound to JavaScript objects. */
 			external: mem.external ?? null,
 		},
+		/** Redacted environment variables. */
 		env: redactEnv({ ...process.env }),
 	};
 }
 
+/**
+ * Collects system information in Deno.
+ * @returns {object} System information object.
+ */
 function fromDeno() {
 	const DenoAny = typeof Deno !== "undefined" ? (Deno as any) : null;
 	const mem =
@@ -112,6 +143,10 @@ function fromDeno() {
 	};
 }
 
+/**
+ * Provides a fallback system information object for unsupported runtimes.
+ * @returns {object} Generic system information object.
+ */
 function fallback() {
 	return {
 		runtime: "unknown",
@@ -133,6 +168,12 @@ function fallback() {
 	};
 }
 
+/**
+ * Main entry point for collecting system telemetry.
+ * Automatically detects the runtime and gathers relevant system, process, and environment information.
+ *
+ * @returns {object} Comprehensive system information.
+ */
 export function getSysInfo() {
 	const runtime = detectRuntime();
 
@@ -151,5 +192,8 @@ export function getSysInfo() {
  * @deprecated Use getSysInfo or detectRuntime instead.
  */
 export const SysInfo = {
+	/**
+	 * Gets system information.
+	 */
 	get: getSysInfo,
 };

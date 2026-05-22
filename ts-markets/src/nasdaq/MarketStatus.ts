@@ -13,31 +13,47 @@ import { ApiNasdaqUnlimited, type NasdaqResult } from "./ApiNasdaqUnlimited";
  * Interface matching the raw JSON data structure from Nasdaq API's "data" field.
  */
 export interface NasdaqMarketInfo {
+	/** Country associated with the market. */
 	country: string;
-	marketIndicator: string; // e.g., "Market Open"
+	/** Human-readable market status indicator (e.g., "Market Open"). */
+	marketIndicator: string;
+	/** UI-optimized market status indicator. */
 	uiMarketIndicator: string;
-	marketCountDown: string; // e.g., "Market Closes in 3H 37M"
-	mrktStatus: string; // e.g., "Open" | "Closed" | "Pre Market" | "After Hours"
+	/** Human-readable countdown to market open/close (e.g., "Market Closes in 3H 37M"). */
+	marketCountDown: string;
+	/** Simplified market status (e.g., "Open", "Closed", "Pre Market", "After Hours"). */
+	mrktStatus: string;
+	/** Numeric or UI-optimized market countdown. */
 	mrktCountDown: string;
 
-	// Additional fields from API response
-	preMarketOpeningTime: string; // e.g., "Mar 9, 2026 04:00 AM ET"
+	/** Pre-market opening time (e.g., "Mar 9, 2026 04:00 AM ET"). */
+	preMarketOpeningTime: string;
+	/** Pre-market closing time. */
 	preMarketClosingTime: string;
+	/** Regular market opening time. */
 	marketOpeningTime: string;
+	/** Regular market closing time. */
 	marketClosingTime: string;
+	/** After-hours market opening time. */
 	afterHoursMarketOpeningTime: string;
+	/** After-hours market closing time. */
 	afterHoursMarketClosingTime: string;
 
-	// Date Strings
-	previousTradeDate: string; // e.g., "Mar 6, 2026"
-	nextTradeDate: string; // e.g., "Mar 10, 2026"
+	/** Previous trading date string (e.g., "Mar 6, 2026"). */
+	previousTradeDate: string;
+	/** Next trading date string (e.g., "Mar 10, 2026"). */
+	nextTradeDate: string;
 
-	// Raw ISO strings (NY Time, no offset in string)
-	pmOpenRaw: string; // "2026-03-09T04:00:00"
-	openRaw: string; // "2026-03-09T09:30:00"
-	closeRaw: string; // "2026-03-09T16:00:00"
-	ahCloseRaw: string; // "2026-03-09T20:00:00"
+	/** Raw pre-market opening time in ISO format (NY time, no offset). e.g. "2026-03-09T04:00:00" */
+	pmOpenRaw: string;
+	/** Raw regular market opening time in ISO format. */
+	openRaw: string;
+	/** Raw regular market closing time in ISO format. */
+	closeRaw: string;
+	/** Raw after-hours market closing time in ISO format. */
+	ahCloseRaw: string;
 
+	/** Indicates if the current date is a business day for the market. */
 	isBusinessDay: boolean;
 }
 
@@ -48,7 +64,10 @@ const marketStatusLogger = logger.child({ section: "MarketStatus" });
 
 /**
  * Calculates how long to sleep/wait based on market status in milliseconds.
- * Mirrors the logic from marketstatus.rs using Luxon.
+ * Useful for polling services that need to wait for market open.
+ *
+ * @param {NasdaqMarketInfo} data - The current market information.
+ * @returns {number} The sleep duration in milliseconds.
  */
 function getSleepDuration(data: NasdaqMarketInfo): number {
 	// 1. Current NY Time
@@ -109,8 +128,10 @@ function getSleepDuration(data: NasdaqMarketInfo): number {
 }
 
 /**
- * Fetches the current market status.
- * Guaranteed to return a NasdaqResult without "falling through" to undefined.
+ * Fetches the current market status from Nasdaq API.
+ * Performs strict schema validation on the response.
+ *
+ * @returns {Promise<NasdaqResult<NasdaqMarketInfo>>} A promise resolving to a NasdaqResult.
  */
 async function getStatus(): Promise<NasdaqResult<NasdaqMarketInfo>> {
 	const endpoint =
@@ -179,7 +200,16 @@ async function getStatus(): Promise<NasdaqResult<NasdaqMarketInfo>> {
 	}
 }
 
+/**
+ * Market status utility.
+ */
 export const MarketStatus = {
+	/**
+	 * Fetches the current market status.
+	 */
 	getStatus,
+	/**
+	 * Calculates the sleep duration until next market phase.
+	 */
 	getSleepDuration,
 };

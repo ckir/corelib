@@ -36,12 +36,21 @@ const DEFAULT_INITIAL_BACKOFF_MS = 1_000;
 const DEFAULT_MAX_RETRY_BACKOFF_MS = 3_600_000; // 1 hour cap per retry interval
 const DEFAULT_MAX_FETCH_RETRIES = 10; // circuit breaker: give up after this many consecutive failures
 
+/**
+ * Represents a single row in the Nasdaq symbols database.
+ */
 export interface MarketSymbolRow {
+	/** Trading symbol (ticker). */
 	symbol: string;
+	/** Human-readable name of the security. */
 	name: string;
+	/** Data type: 'rt' (real-time) or 'eod' (end-of-day). */
 	type: "rt" | "eod";
+	/** Asset class (e.g., 'stocks', 'etf'). */
 	class: string;
+	/** Last updated timestamp (Unix milliseconds). */
 	ts: number;
+	/** Indicates if the symbol is currently active. */
 	active: boolean;
 }
 

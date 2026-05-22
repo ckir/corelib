@@ -14,6 +14,12 @@ import { detectRuntime } from "./runtime";
 const utilsLogger = logger.child({ section: "Utils" });
 
 let _require: any;
+
+/**
+ * Gets a `require` function suitable for the current runtime.
+ * In Node-like runtimes, it uses `createRequire`. In other runtimes, it returns a function that throws.
+ * @returns {Function} The require function.
+ */
 export const getRequire = () => {
 	if (!_require) {
 		const runtime = detectRuntime();
@@ -38,10 +44,22 @@ export { includeExcludeCron } from "./cron";
 export { detectRuntime, type Runtime } from "./runtime";
 export { getSysInfo, SysInfo } from "./SysInfo";
 
+/**
+ * General utility methods.
+ */
 export const Utils = {
+	/**
+	 * Logs the current runtime information.
+	 */
 	run: () => utilsLogger.info(`Running on ${detectRuntime()}`),
 };
 
+/**
+ * Gets an environment variable value in a runtime-agnostic way.
+ * Supports Node.js (`process.env`) and Deno (`Deno.env`).
+ * @param {string} key - The environment variable name.
+ * @returns {string | undefined} The value of the environment variable, or undefined if not set.
+ */
 export const getEnv = (key: string): string | undefined => {
 	if (typeof Deno !== "undefined" && Deno.env) {
 		return Deno.env.get(key);
@@ -52,6 +70,11 @@ export const getEnv = (key: string): string | undefined => {
 	return undefined;
 };
 
+/**
+ * Gets all environment variables as a record.
+ * Supports Node.js and Deno.
+ * @returns {Record<string, string | undefined>} An object containing all environment variables.
+ */
 export const getAllEnv = (): Record<string, string | undefined> => {
 	if (typeof Deno !== "undefined" && Deno.env) {
 		return Deno.env.toObject();
@@ -62,6 +85,11 @@ export const getAllEnv = (): Record<string, string | undefined> => {
 	return {};
 };
 
+/**
+ * Reads a text file synchronously in a runtime-agnostic way.
+ * @param {string} file - The path to the file.
+ * @returns {string} The contents of the file as a string.
+ */
 export const readTextFileSync = (file: string): string => {
 	if (typeof Deno !== "undefined" && Deno.readTextFileSync) {
 		return Deno.readTextFileSync(file);
@@ -70,6 +98,11 @@ export const readTextFileSync = (file: string): string => {
 	return readFileSync(file, "utf8");
 };
 
+/**
+ * Checks if a file or directory exists synchronously.
+ * @param {string} file - The path to the file or directory.
+ * @returns {boolean} True if it exists, false otherwise.
+ */
 export const existsSync = (file: string): boolean => {
 	if (typeof Deno !== "undefined" && Deno.statSync) {
 		try {
@@ -83,6 +116,10 @@ export const existsSync = (file: string): boolean => {
 	return existsSync(file);
 };
 
+/**
+ * Gets the current working directory in a runtime-agnostic way.
+ * @returns {string} The current working directory path.
+ */
 export const getCwd = (): string => {
 	if (typeof Deno !== "undefined" && Deno.cwd) {
 		return Deno.cwd();
@@ -93,6 +130,11 @@ export const getCwd = (): string => {
 	return "/";
 };
 
+/**
+ * Gets the directory name of the current module.
+ * Handles `file:` URLs and edge runtimes.
+ * @returns {string} The directory name.
+ */
 export const getDirname = () => {
 	const runtime = detectRuntime();
 	if (runtime === "deno") {
@@ -118,7 +160,8 @@ export const getDirname = () => {
 };
 
 /**
- * Gets the current platform section name
+ * Gets the current platform section name.
+ * @returns {"linux" | "windows"} The platform identifier.
  */
 export const getPlatform = (): "linux" | "windows" => {
 	const runtime = detectRuntime();
@@ -132,13 +175,19 @@ export const getPlatform = (): "linux" | "windows" => {
 };
 
 /**
- * Gets the environment mode from NODE_ENV
+ * Gets the environment mode from `NODE_ENV`.
+ * Defaults to 'development' if not set to 'production'.
+ * @returns {"development" | "production"} The environment mode.
  */
 export const getMode = (): "development" | "production" => {
 	const env = getEnv("NODE_ENV")?.toLowerCase();
 	return env === "production" ? "production" : "development";
 };
 
+/**
+ * Gets the path to the system temporary directory.
+ * @returns {string} The temporary directory path.
+ */
 export const getTempDir = (): string => {
 	if (detectRuntime() === "deno") {
 		return Deno.env.get("TMPDIR") || Deno.env.get("TEMP") || "/tmp";

@@ -1,3 +1,9 @@
+//! # Corelib Rust
+//!
+//! `corelib-rust` is the native Rust implementation of the corelib functionality,
+//! exposed via N-API for usage in Node.js, Bun, and Deno. It provides high-performance
+//! implementations of HTTP clients, market data feeds, and utility functions.
+
 // =============================================
 // FILE: rust/src/lib.rs
 // PURPOSE: Core Rust FFI entry point + public modules

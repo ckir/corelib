@@ -34,5 +34,8 @@ export function createEdgeLogger(
 		levelVal: 30,
 		bindings: () => bindings,
 		silent: () => {},
+		flush: (cb) => {
+			cb?.();
+		},
 	};
 }

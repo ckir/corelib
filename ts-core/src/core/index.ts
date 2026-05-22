@@ -120,10 +120,21 @@ async function loadFFI() {
  */
 export const coreFFI = await loadFFI();
 
+/**
+ * Checks if the native FFI library is loaded and available.
+ * @returns {boolean} True if FFI is available, false otherwise.
+ */
 export function isFfiAvailable(): boolean {
 	return coreFFI !== null;
 }
 
+/**
+ * Native FFI function: Logs a message from Rust and returns the doubled value.
+ * @param {string} msg - The message to log.
+ * @param {number} value - The number to double.
+ * @returns {number} The doubled value returned from Rust.
+ * @throws {Error} If FFI is not loaded or incompatible.
+ */
 export function logAndDouble(msg: string, value: number): number {
 	if (
 		typeof coreFFI === "object" &&
@@ -136,6 +147,11 @@ export function logAndDouble(msg: string, value: number): number {
 	throw new Error("FFI not loaded or incompatible");
 }
 
+/**
+ * Native FFI function: Gets the version of the native library.
+ * @returns {string} The version string from Rust.
+ * @throws {Error} If FFI is not loaded or incompatible.
+ */
 export function getVersion(): string {
 	if (
 		typeof coreFFI === "object" &&
@@ -148,10 +164,27 @@ export function getVersion(): string {
 	throw new Error("FFI not loaded or incompatible");
 }
 
+/**
+ * Core section containing FFI and basic runtime information.
+ */
 export const Core = {
+	/**
+	 * Checks if FFI is available.
+	 */
 	isFfiAvailable,
+	/**
+	 * Gets the native library version.
+	 */
 	getVersion,
+	/**
+	 * Calls the native log and double function.
+	 */
 	logAndDouble,
+	/**
+	 * Runs a core task or simply logs the current runtime status.
+	 * @param {string} [task] - Optional task name to log.
+	 * @param {Record<string, unknown>} [options] - Optional options for the task.
+	 */
 	run: (task?: string, options?: Record<string, unknown>) => {
 		coreLogger.info(`Running on ${runtime}. FFI: ${isFfiAvailable()}`);
 		if (task) {

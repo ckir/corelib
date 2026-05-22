@@ -35,8 +35,20 @@ export {
 	type NasdaqResult,
 };
 
+/**
+ * Main entry point for market data integrations.
+ * Organized by provider and data source.
+ */
 export const Markets = {
-	nasdaq: { ApiNasdaqUnlimited, ApiNasdaqQuotes, MarketSymbols },
+	/** Nasdaq-specific integrations. */
+	nasdaq: {
+		/** High-performance Nasdaq API wrapper. */
+		ApiNasdaqUnlimited,
+		/** Simple Nasdaq quote fetcher. */
+		ApiNasdaqQuotes,
+		/** Persistent Nasdaq symbol database. */
+		MarketSymbols,
+	},
 };
 
 export * as Luxon from "luxon";

@@ -8,6 +8,10 @@ import { createDatabase } from "@ckir/corelib";
 import { Hono } from "hono";
 import type { AppEnv } from "../core/types";
 
+/**
+ * Hono router for SQL query execution.
+ * Mounted at /api/v1/sql in the main application.
+ */
 export const sqlRouter = new Hono<AppEnv>();
 
 /**

@@ -10,6 +10,10 @@ import { type Context, Hono } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { AppEnv } from "../core/types";
 
+/**
+ * Hono router for generic HTTP proxying via RequestUnlimited.
+ * Mounted at /api/v1/ky in the main application.
+ */
 export const kyRouter = new Hono<AppEnv>();
 
 /**

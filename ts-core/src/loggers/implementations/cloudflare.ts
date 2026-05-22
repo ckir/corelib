@@ -114,6 +114,10 @@ class CloudflareLogger implements StrictLogger {
 	silent(): void {
 		this._level = "silent";
 	}
+
+	flush(cb?: (err?: Error | null) => void): void {
+		cb?.();
+	}
 }
 
 export default function createCloudflareLogger(): StrictLogger {
