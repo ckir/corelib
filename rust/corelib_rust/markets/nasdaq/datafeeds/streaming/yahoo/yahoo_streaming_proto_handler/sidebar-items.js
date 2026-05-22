@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["MarketHoursType","OptionType","QuoteType"],"struct":["JsPricingData","PricingData"]};
+window.SIDEBAR_ITEMS = {"enum":["MarketHours","QuoteType"],"fn":["decode_yahoo_message"],"struct":["JsPricingData","PricingData"]};
