@@ -41,12 +41,13 @@ jobs:
   # STAGE 2: MULTI-OS TESTING
   # ---------------------------------------------------------
   test:
-    name: Test (${{ matrix.os }})
+    name: Test (${{ matrix.os }}, ${{ matrix.runtime }})
     needs: validate
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+        runtime: [node, bun, deno]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
@@ -57,6 +58,12 @@ jobs:
         with:
           node-version: 24
           cache: 'pnpm'
+      - if: matrix.runtime == 'bun'
+        uses: oven-sh/setup-bun@v2
+      - if: matrix.runtime == 'deno'
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Install dependencies
@@ -73,7 +80,13 @@ jobs:
         run: pnpm build-all
 
       - name: Run All Tests
-        run: pnpm test-all
+        shell: bash
+        run: |
+          case "${{ matrix.runtime }}" in
+            node) pnpm test-all ;;
+            bun)  pnpm -r exec bun x vitest run ;;
+            deno) pnpm -r exec deno run -A npm:vitest run ;;
+          esac
 
   # ---------------------------------------------------------
   # STAGE 3: DOCUMENTATION (Only on main branch)
