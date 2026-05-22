@@ -17,17 +17,23 @@ let _require: RequireFn | undefined;
 const getRequire = () => {
 	if (!_require) {
 		const runtime = detectRuntime();
-		const isNodeLike = [
-			"node",
-			"bun",
-			"deno",
-			"aws-lambda",
-			"gcp-cloudrun",
-		].includes(runtime);
 
-		if (isNodeLike && typeof import.meta !== "undefined" && import.meta.url) {
-			_require = createRequire(import.meta.url);
-		} else {
+		// 1. Try createRequire from node:module (Standard ESM way)
+		if (typeof import.meta !== "undefined" && import.meta.url) {
+			try {
+				_require = createRequire(import.meta.url);
+			} catch (_e) {
+				// Ignore and try fallback
+			}
+		}
+
+		// 2. Fallback to global require (CommonJS or some Deno modes)
+		if (!_require && typeof (globalThis as any).require === "function") {
+			_require = (globalThis as any).require;
+		}
+
+		// 3. Fallback to a throwing function if nothing worked
+		if (!_require) {
 			_require = (path: string) => {
 				throw new Error(
 					`require("${path}") is not available in this runtime (${runtime}).`,

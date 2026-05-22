@@ -47,51 +47,61 @@ async function loadFFI() {
 	}
 
 	const binaryName = "corelib-rust.node";
-
-	// We try paths relative to this file's location (src/core/index.ts or dist/index.js)
 	const pathsToTry: string[] = [];
+
+	let path: any;
+	try {
+		path = getRequire()("node:path");
+	} catch {
+		// Fallback for runtimes without node:path
+	}
+
 	if (typeof import.meta !== "undefined" && import.meta.url) {
 		try {
-			pathsToTry.push(new URL(`./${binaryName}`, import.meta.url).pathname);
+			const url = new URL(import.meta.url);
+			if (url.protocol === "file:") {
+				const { fileURLToPath } = getRequire()("node:url");
+				const moduleFile = fileURLToPath(import.meta.url);
+				const moduleDir = path ? path.dirname(moduleFile) : "";
+
+				if (moduleDir && path) {
+					pathsToTry.push(
+						path.resolve(moduleDir, binaryName),
+						path.resolve(moduleDir, "..", binaryName),
+						path.resolve(moduleDir, "..", "..", binaryName),
+					);
+				}
+			} else {
+				// Remote/Edge URL
+				pathsToTry.push(new URL(`./${binaryName}`, import.meta.url).pathname);
+			}
 		} catch (_e) {
 			// Ignore if URL is invalid (e.g. in some bundled environments)
 		}
 	}
 
-	if (runtime !== "deno") {
-		try {
-			const path = getRequire()("node:path");
-			const dirname = (import.meta as ImportMeta & { dirname?: string })
-				.dirname;
-			if (dirname) {
-				pathsToTry.push(
-					path.resolve(dirname, binaryName),
-					path.resolve(dirname, "..", binaryName),
-					path.resolve(dirname, "..", "..", binaryName),
-				);
-			}
+	try {
+		const cwd = process.cwd();
+		if (path) {
 			pathsToTry.push(
-				path.resolve(process.cwd(), binaryName), // same dir (unlikely but possible)
-				path.resolve(process.cwd(), "..", binaryName), // parent dir (standard for dist/ -> root)
-				path.resolve(process.cwd(), "..", "..", binaryName), // grandparent dir (standard for src/core/ -> root)
+				path.resolve(cwd, binaryName), // same dir (unlikely but possible)
+				path.resolve(cwd, "..", binaryName), // parent dir (standard for dist/ -> root)
+				path.resolve(cwd, "..", "..", binaryName), // grandparent dir (standard for src/core/ -> root)
+				path.resolve(cwd, "ts-core", binaryName),
+				path.resolve(cwd, "..", "ts-core", binaryName),
 			);
-		} catch (_e) {
-			// Ignore if path/fs/os can't be required (e.g. in edge runtimes)
+		} else {
+			pathsToTry.push(`./${binaryName}`, `../${binaryName}`);
 		}
-	} else {
-		// Deno specific paths - since we are likely running with 'deno run'
-		// We can still try relative paths or CWD
-		pathsToTry.push(
-			`./${binaryName}`,
-			`../${binaryName}`,
-			`../../${binaryName}`,
-		);
+	} catch (_e) {
+		// Ignore if path/fs/os can't be required (e.g. in edge runtimes)
 	}
 
 	let libPath: string | undefined;
 	try {
 		const { existsSync } = getRequire()("node:fs");
-		libPath = pathsToTry.find((p) => existsSync(p));
+		// Remove duplicates and filter by existence
+		libPath = [...new Set(pathsToTry)].find((p) => p && existsSync(p));
 	} catch (_e) {
 		// Ignore
 	}
