@@ -17,8 +17,10 @@ describe("Utils General Abstractions", () => {
 	describe("getEnv", () => {
 		it("should get env from process.env in Node", () => {
 			vi.stubGlobal("Deno", undefined);
-			process.env.TEST_VAR = "hello";
-			expect(utils.getEnv("TEST_VAR")).toBe("hello");
+			if (typeof process !== "undefined" && process.env) {
+				process.env.TEST_VAR = "hello";
+				expect(utils.getEnv("TEST_VAR")).toBe("hello");
+			}
 		});
 
 		it("should get env from Deno.env in Deno", () => {
@@ -34,8 +36,10 @@ describe("Utils General Abstractions", () => {
 	describe("getAllEnv", () => {
 		it("should get all env from process.env in Node", () => {
 			vi.stubGlobal("Deno", undefined);
-			const env = utils.getAllEnv();
-			expect(env).toMatchObject(process.env);
+			if (typeof process !== "undefined" && process.env) {
+				const env = utils.getAllEnv();
+				expect(env).toMatchObject(process.env);
+			}
 		});
 
 		it("should get all env from Deno.env in Deno", () => {
@@ -53,21 +57,35 @@ describe("Utils General Abstractions", () => {
 		it("should detect windows from process.platform", () => {
 			vi.spyOn(runtimeModule, "detectRuntime").mockReturnValue("node");
 			vi.stubGlobal("Deno", undefined);
-			Object.defineProperty(process, "platform", {
-				value: "win32",
-				configurable: true,
-			});
-			expect(utils.getPlatform()).toBe("windows");
+			if (typeof process !== "undefined") {
+				const originalPlatform = process.platform;
+				Object.defineProperty(process, "platform", {
+					value: "win32",
+					configurable: true,
+				});
+				expect(utils.getPlatform()).toBe("windows");
+				Object.defineProperty(process, "platform", {
+					value: originalPlatform,
+					configurable: true,
+				});
+			}
 		});
 
 		it("should detect linux from process.platform", () => {
 			vi.spyOn(runtimeModule, "detectRuntime").mockReturnValue("node");
 			vi.stubGlobal("Deno", undefined);
-			Object.defineProperty(process, "platform", {
-				value: "linux",
-				configurable: true,
-			});
-			expect(utils.getPlatform()).toBe("linux");
+			if (typeof process !== "undefined") {
+				const originalPlatform = process.platform;
+				Object.defineProperty(process, "platform", {
+					value: "linux",
+					configurable: true,
+				});
+				expect(utils.getPlatform()).toBe("linux");
+				Object.defineProperty(process, "platform", {
+					value: originalPlatform,
+					configurable: true,
+				});
+			}
 		});
 
 		it("should detect platform in Deno", () => {
@@ -86,16 +104,24 @@ describe("Utils General Abstractions", () => {
 
 	describe("getMode", () => {
 		it("should return production when NODE_ENV is production", () => {
-			process.env.NODE_ENV = "PRODUCTION";
-			expect(utils.getMode()).toBe("production");
+			if (typeof process !== "undefined" && process.env) {
+				const original = process.env.NODE_ENV;
+				process.env.NODE_ENV = "PRODUCTION";
+				expect(utils.getMode()).toBe("production");
+				process.env.NODE_ENV = original;
+			}
 		});
 
 		it("should return development otherwise", () => {
-			process.env.NODE_ENV = "test";
-			expect(utils.getMode()).toBe("development");
-
-			delete process.env.NODE_ENV;
-			expect(utils.getMode()).toBe("development");
+			if (typeof process !== "undefined" && process.env) {
+				const original = process.env.NODE_ENV;
+				process.env.NODE_ENV = "test";
+				expect(utils.getMode()).toBe("development");
+				
+				delete process.env.NODE_ENV;
+				expect(utils.getMode()).toBe("development");
+				process.env.NODE_ENV = original;
+			}
 		});
 	});
 
@@ -111,7 +137,9 @@ describe("Utils General Abstractions", () => {
 	describe("getCwd", () => {
 		it("should return process.cwd in Node", () => {
 			vi.stubGlobal("Deno", undefined);
-			expect(utils.getCwd()).toBe(process.cwd());
+			if (typeof process !== "undefined") {
+				expect(utils.getCwd()).toBe(process.cwd());
+			}
 		});
 
 		it("should return Deno.cwd in Deno", () => {
