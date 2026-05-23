@@ -5,19 +5,26 @@ import { Cron } from "croner";
  * NONE of the exclude crons match.
  *
  * Supports 6-field cron expressions (seconds).
+ *
+ * @param timezone - Optional IANA timezone name (e.g. "America/New_York").
+ *   Pattern matching uses the wall-clock time in that zone.
+ *   Defaults to the local system timezone when omitted.
  */
 export function includeExcludeCron(
 	includeExprs: string[],
 	excludeExprs: string[],
 	handler: () => void,
+	timezone?: string,
 ) {
+	const opts = timezone ? { timezone } : {};
+
 	// Tick every second so we can evaluate second-level rules
 	const job = new Cron("* * * * * *", () => {
 		const now = new Date();
 
 		// Check if ANY include cron matches "now"
 		const included = includeExprs.some((expr) => {
-			const c = new Cron(expr);
+			const c = new Cron(expr, opts);
 			return c.nextRun(now) === null; // null = matches now
 		});
 
@@ -25,7 +32,7 @@ export function includeExcludeCron(
 
 		// Check if ANY exclude cron matches "now"
 		const excluded = excludeExprs.some((expr) => {
-			const c = new Cron(expr);
+			const c = new Cron(expr, opts);
 			return c.nextRun(now) === null;
 		});
 

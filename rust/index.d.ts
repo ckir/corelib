@@ -92,38 +92,71 @@ export declare function getVersion(): string
  * to ensure precision when passed to JavaScript.
  */
 export interface JsPricingData {
+  /** The unique identifier (symbol) for the security. */
   id: string
+  /** The last sale price. */
   price: number
+  /** The timestamp of the quote (Unix milliseconds). */
   time: number
+  /** The currency of the quote (e.g., 'USD'). */
   currency: string
+  /** The exchange where the security is traded. */
   exchange: string
+  /** The type of quote (see `QuoteType`). */
   quoteType: number
+  /** The market session (Pre, Regular, Post). */
   marketHours: number
+  /** The percentage change from the previous close. */
   changePercent: number
+  /** The total trading volume for the day. */
   dayVolume: number
+  /** The highest price traded during the day. */
   dayHigh: number
+  /** The lowest price traded during the day. */
   dayLow: number
+  /** The numeric change from the previous close. */
   change: number
+  /** The short name of the security. */
   shortName: string
+  /** The expiration date (for options/futures). */
   expireDate: number
+  /** The opening price for the day. */
   openPrice: number
+  /** The closing price from the previous session. */
   previousClose: number
+  /** The strike price (for options). */
   strikePrice: number
+  /** The symbol of the underlying security (for derivatives). */
   underlyingSymbol: string
+  /** The current open interest (for options). */
   openInterest: number
+  /** The option type (Call/Put). */
   optionType: number
+  /** Indicates if it's a mini option. */
   miniOption: number
+  /** The size of the last trade. */
   lastSize: number
+  /** The current bid price. */
   bidPrice: number
+  /** The current bid size. */
   bidSize: number
+  /** The current ask price. */
   askPrice: number
+  /** The current ask size. */
   askSize: number
+  /** Precision hint for formatting the price. */
   priceHint: number
+  /** Trading volume over the last 24 hours. */
   vol24Hr: number
+  /** Total volume across all currencies (for crypto). */
   volAllCurrencies: number
+  /** The source currency (for crypto/forex). */
   fromCurrency: string
+  /** The last market where the security traded. */
   lastMarket: string
+  /** The current circulating supply (for crypto). */
   circulatingSupply: number
+  /** The total market capitalization. */
   marketCap: number
 }
 
@@ -151,44 +184,54 @@ export interface LogRecord {
 }
 
 /** Represents the specific trading session of the quote. */
-export declare const enum MarketHoursType {
-  /** Before the official market open. */
-  PreMarket = 0,
-  /** During official trading hours. */
-  RegularMarket = 1,
-  /** After the official market close. */
+export declare const enum MarketHours {
+  /** Regular trading session. */
+  Regular = 0,
+  /** Pre-market trading session. */
+  PreMarket = 1,
+  /** After-hours (Post-market) trading session. */
   PostMarket = 2,
-  /** General catch-all for non-regular hours. */
-  ExtendedHoursMarket = 3
-}
-
-/** Distinguishes between Call and Put options. */
-export declare const enum OptionType {
-  /** A call option. */
-  Call = 0,
-  /** A put option. */
-  Put = 1
+  /** Extended trading hours. */
+  ExtendedHours = 3
 }
 
 /** Categorizes the type of financial instrument providing the data. */
 export declare const enum QuoteType {
+  /** No specific type defined. */
   None = 0,
+  /** Alternative symbol representation. */
   Altsymbol = 5,
+  /** Internal heartbeat signal to keep the connection alive. */
   Heartbeat = 7,
+  /** Common stock or equity security. */
   Equity = 8,
+  /** Market index (e.g., S&P 500). */
   Index = 9,
+  /** Mutual fund. */
   Mutualfund = 11,
+  /** Money market fund. */
   Moneymarket = 12,
+  /** Options contract. */
   Option = 13,
+  /** Foreign exchange currency pair. */
   Currency = 14,
+  /** Trading warrant. */
   Warrant = 15,
+  /** Fixed income bond. */
   Bond = 17,
+  /** Futures contract. */
   Future = 18,
+  /** Exchange Traded Fund. */
   Etf = 20,
+  /** Commodity (gold, oil, etc.). */
   Commodity = 23,
+  /** ECN specific quote. */
   Ecnquote = 28,
+  /** Digital cryptocurrency. */
   Cryptocurrency = 41,
+  /** Economic or market indicator. */
   Indicator = 42,
+  /** Industry-specific index or data. */
   Industry = 1000
 }
 
