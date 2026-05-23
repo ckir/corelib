@@ -47,10 +47,10 @@ export function detectRuntime(): Runtime {
 	// Check for globalThis.cloudflare (Workerd), __CFW__, caches, or known environment signals
 	if (
 		(typeof globalThis !== "undefined" &&
-			("cloudflare" in globalThis ||
-				"caches" in globalThis ||
-				"WebSocketPair" in globalThis ||
-				"__CFW__" in globalThis)) ||
+			(!!(globalThis as any).cloudflare ||
+				!!(globalThis as any).caches ||
+				!!(globalThis as any).WebSocketPair ||
+				!!(globalThis as any).__CFW__)) ||
 		(typeof process !== "undefined" &&
 			process.env &&
 			process.env.PLATFORM === "cloudflare")

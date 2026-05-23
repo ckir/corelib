@@ -3,20 +3,16 @@ import { detectRuntime } from "./runtime";
 
 describe("detectRuntime", () => {
 	const originalProcess = globalThis.process;
-	const originalBun = (globalThis as any).Bun;
-	const originalDeno = (globalThis as any).Deno;
-	const originalCaches = (globalThis as any).caches;
-	const originalWebSocketPair = (globalThis as any).WebSocketPair;
 
 	beforeEach(() => {
 		vi.resetModules();
-		// Reset globals
-		delete (globalThis as any).Bun;
-		delete (globalThis as any).Deno;
-		delete (globalThis as any).caches;
-		delete (globalThis as any).WebSocketPair;
-		delete (globalThis as any).cloudflare;
-		delete (globalThis as any).__CFW__;
+		// Reset globals using stubGlobal
+		vi.stubGlobal("Bun", undefined);
+		vi.stubGlobal("Deno", undefined);
+		vi.stubGlobal("caches", undefined);
+		vi.stubGlobal("WebSocketPair", undefined);
+		vi.stubGlobal("cloudflare", undefined);
+		vi.stubGlobal("__CFW__", undefined);
 
 		// Reset process.env
 		if (globalThis.process) {
@@ -26,10 +22,7 @@ describe("detectRuntime", () => {
 
 	afterEach(() => {
 		globalThis.process = originalProcess;
-		(globalThis as any).Bun = originalBun;
-		(globalThis as any).Deno = originalDeno;
-		(globalThis as any).caches = originalCaches;
-		(globalThis as any).WebSocketPair = originalWebSocketPair;
+		vi.unstubAllGlobals();
 	});
 
 	it("should detect runtime from process.env.RUNTIME", () => {
@@ -49,19 +42,19 @@ describe("detectRuntime", () => {
 	});
 
 	it("should detect cloudflare from globals", () => {
-		(globalThis as any).cloudflare = {};
+		vi.stubGlobal("cloudflare", {});
 		expect(detectRuntime()).toBe("cloudflare");
-		(globalThis as any).cloudflare = undefined;
+		vi.stubGlobal("cloudflare", undefined);
 
-		(globalThis as any).caches = {};
+		vi.stubGlobal("caches", {});
 		expect(detectRuntime()).toBe("cloudflare");
-		(globalThis as any).caches = undefined;
+		vi.stubGlobal("caches", undefined);
 
-		(globalThis as any).WebSocketPair = {};
+		vi.stubGlobal("WebSocketPair", {});
 		expect(detectRuntime()).toBe("cloudflare");
-		(globalThis as any).WebSocketPair = undefined;
+		vi.stubGlobal("WebSocketPair", undefined);
 
-		(globalThis as any).__CFW__ = {};
+		vi.stubGlobal("__CFW__", {});
 		expect(detectRuntime()).toBe("cloudflare");
 	});
 
@@ -89,16 +82,16 @@ describe("detectRuntime", () => {
 	});
 
 	it("should detect bun from global Bun", () => {
-		(globalThis as any).Bun = {};
+		vi.stubGlobal("Bun", {});
 		expect(detectRuntime()).toBe("bun");
 	});
 
 	it("should detect deno from global Deno", () => {
-		(globalThis as any).Deno = {
+		vi.stubGlobal("Deno", {
 			version: {
 				deno: "1.0.0",
 			},
-		};
+		});
 		expect(detectRuntime()).toBe("deno");
 	});
 

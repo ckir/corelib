@@ -9,7 +9,6 @@ vi.mock("./runtime", () => ({
 
 describe("SysInfo", () => {
 	const originalProcess = globalThis.process;
-	const originalDeno = (globalThis as any).Deno;
 
 	beforeEach(() => {
 		vi.resetAllMocks();
@@ -23,7 +22,7 @@ describe("SysInfo", () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
 		globalThis.process = originalProcess;
-		(globalThis as any).Deno = originalDeno;
+		vi.unstubAllGlobals();
 	});
 
 	it("should redact sensitive environment variables", () => {
@@ -64,7 +63,7 @@ describe("SysInfo", () => {
 	it("should collect info for deno runtime", () => {
 		(runtimeDetector.detectRuntime as any).mockReturnValue("deno");
 
-		(globalThis as any).Deno = {
+		vi.stubGlobal("Deno", {
 			build: { os: "darwin", arch: "aarch64" },
 			pid: 123,
 			ppid: 1,
@@ -73,7 +72,7 @@ describe("SysInfo", () => {
 			loadavg: () => [1, 2, 3],
 			systemMemoryInfo: () => ({ total: 16000000 }),
 			env: { toObject: () => ({ RUNTIME: "deno" }) },
-		};
+		});
 
 		const info = getSysInfo();
 		expect(info.runtime).toBe("deno");

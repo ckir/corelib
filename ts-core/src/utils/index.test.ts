@@ -4,7 +4,6 @@ import * as runtimeModule from "./runtime";
 
 describe("Utils General Abstractions", () => {
 	const originalProcess = globalThis.process;
-	const originalDeno = (globalThis as any).Deno;
 
 	beforeEach(() => {
 		vi.restoreAllMocks();
@@ -12,40 +11,40 @@ describe("Utils General Abstractions", () => {
 
 	afterEach(() => {
 		globalThis.process = originalProcess;
-		(globalThis as any).Deno = originalDeno;
+		vi.unstubAllGlobals();
 	});
 
 	describe("getEnv", () => {
 		it("should get env from process.env in Node", () => {
-			(globalThis as any).Deno = undefined;
+			vi.stubGlobal("Deno", undefined);
 			process.env.TEST_VAR = "hello";
 			expect(utils.getEnv("TEST_VAR")).toBe("hello");
 		});
 
 		it("should get env from Deno.env in Deno", () => {
-			(globalThis as any).Deno = {
+			vi.stubGlobal("Deno", {
 				env: {
 					get: vi.fn().mockReturnValue("deno-val"),
 				},
-			};
+			});
 			expect(utils.getEnv("TEST_VAR")).toBe("deno-val");
 		});
 	});
 
 	describe("getAllEnv", () => {
 		it("should get all env from process.env in Node", () => {
-			(globalThis as any).Deno = undefined;
+			vi.stubGlobal("Deno", undefined);
 			const env = utils.getAllEnv();
 			expect(env).toMatchObject(process.env);
 		});
 
 		it("should get all env from Deno.env in Deno", () => {
 			const mockEnv = { FOO: "BAR" };
-			(globalThis as any).Deno = {
+			vi.stubGlobal("Deno", {
 				env: {
 					toObject: vi.fn().mockReturnValue(mockEnv),
 				},
-			};
+			});
 			expect(utils.getAllEnv()).toEqual(mockEnv);
 		});
 	});
@@ -53,7 +52,7 @@ describe("Utils General Abstractions", () => {
 	describe("getPlatform", () => {
 		it("should detect windows from process.platform", () => {
 			vi.spyOn(runtimeModule, "detectRuntime").mockReturnValue("node");
-			(globalThis as any).Deno = undefined;
+			vi.stubGlobal("Deno", undefined);
 			Object.defineProperty(process, "platform", {
 				value: "win32",
 				configurable: true,
@@ -63,7 +62,7 @@ describe("Utils General Abstractions", () => {
 
 		it("should detect linux from process.platform", () => {
 			vi.spyOn(runtimeModule, "detectRuntime").mockReturnValue("node");
-			(globalThis as any).Deno = undefined;
+			vi.stubGlobal("Deno", undefined);
 			Object.defineProperty(process, "platform", {
 				value: "linux",
 				configurable: true,
@@ -73,12 +72,14 @@ describe("Utils General Abstractions", () => {
 
 		it("should detect platform in Deno", () => {
 			vi.spyOn(runtimeModule, "detectRuntime").mockReturnValue("deno");
-			(globalThis as any).Deno = {
+			vi.stubGlobal("Deno", {
 				build: { os: "windows" },
-			};
+			});
 			expect(utils.getPlatform()).toBe("windows");
 
-			(globalThis as any).Deno.build.os = "darwin";
+			vi.stubGlobal("Deno", {
+				build: { os: "darwin" },
+			});
 			expect(utils.getPlatform()).toBe("linux"); // fallback to linux
 		});
 	});
@@ -109,14 +110,14 @@ describe("Utils General Abstractions", () => {
 
 	describe("getCwd", () => {
 		it("should return process.cwd in Node", () => {
-			(globalThis as any).Deno = undefined;
+			vi.stubGlobal("Deno", undefined);
 			expect(utils.getCwd()).toBe(process.cwd());
 		});
 
 		it("should return Deno.cwd in Deno", () => {
-			(globalThis as any).Deno = {
+			vi.stubGlobal("Deno", {
 				cwd: () => "/deno/cwd",
-			};
+			});
 			expect(utils.getCwd()).toBe("/deno/cwd");
 		});
 	});
