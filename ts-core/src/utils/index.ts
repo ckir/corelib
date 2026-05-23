@@ -71,11 +71,19 @@ export const Utils = {
  * @returns {string | undefined} The value of the environment variable, or undefined if not set.
  */
 export const getEnv = (key: string): string | undefined => {
-	if (typeof Deno !== "undefined" && Deno.env) {
-		return Deno.env.get(key);
+	try {
+		if (typeof Deno !== "undefined" && Deno.env) {
+			return Deno.env.get(key);
+		}
+	} catch {
+		// Fallback to process if Deno.env access fails
 	}
-	if (typeof process !== "undefined" && process.env) {
-		return process.env[key];
+	try {
+		if (typeof process !== "undefined" && process.env) {
+			return process.env[key];
+		}
+	} catch {
+		// Fallback to undefined
 	}
 	return undefined;
 };
@@ -86,11 +94,19 @@ export const getEnv = (key: string): string | undefined => {
  * @returns {Record<string, string | undefined>} An object containing all environment variables.
  */
 export const getAllEnv = (): Record<string, string | undefined> => {
-	if (typeof Deno !== "undefined" && Deno.env) {
-		return Deno.env.toObject();
+	try {
+		if (typeof Deno !== "undefined" && Deno.env) {
+			return Deno.env.toObject();
+		}
+	} catch {
+		// Fallback to process if Deno.env access fails
 	}
-	if (typeof process !== "undefined" && process.env) {
-		return { ...process.env };
+	try {
+		if (typeof process !== "undefined" && process.env) {
+			return { ...process.env };
+		}
+	} catch {
+		// Fallback to empty object
 	}
 	return {};
 };

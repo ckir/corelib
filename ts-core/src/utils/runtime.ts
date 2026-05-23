@@ -27,55 +27,71 @@ export type Runtime =
  */
 export function detectRuntime(): Runtime {
 	// 0. Manual override via environment variable
-	if (typeof process !== "undefined" && process.env && process.env.RUNTIME) {
-		const envRuntime = process.env.RUNTIME.toLowerCase();
-		if (
-			[
-				"node",
-				"bun",
-				"deno",
-				"cloudflare",
-				"aws-lambda",
-				"gcp-cloudrun",
-			].includes(envRuntime)
-		) {
-			return envRuntime as Runtime;
+	try {
+		if (typeof process !== "undefined" && process.env && process.env.RUNTIME) {
+			const envRuntime = process.env.RUNTIME.toLowerCase();
+			if (
+				[
+					"node",
+					"bun",
+					"deno",
+					"cloudflare",
+					"aws-lambda",
+					"gcp-cloudrun",
+				].includes(envRuntime)
+			) {
+				return envRuntime as Runtime;
+			}
 		}
+	} catch {
+		// Ignore process.env access errors in some environments
 	}
 
 	// 1. Cloudflare Workers (High priority)
 	// Check for globalThis.cloudflare (Workerd), __CFW__, caches, or known environment signals
-	if (
-		(typeof globalThis !== "undefined" &&
-			(!!(globalThis as any).cloudflare ||
-				!!(globalThis as any).caches ||
-				!!(globalThis as any).WebSocketPair ||
-				!!(globalThis as any).__CFW__)) ||
-		(typeof process !== "undefined" &&
-			process.env &&
-			process.env.PLATFORM === "cloudflare")
-	) {
-		return "cloudflare";
+	try {
+		if (
+			(typeof globalThis !== "undefined" &&
+				(!!(globalThis as any).cloudflare ||
+					!!(globalThis as any).caches ||
+					!!(globalThis as any).WebSocketPair ||
+					!!(globalThis as any).__CFW__)) ||
+			(typeof process !== "undefined" &&
+				process.env &&
+				process.env.PLATFORM === "cloudflare")
+		) {
+			return "cloudflare";
+		}
+	} catch {
+		// Ignore
 	}
 
 	// 2. AWS Lambda
-	if (
-		typeof process !== "undefined" &&
-		process.env &&
-		process.env.AWS_LAMBDA_FUNCTION_NAME
-	) {
-		return "aws-lambda";
+	try {
+		if (
+			typeof process !== "undefined" &&
+			process.env &&
+			process.env.AWS_LAMBDA_FUNCTION_NAME
+		) {
+			return "aws-lambda";
+		}
+	} catch {
+		// Ignore
 	}
 
 	// 3. Google Cloud Run
-	if (
-		typeof process !== "undefined" &&
-		process.env &&
-		(process.env.K_SERVICE ||
-			process.env.K_REVISION ||
-			process.env.GOOGLE_CLOUD_PROJECT)
-	) {
-		return "gcp-cloudrun";
+	try {
+		if (
+			typeof process !== "undefined" &&
+			process.env &&
+			(process.env.K_SERVICE ||
+				process.env.K_REVISION ||
+				process.env.GOOGLE_CLOUD_PROJECT)
+		) {
+			return "gcp-cloudrun";
+		}
+	} catch {
+		// Ignore
 	}
 
 	// Bun

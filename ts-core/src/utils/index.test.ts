@@ -17,10 +17,8 @@ describe("Utils General Abstractions", () => {
 	describe("getEnv", () => {
 		it("should get env from process.env in Node", () => {
 			vi.stubGlobal("Deno", undefined);
-			if (typeof process !== "undefined" && process.env) {
-				process.env.TEST_VAR = "hello";
-				expect(utils.getEnv("TEST_VAR")).toBe("hello");
-			}
+			vi.stubGlobal("process", { env: { TEST_VAR: "hello" } });
+			expect(utils.getEnv("TEST_VAR")).toBe("hello");
 		});
 
 		it("should get env from Deno.env in Deno", () => {
@@ -36,10 +34,10 @@ describe("Utils General Abstractions", () => {
 	describe("getAllEnv", () => {
 		it("should get all env from process.env in Node", () => {
 			vi.stubGlobal("Deno", undefined);
-			if (typeof process !== "undefined" && process.env) {
-				const env = utils.getAllEnv();
-				expect(env).toMatchObject(process.env);
-			}
+			const mockEnv = { TEST_VAR: "hello" };
+			vi.stubGlobal("process", { env: mockEnv });
+			const env = utils.getAllEnv();
+			expect(env).toMatchObject(mockEnv);
 		});
 
 		it("should get all env from Deno.env in Deno", () => {
@@ -57,35 +55,15 @@ describe("Utils General Abstractions", () => {
 		it("should detect windows from process.platform", () => {
 			vi.spyOn(runtimeModule, "detectRuntime").mockReturnValue("node");
 			vi.stubGlobal("Deno", undefined);
-			if (typeof process !== "undefined") {
-				const originalPlatform = process.platform;
-				Object.defineProperty(process, "platform", {
-					value: "win32",
-					configurable: true,
-				});
-				expect(utils.getPlatform()).toBe("windows");
-				Object.defineProperty(process, "platform", {
-					value: originalPlatform,
-					configurable: true,
-				});
-			}
+			vi.stubGlobal("process", { platform: "win32" });
+			expect(utils.getPlatform()).toBe("windows");
 		});
 
 		it("should detect linux from process.platform", () => {
 			vi.spyOn(runtimeModule, "detectRuntime").mockReturnValue("node");
 			vi.stubGlobal("Deno", undefined);
-			if (typeof process !== "undefined") {
-				const originalPlatform = process.platform;
-				Object.defineProperty(process, "platform", {
-					value: "linux",
-					configurable: true,
-				});
-				expect(utils.getPlatform()).toBe("linux");
-				Object.defineProperty(process, "platform", {
-					value: originalPlatform,
-					configurable: true,
-				});
-			}
+			vi.stubGlobal("process", { platform: "linux" });
+			expect(utils.getPlatform()).toBe("linux");
 		});
 
 		it("should detect platform in Deno", () => {
