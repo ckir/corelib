@@ -200,18 +200,22 @@ jobs:
             artifact_name: corelib-rust-linux-x64.node
             bin_yahoo: yahoo_streamer-linux-x64
             bin_polling: nasdaq_polling-linux-x64
+            bin_alpaca: alpaca_streamer-linux-x64
           - os: macos-latest
             artifact_name: corelib-rust-darwin-x64.node
             bin_yahoo: yahoo_streamer-darwin-x64
             bin_polling: nasdaq_polling-darwin-x64
+            bin_alpaca: alpaca_streamer-darwin-x64
           - os: macos-14
             artifact_name: corelib-rust-darwin-arm64.node
             bin_yahoo: yahoo_streamer-darwin-arm64
             bin_polling: nasdaq_polling-darwin-arm64
+            bin_alpaca: alpaca_streamer-darwin-arm64
           - os: windows-latest
             artifact_name: corelib-rust-win32-x64.node
             bin_yahoo: yahoo_streamer-win32-x64.exe
             bin_polling: nasdaq_polling-win32-x64.exe
+            bin_alpaca: alpaca_streamer-win32-x64.exe
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
@@ -240,9 +244,11 @@ jobs:
           if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
             mv rust/target/release/yahoo_streamer.exe ${{ matrix.bin_yahoo }}
             mv rust/target/release/nasdaq_polling.exe ${{ matrix.bin_polling }}
+            mv rust/target/release/alpaca_streamer.exe ${{ matrix.bin_alpaca }}
           else
             mv rust/target/release/yahoo_streamer ${{ matrix.bin_yahoo }}
             mv rust/target/release/nasdaq_polling ${{ matrix.bin_polling }}
+            mv rust/target/release/alpaca_streamer ${{ matrix.bin_alpaca }}
           fi
       - uses: actions/upload-artifact@v7
         with:
@@ -258,6 +264,11 @@ jobs:
         with:
           name: ${{ matrix.bin_polling }}
           path: ${{ matrix.bin_polling }}
+          retention-days: 1
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.bin_alpaca }}
+          path: ${{ matrix.bin_alpaca }}
           retention-days: 1
 
   release:

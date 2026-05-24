@@ -26,7 +26,19 @@ $requiredBins = @(
     "corelib-rust-linux-x64.node", 
     "corelib-rust-darwin-x64.node", 
     "corelib-rust-darwin-arm64.node", 
-    "corelib-rust-win32-x64.node"
+    "corelib-rust-win32-x64.node",
+    "yahoo_streamer-linux-x64",
+    "nasdaq_polling-linux-x64",
+    "alpaca_streamer-linux-x64",
+    "yahoo_streamer-darwin-x64",
+    "nasdaq_polling-darwin-x64",
+    "alpaca_streamer-darwin-x64",
+    "yahoo_streamer-darwin-arm64",
+    "nasdaq_polling-darwin-arm64",
+    "alpaca_streamer-darwin-arm64",
+    "yahoo_streamer-win32-x64.exe",
+    "nasdaq_polling-win32-x64.exe",
+    "alpaca_streamer-win32-x64.exe"
 )
 
 $missing = @()
