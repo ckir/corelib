@@ -174,7 +174,7 @@ function fallback() {
 			heapUsed: null,
 			external: null,
 		},
-		env: {},
+		env: {} as Record<string, string>,
 	};
 }
 

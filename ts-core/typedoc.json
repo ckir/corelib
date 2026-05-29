@@ -3,5 +3,6 @@
 	"out": "./docs",
 	"readme": "./README.md",
 	"name": "@ckir/corelib",
-	"includeVersion": true
+	"includeVersion": true,
+	"exclude": ["**/*.test.ts", "**/*.spec.ts"]
 }
