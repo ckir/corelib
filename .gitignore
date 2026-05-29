@@ -1,5 +1,6 @@
 # Nx + pnpm + Rust + TS ignores
 node_modules
+dist
 .nx
 rust/target
 *.log
