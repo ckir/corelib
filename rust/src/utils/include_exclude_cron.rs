@@ -247,12 +247,17 @@ mod tests {
             thread::sleep(Duration::from_millis(100));
         }
 
-        handle.stop();
-        let before = counter.load(Ordering::SeqCst);
         assert!(
-            before > 0,
+            counter.load(Ordering::SeqCst) > 0,
             "Cron should have fired at least once before stopping"
         );
+
+        handle.stop();
+        // Brief drain: allow any in-flight tick to complete before snapshotting.
+        // Without this, a tick that started just before stop() can still increment
+        // the counter, causing a spurious failure on slower/busy schedulers (macOS).
+        thread::sleep(Duration::from_millis(200));
+        let before = counter.load(Ordering::SeqCst);
 
         thread::sleep(Duration::from_secs(2));
         assert_eq!(
