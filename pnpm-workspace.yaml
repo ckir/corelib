@@ -1,8 +1,11 @@
+minimumReleaseAge: 0
+
 packages:
   - ts-core
   - ts-markets
   - ts-cloud
   - rust
+
 
 allowBuilds:
   esbuild: true
