@@ -95,7 +95,7 @@ describe("Utils General Abstractions", () => {
 				const original = process.env.NODE_ENV;
 				process.env.NODE_ENV = "test";
 				expect(utils.getMode()).toBe("development");
-				
+
 				delete process.env.NODE_ENV;
 				expect(utils.getMode()).toBe("development");
 				process.env.NODE_ENV = original;

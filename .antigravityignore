@@ -1,0 +1,57 @@
+# Antigravity CLI Ignore File
+# Standard exclusions to ensure efficient indexing, search, and generation.
+
+# Version Control
+.git/
+.github/
+
+# Dependency directories
+node_modules/
+.pnpm-store/
+
+# Build artifacts and compilation outputs
+dist/
+**/dist/
+target/
+rust/target/
+.nx/
+.aws-sam/
+sam-corelib/.aws-sam/
+.wrangler/
+*.node
+*.tgz
+*.zip
+*.tar.gz
+
+# Logs and system files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Documentation build outputs
+**/docs/
+docs/
+
+# IDE files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Workspace-specific exclusions (large/temporary files)
+corelib.txt
+lint-output.txt
+full-modules.svg
