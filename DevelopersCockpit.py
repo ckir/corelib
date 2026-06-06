@@ -11,7 +11,8 @@ import platform
 
 # Detect OS for command separators
 IS_WINDOWS = platform.system() == "Windows"
-CMD_SEP = ";" if IS_WINDOWS else "&&"
+CMD_SEP = "&&"
+
 
 def load_env():
     config = {}

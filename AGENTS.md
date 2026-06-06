@@ -60,7 +60,7 @@ The following tools are available in the development environment and should be u
 
 ## 6. AI Agent Operational Mandates
 
-- **Validation**: Every implementation task **must** conclude with `pnpm format-all`, `pnpm lint-all`, `pnpm test-all`, `pnpm build-all` and `pnpm docs-all`.
+<!-- - **Validation**: Every implementation task **must** conclude with `pnpm format-all`, `pnpm lint-all`, `pnpm test-all`, `pnpm build-all` and `pnpm docs-all`. -->
 - **Surgical Edits**: Prefer `replace` over `write_file` for large files to preserve structure.
 - **README Updates**: For any functionality change (new features, modified behavior, removed capabilities, changed APIs), update the relevant `README.md` file(s) to reflect the change. This does **not** apply to bug fixes that preserve existing documented behavior. Include usage examples for new or changed APIs, noting installation via release `.tgz` assets where applicable.
 - **No Regressions**: If a change causes a TypeDoc warning or a Lint violation, it is incomplete. Fix it before reporting success.

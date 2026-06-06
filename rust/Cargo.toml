@@ -9,7 +9,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 napi = { version = "3.9.0", features = ["napi9", "tokio_rt"] }
 napi-derive = "3.5.6"
-chrono = { version = "0.4.44", features = ["clock"] }
+chrono = { version = "0.4.45", features = ["clock"] }
 cron = "0.16.0"
 thiserror = "2.0.18"
 futures = "0.3.32"
