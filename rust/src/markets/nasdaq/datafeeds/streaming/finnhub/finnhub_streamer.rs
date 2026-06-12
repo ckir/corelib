@@ -32,6 +32,7 @@ pub fn market_event_to_finnhub_pricing(ev: &MarketEvent) -> Option<FinnhubPricin
         } => {
             let (volume, conditions) = match extras {
                 TradeExtras::Finnhub(x) => (x.volume, x.conditions.clone()),
+                _ => return None,
             };
             Some(FinnhubPricingData {
                 symbol: ticker.clone(),
@@ -46,7 +47,7 @@ pub fn market_event_to_finnhub_pricing(ev: &MarketEvent) -> Option<FinnhubPricin
                 },
             })
         }
-        MarketEvent::Status { .. } => None,
+        MarketEvent::Quote { .. } | MarketEvent::Status { .. } => None,
     }
 }
 

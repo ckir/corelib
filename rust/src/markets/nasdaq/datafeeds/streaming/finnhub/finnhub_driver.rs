@@ -74,6 +74,7 @@ mod tests {
                         assert_eq!(x.volume, 100.0);
                         assert_eq!(x.conditions, vec!["@".to_string()]);
                     }
+                    _ => panic!("expected Finnhub extras"),
                 }
             }
             _ => panic!(),
