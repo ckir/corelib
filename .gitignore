@@ -14,7 +14,9 @@ lint-output.txt
 # token-discipline + Antigravity dev-workflow (local working artifacts)
 .claude/token-ledger.ndjson
 CLAUDE-TO-ANTIGRAVITY.md
+.agent/
 ts-core/.agent/
+.serena/
 
 # ──────────────────────────────────────────────
 # AWS SAM deployment folder
