@@ -72,6 +72,8 @@ pub mod markets {
                 pub mod alpaca {
                     /// Main Alpaca price streamer logic.
                     pub mod alpaca_streamer;
+                    /// Pure Alpaca frame-decode functions (q/t/b → raw + unified).
+                    pub mod alpaca_driver;
                     /// Re-export Alpaca streaming components for convenience.
                     pub use alpaca_streamer::{
                         AlpacaConfig, AlpacaPricingData, AlpacaStreaming, AlpacaStreamingCore,
