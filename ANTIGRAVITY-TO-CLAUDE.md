@@ -1303,3 +1303,89 @@ We keep `uni: Option<MarketEvent>` on `CoreEvent::Pricing`. The Yahoo driver onl
     *   *Recommendation*: Reuse the host's `redb` subscription tables by mapping them all under a single uniform table key structure (e.g. `symbol`) and subscribing flatly during `load_subscriptions()`. This keeps total parity with Finnhub's flat model and utilizes our existing reconnect-resume mechanics.
 
 
+## 2026-06-13 — (d) Phase 2b — divergent (uni superset fields)
+
+### 1. Unified Superset Promotion Evaluation
+
+#### Q1: Promoting `last_size` & `quote_type` Correctness & Sufficiency
+*   **Analysis**: Promoting `last_size` (tag 22, `i64`) and `quote_type` (tag 6, `i32`) is highly correct and perfectly sufficient for the common equity/ETF streaming cases. Trades in `finstream`'s original schema lacked individual per-trade sizes. Adding `last_size` into `YahooTradeExtras` resolves this core telemetry gap.
+*   **Must-Adds**: No critical must-adds were missed. Core daily prices like open, high, low, previous close, and market capitalization are already perfectly covered within the `YahooTradeExtras` baseline.
+
+#### Q2: `quote_type` Representation Decision
+*   **Recommendation**: **All-lowercase stringified label** (e.g., `"equity"`, `"etf"`, `"cryptocurrency"`, `"option"`).
+*   **Rationale**: Carrying the raw `i32` forces JS/TS consumers to construct manual enum maps and is not self-describing. Serializing as an all-lowercase string is highly portable for downstream JSON-stringified logs/archives and maintains complete design consistency with established enum serializations like `ProviderKind` (which uses `#[serde(rename_all = "lowercase")]`).
+
+#### Q3: Crypto Group Promote/Defer Call
+*   **Recommendation**: **Promote** (`vol_24hr`, `vol_all_currencies`, `circulating_supply`, `from_currency`).
+*   **Rationale**: Yahoo crypto symbols (e.g., `BTC-USD`) are primary, highly active streaming assets. Promoting these fields allows a single, unified market-visualization dashboard to render stocks, ETFs, and cryptocurrencies side-by-side using the same standard unified `MarketEvent` handlers.
+
+#### Q4: Serde Hygiene and Zero/Empty Skip Patterns
+*   **Analysis**: Extending the `skip_serializing_if` pattern ensures that equity events do not emit empty crypto/option fields.
+*   **Meaningful Zero Value Evaluation**: Zero is *not* a meaningful value for size, volume, supply, or currency strings. However, `change` and `change_pct` can be `0.0` (indicating flat price performance) but are skipped in finstream's baseline, which we preserve for parity. The `market_hours` field uses `0` to represent `MarketHours::Regular` session, and is correctly **exempt** from serialization skipping in the schema definition.
+
+#### Q5: Options Block Carrier Shape (Nested vs Flat vs Raw)
+*   **Recommendation**: **Nested Optional Sub-structure** (`options: Option<YahooOptionExtras>`).
+*   **Rationale**: Flatly adding option fields (`strike_price`, `option_type`, `open_interest`, `underlying_symbol`, `expire_date`, `mini_option`) bloats 95%+ of standard stock/crypto JSON frames with redundant fields. Punting them to raw-only defeats the portability design objective of a unified event model. Packing them into a nested, optional `YahooOptionExtras` struct that is omitted when `None` (via `skip_serializing_if = "Option::is_none"`) keeps standard equity payloads exceptionally compact while allowing option events to remain fully portable when needed.
+
+---
+
+### 2. Concrete Final Recommended Schema Additions
+
+#### `YahooTradeExtras` additions:
+```rust
+#[allow(dead_code)]
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct YahooTradeExtras {
+    // ... baseline 16 fields ...
+    #[serde(skip_serializing_if = "is_zero_i64")]
+    pub last_size: i64,
+    pub quote_type: String, // all-lowercase string representation (e.g., "equity")
+
+    // Crypto Group
+    #[serde(skip_serializing_if = "is_zero_i64")]
+    pub vol_24hr: i64,
+    #[serde(skip_serializing_if = "is_zero_i64")]
+    pub vol_all_currencies: i64,
+    #[serde(skip_serializing_if = "is_zero_f64")]
+    pub circulating_supply: f64,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub from_currency: String,
+
+    // Option Group
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options: Option<YahooOptionExtras>,
+}
+```
+
+#### `YahooQuoteExtras` additions:
+```rust
+#[allow(dead_code)]
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct YahooQuoteExtras {
+    // ... baseline 9 fields ...
+    pub quote_type: String, // all-lowercase string representation (e.g., "equity")
+
+    // Option Group
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options: Option<YahooOptionExtras>,
+}
+```
+
+#### `YahooOptionExtras` structure definition:
+```rust
+#[allow(dead_code)]
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct YahooOptionExtras {
+    #[serde(skip_serializing_if = "is_zero_f64")]
+    pub strike_price: f64,
+    pub option_type: i32, // maps to QuoteType Option enum
+    #[serde(skip_serializing_if = "is_zero_i64")]
+    pub open_interest: i64,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub underlying_symbol: String,
+    #[serde(skip_serializing_if = "is_zero_i64")]
+    pub expire_date: i64,
+    #[serde(skip_serializing_if = "is_zero_i64")]
+    pub mini_option: i64,
+}
+```
