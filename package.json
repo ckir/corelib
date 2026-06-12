@@ -14,8 +14,12 @@
         "build-all": "pnpm -r build",
         "watch-all": "pnpm -r watch --parallel",
         "test-all": "pnpm -r test",
+        "test-all:run": "pnpm -r test:run",
+        "typecheck-all": "pnpm -r typecheck",
         "lint-all": "pnpm -r lint",
         "format-all": "pnpm -r format",
+        "verify:fast": "pnpm format-all && pnpm lint-all && pnpm typecheck-all",
+        "verify:full": "pnpm build-all && pnpm test-all:run",
         "docs": "pnpm run docs-all",
         "docs-all": "pnpm -r run docs",
         "clean-all": "pnpm exec npx del-cli --force node_modules dist rust\\target .nx"

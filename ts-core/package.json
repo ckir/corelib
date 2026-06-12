@@ -20,6 +20,8 @@
         "build": "tsup",
         "watch": "tsup --watch",
         "test": "vitest",
+        "test:run": "vitest run",
+        "typecheck": "tsc --noEmit",
         "lint": "biome check . --write --unsafe --max-diagnostics=100",
         "format": "biome format . --write",
         "docs": "typedoc",
