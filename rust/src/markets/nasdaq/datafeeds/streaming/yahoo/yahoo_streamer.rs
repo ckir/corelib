@@ -15,6 +15,7 @@ use napi_derive::napi;
 use prost::Message as ProstMessage;
 use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
 use serde_json;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
@@ -153,10 +154,19 @@ pub struct YahooStreamingCore<C: YahooCallbacks> {
 impl<C: YahooCallbacks> YahooStreamingCore<C> {
     /// Creates a new `YahooStreamingCore` and optionally initializes the local database.
     pub fn new(callbacks: C) -> Self {
+        // Fix 3: per-instance unique counter so concurrent instances never collide on the DB file.
+        static INSTANCE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
         // Determine the database path from environment
         let db_env = std::env::var("YAHOO_DB").unwrap_or_else(|_| {
             let temp = std::env::temp_dir();
-            temp.join("yahoo_streaming.redb")
+            let pid = std::process::id();
+            let seq = INSTANCE_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .subsec_nanos();
+            temp.join(format!("yahoo_streaming_{pid}_{seq}_{nanos}.redb"))
                 .to_string_lossy()
                 .to_string()
         });
@@ -230,7 +240,24 @@ impl<C: YahooCallbacks> YahooStreamingCore<C> {
 
         // Spawn the main supervisor task
         let task = tokio::spawn(Self::run_loop(Arc::clone(&inner), stop_rx, sub_rx));
-        guard.ws_task = Some(task);
+
+        // Fix 5: Spawn a lightweight monitor that awaits the supervisor task.
+        // If the supervisor panics, tokio catches it as a JoinError::is_panic() and we
+        // surface that to JS via the existing on_event("error") callback.
+        let monitor_inner = Arc::clone(&inner);
+        let monitor_task = tokio::spawn(async move {
+            match task.await {
+                Ok(()) => { /* normal completion */ }
+                Err(join_err) if join_err.is_panic() => {
+                    monitor_inner.lock().await.callbacks.on_event(EventRecord {
+                        r#type: "error".to_string(),
+                        data: Some("Streamer supervisor panicked; stream is dead".to_string()),
+                    });
+                }
+                Err(_) => { /* task was cancelled/aborted, nothing to do */ }
+            }
+        });
+        guard.ws_task = Some(monitor_task);
     }
 
     /// Background loop that handles reconnections with exponential backoff.
@@ -240,20 +267,32 @@ impl<C: YahooCallbacks> YahooStreamingCore<C> {
         mut sub_rx: mpsc::Receiver<Vec<String>>,
     ) {
         // Initial backoff duration in seconds
-        let mut backoff = 5u64;
+        const BASE_BACKOFF: u64 = 5;
+        let mut backoff = BASE_BACKOFF;
         loop {
             let inner_clone = Arc::clone(&inner);
 
             // Execute the actual WebSocket logic
             let res = Self::ws_loop(inner_clone, &mut sub_rx, &mut stop_rx).await;
 
+            // Fix 2: Track whether this was a pure connection failure (Err) vs a successful
+            // connection that later dropped (Ok(false)).  Only grow backoff on Err.
+            let was_failure = matches!(res, Err(()));
+
             match res {
                 Ok(true) => {
                     // Stream stopped gracefully via stop() call
                     break;
                 }
-                _ => {
-                    // Connection lost or error occurred, trigger a reconnect event
+                Ok(false) => {
+                    // Connection succeeded but then dropped — emit reconnecting event.
+                    inner.lock().await.callbacks.on_event(EventRecord {
+                        r#type: "reconnecting".to_string(),
+                        data: None,
+                    });
+                }
+                Err(()) => {
+                    // Connection failed entirely — emit reconnecting event.
                     inner.lock().await.callbacks.on_event(EventRecord {
                         r#type: "reconnecting".to_string(),
                         data: None,
@@ -261,10 +300,25 @@ impl<C: YahooCallbacks> YahooStreamingCore<C> {
                 }
             }
 
-            // Sleep for the backoff duration before the next reconnect attempt
-            tokio::time::sleep(tokio::time::Duration::from_secs(backoff)).await;
-            // Double the backoff duration up to a maximum of 1 hour
-            backoff = (backoff * 2).min(3600);
+            // Fix 2: Reset backoff to base after a successful connection; only grow on failures.
+            if was_failure {
+                backoff = (backoff * 2).min(3600);
+            } else {
+                backoff = BASE_BACKOFF;
+            }
+
+            // Fix 6: Add jitter derived from SystemTime nanos (no extra crate needed).
+            // Jitter range: 0 .. backoff*500 ms (up to half the backoff in milliseconds).
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .subsec_nanos() as u64;
+            let jitter_ms = nanos % (backoff * 500).max(1);
+            let sleep_dur = tokio::time::Duration::from_secs(backoff)
+                + tokio::time::Duration::from_millis(jitter_ms);
+
+            // Sleep for backoff + jitter before the next reconnect attempt
+            tokio::time::sleep(sleep_dur).await;
         }
     }
 
@@ -554,6 +608,25 @@ impl YahooStreaming {
     pub async fn stop(&self) -> Result<()> {
         self.core.stop().await;
         Ok(())
+    }
+}
+
+/// Fix 1: Drop impl for YahooStreaming so GC-driven cleanup stops the supervisor loop.
+/// Sends on the stop channel (same path as .stop()), then aborts the task.
+/// Idempotent: stop_tx is taken so a second trigger is a no-op.
+impl Drop for YahooStreaming {
+    fn drop(&mut self) {
+        // We are in a sync context; use try_lock to avoid blocking.
+        if let Ok(mut guard) = self.core.inner.try_lock() {
+            if let Some(tx) = guard.stop_tx.take() {
+                let _ = tx.try_send(());
+            }
+            if let Some(task) = guard.ws_task.take() {
+                task.abort();
+            }
+        }
+        // If try_lock fails, the task will naturally stop when the Arc<Mutex<Inner>> drops
+        // (stop_tx Sender drop closes the channel).
     }
 }
 

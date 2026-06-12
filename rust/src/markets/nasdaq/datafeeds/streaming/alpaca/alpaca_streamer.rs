@@ -14,6 +14,7 @@ use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
 use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
@@ -33,7 +34,7 @@ const ALPACA_SUBSCRIPTIONS_TABLE: TableDefinition<&str, bool> =
 
 /// Configuration parameters for the Alpaca price streamer.
 #[napi(object)]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct AlpacaConfig {
     /// Optional path to the `redb` database file. Defaults to a temporary directory.
     pub db_path: Option<String>,
@@ -45,6 +46,19 @@ pub struct AlpacaConfig {
     pub key_id: Option<String>,
     /// Alpaca API Secret Key. Falls back to `APCA_API_SECRET_KEY` environment variable.
     pub secret_key: Option<String>,
+}
+
+/// Fix 4: Hand-written Debug impl that masks credential fields to prevent log leaks.
+impl std::fmt::Debug for AlpacaConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AlpacaConfig")
+            .field("db_path", &self.db_path)
+            .field("silence_seconds", &self.silence_seconds)
+            .field("base_url", &self.base_url)
+            .field("key_id", &self.key_id.as_ref().map(|_| "<redacted>"))
+            .field("secret_key", &self.secret_key.as_ref().map(|_| "<redacted>"))
+            .finish()
+    }
 }
 
 /// A unified representation of Alpaca pricing data, consolidating Trades, Quotes, and Bars.
@@ -130,7 +144,10 @@ enum WsLoopResult {
     /// The loop exited gracefully (e.g., manual stop).
     GracefulStop,
     /// The loop encountered a network or protocol error and should retry.
-    Reconnect,
+    /// `connected` is true if the socket had successfully authenticated before the
+    /// drop (a healthy connection that was lost → reset backoff), false if it never
+    /// connected/authenticated (a pure failure → grow backoff).
+    Reconnect { connected: bool },
     /// The loop encountered a fatal error (like Auth Failure) and should halt entirely.
     FatalError(String),
 }
@@ -144,10 +161,19 @@ pub struct AlpacaStreamingCore<C: AlpacaCallbacks> {
 impl<C: AlpacaCallbacks> AlpacaStreamingCore<C> {
     /// Creates a new `AlpacaStreamingCore` and optionally initializes the local database.
     pub fn new(callbacks: C) -> Self {
+        // Fix 3: per-instance unique counter so concurrent instances never collide on the DB file.
+        static INSTANCE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
         // Determine the database path from environment or use a temporary file
         let db_env = std::env::var("ALPACA_DB").unwrap_or_else(|_| {
             let temp = std::env::temp_dir();
-            temp.join("corelib_streaming.redb")
+            let pid = std::process::id();
+            let seq = INSTANCE_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .subsec_nanos();
+            temp.join(format!("corelib_streaming_{pid}_{seq}_{nanos}.redb"))
                 .to_string_lossy()
                 .to_string()
         });
@@ -233,7 +259,25 @@ impl<C: AlpacaCallbacks> AlpacaStreamingCore<C> {
 
         // Spawn the main supervisor task
         let task = tokio::spawn(Self::run_loop(Arc::clone(&inner), stop_rx, sub_rx));
-        guard.ws_task = Some(task);
+
+        // Fix 5: Spawn a lightweight monitor that awaits the supervisor task.
+        // If the supervisor panics, tokio catches it as a JoinError::is_panic() and we
+        // surface that to JS via the existing on_event("error") callback.
+        let monitor_inner = Arc::clone(&inner);
+        let monitor_task = tokio::spawn(async move {
+            match task.await {
+                Ok(()) => { /* normal completion */ }
+                Err(join_err) if join_err.is_panic() => {
+                    // The supervisor panicked — emit an error event so JS is notified.
+                    monitor_inner.lock().await.callbacks.on_event(EventRecord {
+                        r#type: "error".to_string(),
+                        data: Some("Streamer supervisor panicked; stream is dead".to_string()),
+                    });
+                }
+                Err(_) => { /* task was cancelled/aborted, nothing to do */ }
+            }
+        });
+        guard.ws_task = Some(monitor_task);
     }
 
     /// Background loop that handles reconnections with exponential backoff.
@@ -243,13 +287,20 @@ impl<C: AlpacaCallbacks> AlpacaStreamingCore<C> {
         mut sub_rx: mpsc::Receiver<Vec<String>>,
     ) {
         // Initial backoff duration in seconds
-        let mut backoff = 5u64;
+        const BASE_BACKOFF: u64 = 5;
+        let mut backoff = BASE_BACKOFF;
 
         loop {
             let inner_clone = Arc::clone(&inner);
 
             // Execute the actual WebSocket logic
             let res = Self::ws_loop(inner_clone, &mut sub_rx, &mut stop_rx).await;
+
+            // Fix 2: A reconnect is a "pure failure" (grow backoff) only if the socket never
+            // authenticated. A healthy connection that was later dropped (connected: true)
+            // resets the backoff so the stream self-heals fast instead of inheriting a long
+            // sticky backoff from an earlier outage. GracefulStop/FatalError break below.
+            let was_failure = matches!(res, WsLoopResult::Reconnect { connected: false });
 
             match res {
                 WsLoopResult::GracefulStop => {
@@ -266,7 +317,7 @@ impl<C: AlpacaCallbacks> AlpacaStreamingCore<C> {
                     });
                     break;
                 }
-                WsLoopResult::Reconnect => {
+                WsLoopResult::Reconnect { .. } => {
                     // Connection lost or non-fatal error occurred, trigger a reconnect event
                     inner.lock().await.callbacks.on_event(EventRecord {
                         r#type: "reconnecting".to_string(),
@@ -275,11 +326,25 @@ impl<C: AlpacaCallbacks> AlpacaStreamingCore<C> {
                 }
             }
 
-            // Sleep for the backoff duration before the next reconnect attempt
-            tokio::time::sleep(tokio::time::Duration::from_secs(backoff)).await;
+            // Fix 2: Reset backoff to base when connection succeeded; only grow on pure failures.
+            if was_failure {
+                backoff = (backoff * 2).min(3600);
+            } else {
+                backoff = BASE_BACKOFF;
+            }
 
-            // Double the backoff duration up to a maximum of 1 hour
-            backoff = (backoff * 2).min(3600);
+            // Fix 6: Add jitter derived from SystemTime nanos (no extra crate needed).
+            // Jitter range: 0 .. backoff*500 ms (i.e., up to half the backoff in milliseconds).
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .subsec_nanos() as u64;
+            let jitter_ms = nanos % (backoff * 500).max(1);
+            let sleep_dur = tokio::time::Duration::from_secs(backoff)
+                + tokio::time::Duration::from_millis(jitter_ms);
+
+            // Sleep for the backoff + jitter duration before the next reconnect attempt
+            tokio::time::sleep(sleep_dur).await;
         }
     }
 
@@ -289,6 +354,11 @@ impl<C: AlpacaCallbacks> AlpacaStreamingCore<C> {
         sub_rx: &mut mpsc::Receiver<Vec<String>>,
         stop_rx: &mut mpsc::Receiver<()>,
     ) -> WsLoopResult {
+        // Fix 2: tracks whether this connection authenticated before any drop, so the
+        // supervisor can distinguish a healthy-but-dropped connection (reset backoff)
+        // from a never-connected failure (grow backoff). Set true after auth success.
+        let mut connected = false;
+
         // 1. Resolve URL and Credentials
         let (url, key_id, secret_key) = {
             let guard = inner.lock().await;
@@ -326,7 +396,7 @@ impl<C: AlpacaCallbacks> AlpacaStreamingCore<C> {
                     msg: "Alpaca WS connect failed".to_string(),
                     extras: Some(e.to_string()),
                 });
-                return WsLoopResult::Reconnect;
+                return WsLoopResult::Reconnect { connected };
             }
         };
 
@@ -338,7 +408,7 @@ impl<C: AlpacaCallbacks> AlpacaStreamingCore<C> {
                         if first.get("T").and_then(|t| t.as_str()) != Some("success")
                             || first.get("msg").and_then(|m| m.as_str()) != Some("connected")
                         {
-                            return WsLoopResult::Reconnect;
+                            return WsLoopResult::Reconnect { connected };
                         }
                     }
                 }
@@ -361,7 +431,7 @@ impl<C: AlpacaCallbacks> AlpacaStreamingCore<C> {
                 msg: "Failed to send auth payload".to_string(),
                 extras: Some(e.to_string()),
             });
-            return WsLoopResult::Reconnect;
+            return WsLoopResult::Reconnect { connected };
         }
 
         // 5. Await Authentication Response
@@ -393,13 +463,13 @@ impl<C: AlpacaCallbacks> AlpacaStreamingCore<C> {
                         if first.get("T").and_then(|t| t.as_str()) != Some("success")
                             || first.get("msg").and_then(|m| m.as_str()) != Some("authenticated")
                         {
-                            return WsLoopResult::Reconnect;
+                            return WsLoopResult::Reconnect { connected };
                         }
                     }
                 }
             }
         } else {
-            return WsLoopResult::Reconnect;
+            return WsLoopResult::Reconnect { connected };
         }
 
         // Notify that the connection has been successfully established and authenticated
@@ -407,6 +477,9 @@ impl<C: AlpacaCallbacks> AlpacaStreamingCore<C> {
             r#type: "connected".to_string(),
             data: None,
         });
+
+        // Fix 2: from here on, any reconnect is a healthy-connection drop (reset backoff).
+        connected = true;
 
         // Split the stream into a writer and a reader for concurrent operation
         let (mut write, mut read) = ws_stream.split();
@@ -532,13 +605,13 @@ impl<C: AlpacaCallbacks> AlpacaStreamingCore<C> {
                         Some(Ok(Message::Close(c))) => {
                             let data = c.map(|frame| frame.reason.to_string());
                             inner.lock().await.callbacks.on_event(EventRecord { r#type: "disconnected".to_string(), data });
-                            return WsLoopResult::Reconnect;
+                            return WsLoopResult::Reconnect { connected };
                         }
 
                         // Handle unexpected end of stream
                         None => {
                             inner.lock().await.callbacks.on_event(EventRecord { r#type: "disconnected".to_string(), data: Some("Stream ended".to_string()) });
-                            return WsLoopResult::Reconnect;
+                            return WsLoopResult::Reconnect { connected };
                         }
 
                         // Handle WebSocket errors
@@ -546,7 +619,7 @@ impl<C: AlpacaCallbacks> AlpacaStreamingCore<C> {
                             let err_msg = e.to_string();
                             inner.lock().await.callbacks.on_log(LogRecord { level: "error".to_string(), msg: "WS read error".to_string(), extras: Some(err_msg.clone()) });
                             inner.lock().await.callbacks.on_event(EventRecord { r#type: "error".to_string(), data: Some(err_msg) });
-                            return WsLoopResult::Reconnect;
+                            return WsLoopResult::Reconnect { connected };
                         }
                         _ => continue,
                     }
@@ -574,7 +647,7 @@ impl<C: AlpacaCallbacks> AlpacaStreamingCore<C> {
                 // Reconnect if no data has been received for the silence threshold
                 _ = silence_timer.tick() => {
                     inner.lock().await.callbacks.on_event(EventRecord { r#type: "silence-reconnect".to_string(), data: None });
-                    return WsLoopResult::Reconnect;
+                    return WsLoopResult::Reconnect { connected };
                 }
             }
         }
@@ -742,6 +815,26 @@ impl AlpacaStreaming {
     pub async fn stop(&self) -> Result<()> {
         self.core.stop().await;
         Ok(())
+    }
+}
+
+/// Fix 1: Drop impl for AlpacaStreaming so GC-driven cleanup stops the supervisor loop.
+/// Sends on the stop channel (same path as .stop()), then aborts the task.
+/// Idempotent: stop_tx is taken so a second trigger is a no-op.
+impl Drop for AlpacaStreaming {
+    fn drop(&mut self) {
+        // We are in a sync context; use try_lock to avoid blocking.
+        // If the lock is held, the stream is still active — signal via try_send.
+        if let Ok(mut guard) = self.core.inner.try_lock() {
+            if let Some(tx) = guard.stop_tx.take() {
+                let _ = tx.try_send(());
+            }
+            if let Some(task) = guard.ws_task.take() {
+                task.abort();
+            }
+        }
+        // If try_lock fails, the task will naturally notice the sender side is gone
+        // when the Arc<Mutex<Inner>> drops (stop_tx Sender drop closes the channel).
     }
 }
 
