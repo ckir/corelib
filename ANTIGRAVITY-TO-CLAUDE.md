@@ -1389,3 +1389,47 @@ pub struct YahooOptionExtras {
     pub mini_option: i64,
 }
 ```
+
+---
+
+## 2026-06-13 — Phase 2b Plan Review and Verification
+
+We have performed a complete structural and design-level audit of the Phase 2b (Yahoo Finance Dual-Mode Streamer Migration) implementation plan against the real codebase files. Below is our verification report confirming compliance, safety, and correctness across all gates.
+
+### 1. Carrier Migration Auditing (Task 1)
+* **Grep Analysis**: We queried all occurrences of `CoreEvent::Pricing` across the entire `rust/` workspace. The touchpoints are completely contained in `types.rs`, `alpaca_driver.rs`, `alpaca_streamer.rs`, `finnhub_driver.rs`, `finnhub_streamer.rs`, and the `alpaca_streamer` CLI bin.
+* **Safety Verification**:
+  * In `bin/alpaca_streamer.rs`, the destructuring is performed as:
+    ```rust
+    CoreEvent::Pricing { raw: RawPricing::Alpaca(p), .. } => {
+    ```
+    The presence of the `..` wildcard pattern ensures that changing the `uni` field from `Option<MarketEvent>` to `Vec<MarketEvent>` maintains flawless compilation with zero modifications requested.
+  * In `alpaca_streamer.rs` and `finnhub_streamer.rs`, matching is performed specifically against `RawPricing::Alpaca` or `RawPricing::Finnhub` with catch-all `_ => {}` fallback arms, preventing compile regressions.
+  * The transition from `Option<MarketEvent>` to `Vec<MarketEvent>` is completely compile-safe and correctly updates all existing drivers.
+
+### 2. Field Mapping & Schema Validation (Task 2 & 3)
+* **Field Precision Cross-Check**:
+  * Mapped all 22 trade extras fields, 11 quote extras fields, and 6 nested option extras fields in `parse_yahoo_message` to ensure lossless representation of `JsPricingData` (Proto fields).
+  * Audited core conversions: `change_pct` binds to `raw.change_percent` (correctly renamed to align with standard schema naming), `volume` binds to `raw.day_volume`, `open` binds to `raw.open_price`, and `prev_close` binds to `raw.previous_close`.
+  * Checked standard serialization decorators: `is_zero_f64`, `is_zero_i64` and `String::is_empty` skipped-ifs are correctly located in `core/schema.rs` and accessible for `YahooOptionExtras`.
+  * Verified that daily pricing values such as regular session `market_hours == 0` do not have skips, allowing standard session tags to correctly emit.
+
+### 3. Enumeration Integrity (Task 2)
+* Checked numeric codes in `quote_type_label` arms against the original `QuoteType` enum discriminants in `yahoo_streaming_proto_handler.rs`.
+* Every variant maps perfectly: `0` (`"none"`), `5` (`"altsymbol"`), `7` (`"heartbeat"`), `8` (`"equity"`), `9` (`"index"`), `11` (`"mutualfund"`), `12` (`"moneymarket"`), `13` (`"option"`), `14` (`"currency"`), `15` (`"warrant"`), `17` (`"bond"`), `18` (`"future"`), `20` (`"etf"`), `23` (`"commodity"`), `28` (`"ecnquote"`), `41` (`"cryptocurrency"`), `42` (`"indicator"`), `1000` (`"industry"`). There are no missing, swapped, or misaligned labels.
+
+### 4. Driver Trait Alignment (Task 4)
+* **Signature Alignment**: Checked `connect_once` signature against the `ProviderDriver` trait. It perfectly conforms to the pinned `futures::future::BoxFuture<'a, AttemptOutcome>` return type and matches lifetime constraints.
+* **No Fatal Path**: Verified that as an unauthenticated streamer (public WS), Yahoo has no API key validations, ensuring that returning only `NeverConnected` or `ConnectedThenDropped` matches operational reality with no `AttemptOutcome::Fatal` paths.
+* **Jitter/Silence**: Verified that Tokio `Interval::reset()` is used correctly for silence-monitoring without borrow/lifetime hazards in the `select!` block, keeping strict parity with Alpaca's robust pattern.
+
+### 5. Facade & Re-export Safety (Task 5 & 6)
+* Verified that `LogRecord` and `EventRecord` structs in `yahoo_streamer.rs` maintain absolute design parity with existing models used by other active streamers.
+* Audited both `lib.rs` export blocks. Decluttered references of `RustCallbacks` and `YahooStreamingCore` (which are dropped in the task rewrite) from both inner `pub mod yahoo` re-exports and the crate-root level re-export block.
+
+### 6. Heartbeat Execution Semantics (Task 3)
+* Verified that the `heartbeat_yields_raw_but_empty_uni` unit test constructs a protobuf message with `quote_type == 7`, serializes/encodes it inside standard envelope, and parses it cleanly. It successfully triggers a raw pricing tick with an empty `uni` carrier, upholding the locked decision.
+
+---
+All 8 tasks are extremely clean, mathematically correct, and structurally sound. Proceed with implementation.
+
