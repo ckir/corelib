@@ -68,6 +68,13 @@ pub mod finnhub {
 }
 ```
 
+Then re-export the public Finnhub types at the crate root (alongside the Alpaca/Yahoo re-exports), so they surface cleanly (agy plan-pass 🟢):
+
+```rust
+#[cfg(feature = "finnhub")]
+pub use markets::nasdaq::datafeeds::streaming::finnhub::finnhub_streamer::{FinnhubStreaming, FinnhubConfig, FinnhubPricingData};
+```
+
 - [ ] **Step 3: Create `core/mod.rs`**
 
 ```rust
@@ -265,21 +272,25 @@ pub enum AttemptOutcome {
 }
 
 /// A self-contained driver for ONE financial data provider connection attempt.
-#[allow(async_fn_in_trait)]
+///
+/// `connect_once` returns a **`BoxFuture`** (not a bare `async fn`): a stable-Rust `async fn` in a
+/// trait yields a future that is NOT guaranteed `Send`, so awaiting it inside the generic
+/// `run_supervisor<D>` (Task 7) that is `tokio::spawn`-ed (Task 8) would FAIL to compile. `BoxFuture`
+/// pins it as `Send` explicitly. *(agy plan-pass 🔴 [Structural].)*
 pub trait ProviderDriver: Send + Sync + 'static {
     /// Validate config (keys present, etc.) before the first attempt.
     fn validate(&self) -> Result<(), String> { Ok(()) }
 
     /// Perform ONE connection attempt: connect, (auth), subscribe `symbols`, apply live
     /// `sub_rx` updates, push `MarketEvent`s to `tx` (including `Status::Connected` on success),
-    /// and return when the socket drops, a fatal error occurs, or `stop_rx` fires.
-    async fn connect_once(
-        &self,
-        symbols: &[String],
-        tx: &mpsc::Sender<MarketEvent>,
-        sub_rx: &mut mpsc::Receiver<Vec<String>>,
-        stop_rx: &mut mpsc::Receiver<()>,
-    ) -> AttemptOutcome;
+    /// and resolve when the socket drops, a fatal error occurs, or `stop_rx` fires.
+    fn connect_once<'a>(
+        &'a self,
+        symbols: &'a [String],
+        tx: &'a mpsc::Sender<MarketEvent>,
+        sub_rx: &'a mut mpsc::Receiver<Vec<String>>,
+        stop_rx: &'a mut mpsc::Receiver<()>,
+    ) -> futures::future::BoxFuture<'a, AttemptOutcome>;
 }
 ```
 
@@ -436,6 +447,7 @@ mod tests {
 use tokio::sync::mpsc;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use futures_util::{SinkExt, StreamExt};
+use futures::future::{BoxFuture, FutureExt};
 use crate::markets::nasdaq::datafeeds::streaming::core::driver::{AttemptOutcome, ProviderDriver};
 use crate::markets::nasdaq::datafeeds::streaming::core::schema::{MarketEvent, ProviderKind, ProviderStatus};
 
@@ -448,47 +460,51 @@ impl ProviderDriver for FinnhubDriver {
         if self.token.is_empty() { Err("FINNHUB_API_KEY / token is required".into()) } else { Ok(()) }
     }
 
-    async fn connect_once(
-        &self,
-        symbols: &[String],
-        tx: &mpsc::Sender<MarketEvent>,
-        sub_rx: &mut mpsc::Receiver<Vec<String>>,
-        stop_rx: &mut mpsc::Receiver<()>,
-    ) -> AttemptOutcome {
-        let url = format!("{FINNHUB_WS}?token={}", self.token);
-        let (mut ws, _) = match connect_async(&url).await {
-            Ok(v) => v,
-            Err(_) => return AttemptOutcome::NeverConnected,
-        };
-        // signal the supervisor to reset backoff
-        let _ = tx.send(MarketEvent::Status { source: self.name.clone(), status: ProviderStatus::Connected { provider: ProviderKind::Finnhub } }).await;
-        let mut current: Vec<String> = symbols.to_vec();
-        for s in &current {
-            let m = serde_json::json!({ "type": "subscribe", "symbol": s }).to_string();
-            if ws.send(Message::Text(m.into())).await.is_err() { return AttemptOutcome::ConnectedThenDropped; }
-        }
-        loop {
-            tokio::select! {
-                _ = stop_rx.recv() => return AttemptOutcome::Stopped,
-                upd = sub_rx.recv() => {
-                    if let Some(syms) = upd {
-                        for s in &syms { if !current.contains(s) {
-                            let m = serde_json::json!({ "type": "subscribe", "symbol": s }).to_string();
-                            let _ = ws.send(Message::Text(m.into())).await; current.push(s.clone());
-                        }}
+    fn connect_once<'a>(
+        &'a self,
+        symbols: &'a [String],
+        tx: &'a mpsc::Sender<MarketEvent>,
+        sub_rx: &'a mut mpsc::Receiver<Vec<String>>,
+        stop_rx: &'a mut mpsc::Receiver<()>,
+    ) -> BoxFuture<'a, AttemptOutcome> {
+        async move {
+            let url = format!("{FINNHUB_WS}?token={}", self.token);
+            let (mut ws, _) = match connect_async(&url).await {
+                Ok(v) => v,
+                Err(_) => return AttemptOutcome::NeverConnected,
+            };
+            // signal the supervisor to reset backoff
+            let _ = tx.send(MarketEvent::Status { source: self.name.clone(), status: ProviderStatus::Connected { provider: ProviderKind::Finnhub } }).await;
+            let mut current: Vec<String> = symbols.to_vec();
+            for s in &current {
+                let m = serde_json::json!({ "type": "subscribe", "symbol": s }).to_string();
+                if ws.send(Message::Text(m.into())).await.is_err() { return AttemptOutcome::ConnectedThenDropped; }
+            }
+            loop {
+                tokio::select! {
+                    _ = stop_rx.recv() => return AttemptOutcome::Stopped,
+                    upd = sub_rx.recv() => {
+                        if let Some(syms) = upd {
+                            for s in &syms { if !current.contains(s) {
+                                let m = serde_json::json!({ "type": "subscribe", "symbol": s }).to_string();
+                                let _ = ws.send(Message::Text(m.into())).await; current.push(s.clone());
+                            }}
+                        }
+                    }
+                    msg = ws.next() => match msg {
+                        Some(Ok(Message::Text(t))) => { for ev in parse_finnhub_frame(&t, &self.name) { let _ = tx.send(ev).await; } }
+                        Some(Ok(Message::Ping(p))) => { let _ = ws.send(Message::Pong(p)).await; }
+                        Some(Ok(_)) => {}
+                        Some(Err(_)) | None => return AttemptOutcome::ConnectedThenDropped,
                     }
                 }
-                msg = ws.next() => match msg {
-                    Some(Ok(Message::Text(t))) => { for ev in parse_finnhub_frame(&t, &self.name) { let _ = tx.send(ev).await; } }
-                    Some(Ok(Message::Ping(p))) => { let _ = ws.send(Message::Pong(p)).await; }
-                    Some(Ok(_)) => {}
-                    Some(Err(_)) | None => return AttemptOutcome::ConnectedThenDropped,
-                }
             }
-        }
+        }.boxed()
     }
 }
 ```
+
+> **Cargo note:** `futures` (0.3) is already a dependency (`rust/Cargo.toml`); `BoxFuture`/`.boxed()` come from it.
 
 - [ ] **Step 4: Verify build** — `cd rust && cargo build --features finnhub`. Expected: builds. (Add `futures-util` to `[dependencies]` if not present — check `rust/Cargo.toml`; `alpaca_streamer.rs` uses `futures_util` so it is present.)
 - [ ] **Step 5: Commit** — `git add -A && git commit -m "feat(rust): FinnhubDriver connect_once + frame parser + tests"`
@@ -560,7 +576,7 @@ use tokio::sync::{mpsc, Mutex};
 use tokio::task::JoinHandle;
 use crate::markets::nasdaq::datafeeds::streaming::core::driver::ProviderDriver;
 use crate::markets::nasdaq::datafeeds::streaming::core::reconnect::ReconnectPolicy;
-use crate::markets::nasdaq::datafeeds::streaming::core::schema::MarketEvent;
+use crate::markets::nasdaq::datafeeds::streaming::core::schema::{MarketEvent, ProviderKind, ProviderStatus};
 use crate::markets::nasdaq::datafeeds::streaming::core::supervisor::run_supervisor;
 
 static INSTANCE_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -581,6 +597,7 @@ pub struct WebsocketStreamerHost {
     pub(crate) db: Database,
     pub(crate) table: &'static str,
     pub(crate) source: String,
+    pub(crate) provider: ProviderKind, // generic: NOT hardcoded (agy plan-pass 🔴) — used in panic events
     pub(crate) sub_tx: Option<mpsc::Sender<Vec<String>>>,
     pub(crate) stop_tx: Option<mpsc::Sender<()>>,
     pub(crate) monitor_task: Option<JoinHandle<()>>,
@@ -588,10 +605,25 @@ pub struct WebsocketStreamerHost {
 }
 
 impl WebsocketStreamerHost {
-    /// Open/create the per-instance redb file. `source` names the instance (used in panic events).
-    pub fn new(db_path: std::path::PathBuf, table: &'static str, source: String) -> Self {
+    /// Open/create the per-instance redb file. `source` names the instance; `provider` tags events.
+    pub fn new(db_path: std::path::PathBuf, table: &'static str, source: String, provider: ProviderKind) -> Self {
         let db = Database::create(&db_path).expect("Failed to open redb");
-        Self { db, table, source, sub_tx: None, stop_tx: None, monitor_task: None, pump_task: None }
+        Self { db, table, source, provider, sub_tx: None, stop_tx: None, monitor_task: None, pump_task: None }
+    }
+
+    /// Load previously-persisted subscription tickers so a restarted instance resumes them
+    /// (agy plan-pass 🔴 — without this, keeping redb buys nothing). Merge into `start`'s symbols.
+    pub fn get_persisted_subscriptions(&self) -> Vec<String> {
+        let table: TableDefinition<&str, bool> = TableDefinition::new(self.table);
+        let mut subs = Vec::new();
+        if let Ok(rtx) = self.db.begin_read() {
+            if let Ok(t) = rtx.open_table(table) {
+                if let Ok(mut iter) = t.iter() {
+                    while let Some(Ok((k, _))) = iter.next() { subs.push(k.value().to_string()); }
+                }
+            }
+        }
+        subs
     }
 
     /// Start the supervisor (driving `driver`), a panic monitor, and a pump that forwards events.
@@ -605,14 +637,14 @@ impl WebsocketStreamerHost {
         // b-1 §3.4: monitor awaits the supervisor; on panic emit a synthetic Error event via a tx clone.
         let monitor_tx = tx.clone();
         let source = self.source.clone();
+        let provider = self.provider; // ProviderKind is Copy — generic, not hardcoded
         let sup = tokio::spawn(run_supervisor(driver, symbols, tx, sub_rx, stop_rx, policy));
         self.monitor_task = Some(tokio::spawn(async move {
             if let Err(e) = sup.await {
                 if e.is_panic() {
-                    use crate::markets::nasdaq::datafeeds::streaming::core::schema::{ProviderKind, ProviderStatus};
                     let _ = monitor_tx.send(MarketEvent::Status {
                         source,
-                        status: ProviderStatus::Error { provider: ProviderKind::Finnhub, message: "supervisor task panicked; stream is dead".into() },
+                        status: ProviderStatus::Error { provider, message: "supervisor task panicked; stream is dead".into() },
                     }).await;
                 }
             }
@@ -674,32 +706,62 @@ impl std::fmt::Debug for FinnhubConfig {
     }
 }
 
+// Mirror AlpacaStreaming EXACTLY: constructor takes the 3 callbacks (NOT config); config arrives via
+// `init`; methods take `&self` (interior mutability via Arc<Mutex<…>>); `start` resumes persisted subs.
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use crate::markets::nasdaq::datafeeds::streaming::core::schema::ProviderKind;
+
+struct FinnhubInner { host: WebsocketStreamerHost, token: String, name: String, started: bool }
+
 #[napi]
 pub struct FinnhubStreaming {
-    host: WebsocketStreamerHost,
-    token: String,
-    name: String,
+    inner: Arc<Mutex<FinnhubInner>>,
+    on_log: ThreadsafeFunction<LogRecord>,
     on_pricing: ThreadsafeFunction<FinnhubPricingData>,
     on_event: ThreadsafeFunction<EventRecord>,
-    on_log: ThreadsafeFunction<LogRecord>,
 }
 
 #[napi]
 impl FinnhubStreaming {
+    /// Three JS callbacks (napi invokes them error-first `(err, data)` — the TS wrapper adapts).
+    /// Order matches AlpacaStreaming's constructor: (on_log, on_pricing, on_event).
     #[napi(constructor)]
-    pub fn new(config: FinnhubConfig, on_pricing: ThreadsafeFunction<FinnhubPricingData>, on_event: ThreadsafeFunction<EventRecord>, on_log: ThreadsafeFunction<LogRecord>) -> Self {
-        let token = config.token.or_else(|| std::env::var("FINNHUB_API_KEY").ok()).unwrap_or_default();
-        let name = config.name.unwrap_or_else(|| "finnhub".to_string());
-        let host = WebsocketStreamerHost::new(unique_db_path("finnhub_streaming", "FINNHUB_DB"), "finnhub_subscriptions", name.clone());
-        Self { host, token, name, on_pricing, on_event, on_log }
+    pub fn new(
+        on_log: ThreadsafeFunction<LogRecord>,
+        on_pricing: ThreadsafeFunction<FinnhubPricingData>,
+        on_event: ThreadsafeFunction<EventRecord>,
+    ) -> Self {
+        let host = WebsocketStreamerHost::new(
+            unique_db_path("finnhub_streaming", "FINNHUB_DB"),
+            "finnhub_subscriptions",
+            "finnhub".to_string(),
+            ProviderKind::Finnhub,
+        );
+        let inner = FinnhubInner { host, token: String::new(), name: "finnhub".to_string(), started: false };
+        Self { inner: Arc::new(Mutex::new(inner)), on_log, on_pricing, on_event }
     }
 
+    /// Set token/name (token falls back to FINNHUB_API_KEY env).
     #[napi]
-    pub fn start(&mut self, symbols: Vec<String>) {
-        let driver = FinnhubDriver { token: self.token.clone(), name: self.name.clone() };
+    pub async fn init(&self, config: FinnhubConfig) -> napi::Result<()> {
+        let mut g = self.inner.lock().await;
+        g.token = config.token.or_else(|| std::env::var("FINNHUB_API_KEY").ok()).unwrap_or_default();
+        if let Some(n) = config.name { g.name = n; }
+        Ok(())
+    }
+
+    /// Start streaming; resumes any persisted subscriptions (redb) as the initial symbol set.
+    #[napi]
+    pub async fn start(&self) -> napi::Result<()> {
+        let mut g = self.inner.lock().await;
+        if g.started { return Ok(()); }
+        let _ = self.on_log.call(Ok(LogRecord { level: "debug".into(), msg: "finnhub start".into(), extras: None }), ThreadsafeFunctionCallMode::NonBlocking);
+        let driver = FinnhubDriver { token: g.token.clone(), name: g.name.clone() };
+        let symbols = g.host.get_persisted_subscriptions(); // resume-on-restart (redb)
         let on_pricing = self.on_pricing.clone();
         let on_event = self.on_event.clone();
-        self.host.start(driver, symbols, ReconnectPolicy { jitter: true, ..Default::default() }, move |ev: MarketEvent| {
+        g.host.start(driver, symbols, ReconnectPolicy { jitter: true, ..Default::default() }, move |ev: MarketEvent| {
             if let Some(p) = market_event_to_finnhub_pricing(&ev) {
                 let _ = on_pricing.call(Ok(p), ThreadsafeFunctionCallMode::NonBlocking);
             } else if let MarketEvent::Status { status, .. } = ev {
@@ -712,17 +774,35 @@ impl FinnhubStreaming {
                 let _ = on_event.call(Ok(EventRecord { r#type: t, data: d }), ThreadsafeFunctionCallMode::NonBlocking);
             }
         });
+        g.started = true;
+        Ok(())
     }
 
     #[napi]
-    pub async fn subscribe(&self, symbols: Vec<String>) { self.host.subscribe(symbols).await; }
+    pub async fn subscribe(&self, symbols: Vec<String>) -> napi::Result<()> {
+        self.inner.lock().await.host.subscribe(symbols).await;
+        Ok(())
+    }
+
+    /// Phase 1: live unsubscribe through the driver is deferred to Phase 2 (kept for API parity).
+    #[napi]
+    pub async fn unsubscribe(&self, _symbols: Vec<String>) -> napi::Result<()> { Ok(()) }
 
     #[napi]
-    pub fn stop(&mut self) { if let Some(tx) = self.host.stop_tx.take() { let _ = tx.try_send(()); } }
+    pub async fn stop(&self) -> napi::Result<()> {
+        let mut g = self.inner.lock().await;
+        if let Some(tx) = g.host.stop_tx.take() { let _ = tx.try_send(()); }
+        g.started = false;
+        Ok(())
+    }
+
+    /// Dev-mode parity with AlpacaStreaming.clean() — Phase 1 no-op.
+    #[napi]
+    pub async fn clean(&self) -> napi::Result<()> { Ok(()) }
 }
 ```
 
-- [ ] **Step 2: Verify build** — `cd rust && cargo build --features finnhub`. Expected: builds. (Reconcile `ThreadsafeFunction` generic arity + `.call` signature against `alpaca_streamer.rs`'s `NapiCallbacks` usage — match that exact API.)
+- [ ] **Step 2: Verify build** — `cd rust && cargo build --features finnhub`. Expected: builds. Reconcile `ThreadsafeFunction` generic arity + `.call` signature against `alpaca_streamer.rs`'s working `NapiCallbacks`/constructor — match that exact napi-rs v3 API (the constructor-takes-3-callbacks shape is copied from Alpaca's `#[napi(constructor)]` at `alpaca_streamer.rs:766`).
 - [ ] **Step 3: Commit** — `git add -A && git commit -m "feat(rust): FinnhubStreaming napi facade (masked config, host delegation)"`
 
 ---
@@ -756,43 +836,51 @@ Run: `Read ts-markets/src/nasdaq/datafeeds/streaming/alpaca/AlpacaStreaming.ts`
 - [ ] **Step 2: Write `FinnhubStreaming.ts`** mirroring the Alpaca wrapper: import the FFI class via `coreFFI.FinnhubStreaming`, wrap `new/start/stop/subscribe`, register `on_pricing`/`on_event`/`on_log`, and use a child logger.
 
 ```typescript
-import { coreFFI, logger } from "@ckir/corelib";
+// Mirrors AlpacaStreaming.ts: EventEmitter, 0-arg constructor, three ERROR-FIRST (_err, data)
+// native callbacks adapted to emit("log"|"pricing"|<event.type>), config via async init().
+import { EventEmitter } from "node:events";
+// biome-ignore lint/suspicious/noExplicitAny: native FFI handle is dynamically typed
+import { coreFFI } from "@ckir/corelib";
 
-const moduleLogger = logger.child({ section: "FinnhubStreaming" });
+// biome-ignore lint/suspicious/noExplicitAny: native class
+const RustFinnhub = (coreFFI as any)?.FinnhubStreaming;
 
-export interface FinnhubPricingData {
-  symbol: string;
-  message_type: string;
-  price: number;
-  volume: number;
-  timestamp: number;
-  conditions?: string[];
-}
-
+export interface FinnhubPricingData { symbol: string; message_type: string; price: number; volume: number; timestamp: number; conditions?: string[]; }
 export interface FinnhubConfig { token?: string; name?: string; }
 
-/** TS wrapper over the native Finnhub streamer (coreFFI.FinnhubStreaming). */
-export class FinnhubStreaming {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  #native: any;
+/**
+ * Real-time Finnhub trade stream via the native Rust library (coreFFI.FinnhubStreaming).
+ * Emits: `pricing` (FinnhubPricingData), `log` ({level,msg,extras?}), and connection events
+ * (`connected`, `disconnected`, `reconnecting`, `error`).
+ */
+export class FinnhubStreaming extends EventEmitter {
+  // biome-ignore lint/suspicious/noExplicitAny: native handle
+  private rust: any;
+  private initialized = false;
 
-  constructor(
-    config: FinnhubConfig,
-    onPricing: (d: FinnhubPricingData) => void,
-    onEvent: (e: { type: string; data?: string }) => void,
-    onLog: (l: { level: string; msg: string; extras?: string }) => void,
-  ) {
-    const Native = (coreFFI as { FinnhubStreaming?: unknown } | null)?.FinnhubStreaming as
-      | (new (...a: unknown[]) => unknown)
-      | undefined;
-    if (!Native) throw new Error("FinnhubStreaming FFI not available in this runtime");
-    moduleLogger.debug("constructing native FinnhubStreaming", { name: config.name });
-    this.#native = new Native(config, onPricing, onEvent, onLog);
+  constructor() {
+    super();
+    if (!RustFinnhub) throw new Error("FinnhubStreaming (Native) is not supported in this runtime (no FFI available).");
+    this.rust = new RustFinnhub(
+      // napi invokes TSFNs error-first: (err, data). Discard err, forward data.
+      // biome-ignore lint/suspicious/noExplicitAny: ffi payloads
+      (_err: any, record: any) => this.emit("log", record),
+      // biome-ignore lint/suspicious/noExplicitAny: ffi payloads
+      (_err: any, data: any) => this.emit("pricing", data),
+      // biome-ignore lint/suspicious/noExplicitAny: ffi payloads
+      (_err: any, event: any) => { if (event) this.emit(event.type, event.data ?? null); },
+    );
   }
 
-  start(symbols: string[]): void { moduleLogger.debug("start", { count: symbols.length }); this.#native.start(symbols); }
-  async subscribe(symbols: string[]): Promise<void> { moduleLogger.trace("subscribe", { count: symbols.length }); await this.#native.subscribe(symbols); }
-  stop(): void { moduleLogger.debug("stop"); this.#native.stop(); }
+  async init(config: FinnhubConfig = {}): Promise<void> {
+    await this.rust.init({ token: config.token ?? undefined, name: config.name ?? undefined });
+    this.initialized = true;
+  }
+  async start(): Promise<void> { if (!this.initialized) await this.init(); await this.rust.start(); }
+  async subscribe(symbols: string[]): Promise<void> { await this.rust.subscribe(symbols); }
+  async unsubscribe(symbols: string[]): Promise<void> { await this.rust.unsubscribe(symbols); }
+  async stop(): Promise<void> { await this.rust.stop(); }
+  async clean(): Promise<void> { await this.rust.clean(); }
 }
 ```
 
@@ -817,4 +905,13 @@ export class FinnhubStreaming {
 - **Spec coverage:** core trait (T4) · schema (T2) · ReconnectPolicy+jitter (T3) · supervisor reset-on-connect (T7) · host/redb/pump/Drop-both (T8) · FinnhubDriver+parse (T6) · facade+mapper+masked config (T5,T9) · Cargo features (T1) · TS wrapper+exports (T11) · b-1 checklist (Drop both T8, backoff reset T7, per-instance redb T8, masked Debug T9, panic monitor — see note). 
 - **b-1 panic monitor:** ✅ implemented in T8 `start()` — a monitor task awaits the supervisor and on `JoinError::is_panic()` emits a synthetic `Status::Error` via a `tx` clone (the pump turns it into `on_event("error")`); `Drop` aborts the monitor + pump (mirrors `alpaca_streamer.rs:263-280`).
 - **Symbology (spec §9):** verify Finnhub accepts corelib's Nasdaq tickers (plain `AAPL`) during T6 live testing; crypto/forex prefixes are out of scope.
-- **redb API drift:** T8 uses `begin_write/open_table/insert/commit` — reconcile exact calls against `alpaca_streamer.rs`'s redb usage (same redb 4.1 version) during T8.
+- **redb API drift:** T8 uses `begin_write/open_table/insert/commit` + `begin_read/iter` — reconcile exact calls against `alpaca_streamer.rs`'s redb usage (same redb 4.1 version) during T8.
+
+### agy plan-pass folds (2026-06-12)
+
+Four 🔴 caught at the plan gate and folded above (record: `ANTIGRAVITY-TO-CLAUDE.md`):
+1. **async-fn-in-trait not `Send`** → `ProviderDriver::connect_once` returns `BoxFuture<'a, AttemptOutcome>` (T4); `FinnhubDriver` wraps its body in `async move {…}.boxed()` (T6). Prevents the `tokio::spawn` compile failure in T8.
+2. **redb subscriptions never loaded** → `WebsocketStreamerHost::get_persisted_subscriptions()` (T8); `start()` resumes them as the initial symbol set (T9).
+3. **napi error-first callbacks + wrong facade shape** → facade mirrors `AlpacaStreaming` (3-callback constructor, config via `async init`, `&self` interior mutability) (T9); TS wrapper extends `EventEmitter` and adapts `(_err, data)` (T11).
+4. **hardcoded `ProviderKind::Finnhub` in the generic host** → host carries a `provider: ProviderKind` field used in panic events (T8).
+Plus 🟢 crate-root re-export of the Finnhub types (T1).
