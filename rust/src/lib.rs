@@ -81,6 +81,8 @@ pub mod markets {
                 }
                 /// Yahoo-specific streaming implementation.
                 pub mod yahoo {
+                    /// Pure Yahoo proto-decode mapper + YahooDriver (shared engine).
+                    pub mod yahoo_driver;
                     /// Main Yahoo price streamer logic.
                     pub mod yahoo_streamer;
                     /// Protobuf handler for Yahoo Finance websocket messages.
