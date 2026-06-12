@@ -34,6 +34,49 @@ const leafMerger = deepmergeCustom({
 });
 
 /**
+ * Resolve the application identity used to match a config's top-level section.
+ *
+ * Monorepo-aware: walks up from `cwd` to the nearest workspace root — a
+ * directory containing `pnpm-workspace.yaml`, or a `package.json` with a
+ * `workspaces` field — and returns that root folder's name, so every package
+ * in a monorepo shares one app identity (the root folder name). When no
+ * workspace marker is found it falls back to `basename(cwd)`, which is
+ * byte-identical to the pre-monorepo behavior for standalone apps.
+ *
+ * Pure and dependency-injected (path module + filesystem probes) so it can be
+ * unit-tested without touching the real filesystem or process cwd.
+ */
+export function resolveAppName(
+	cwd: string,
+	pathMod: {
+		join: (...parts: string[]) => string;
+		dirname: (p: string) => string;
+		basename: (p: string) => string;
+	},
+	fileExists: (p: string) => boolean,
+	readFile: (p: string) => string,
+): string {
+	let dir = cwd;
+	for (;;) {
+		if (fileExists(pathMod.join(dir, "pnpm-workspace.yaml")))
+			return pathMod.basename(dir);
+		const pkgPath = pathMod.join(dir, "package.json");
+		if (fileExists(pkgPath)) {
+			try {
+				const pkg = JSON.parse(readFile(pkgPath)) as { workspaces?: unknown };
+				if (pkg.workspaces) return pathMod.basename(dir);
+			} catch {
+				// Malformed package.json — skip it and keep walking up.
+			}
+		}
+		const parent = pathMod.dirname(dir);
+		if (parent === dir) break; // reached the filesystem root
+		dir = parent;
+	}
+	return pathMod.basename(cwd);
+}
+
+/**
  * ConfigManager handles the lifecycle of the application's configuration.
  * It manages globalThis.sysconfig and provides an event-driven interface
  * for runtime updates.
@@ -444,8 +487,13 @@ export class ConfigManager extends EventEmitter {
 					import.meta.url &&
 					import.meta.url.startsWith("file:"))
 			) {
-				const { basename } = getRequire()("node:path");
-				return basename(getCwd());
+				const path = getRequire()("node:path");
+				return resolveAppName(
+					getCwd(),
+					path,
+					(p: string) => existsSync(p),
+					(p: string) => readTextFileSync(p),
+				);
 			}
 			return "edge-app";
 		} catch (e) {
