@@ -491,4 +491,122 @@ The single highest-conviction architectural adjustment is to **center entire con
 
 By having the Supervisor monitor for a `MarketEvent::Status { status: Connected }` frame to reset its internal delay `attempt = 0`, we port the b-1 reconnect fix cleanly into a shared, trait-backed paradigm, avoiding any dual-ownership code-drift regressions during Phase 1.
 
+---
+
+## 2026-06-12 — (d) Phase 1 plan-phase divergent pass
+
+### 1. Critical Review
+
+This review performs a pre-implementation pressure-test on the proposed "Provider Port — Phase 1 (Finnhub pilot) Implementation Plan" to identify compilation blockers, API discrepancies, and architectural bugs that would derail a developer attempting to execute this plan.
+
+#### 🔴 Blocker — Stable `async fn` in Trait Breaks `tokio::spawn` `Send` Bounds
+*   **Design Area**: Task 4 ([core/driver.rs](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-438ebde6/rust/src/markets/nasdaq/datafeeds/streaming/core/driver.rs#L268-L283)), Task 7 ([core/supervisor.rs](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-438ebde6/rust/src/markets/nasdaq/datafeeds/streaming/core/supervisor.rs#L513-L538)), and Task 8 ([core/host.rs](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-438ebde6/rust/src/markets/nasdaq/datafeeds/streaming/core/host.rs#L608-L621))
+*   **Verification**: [VERIFIED]
+*   **Issue**: Task 4 declares `trait ProviderDriver` with `#![allow(async_fn_in_trait)] async fn connect_once(...)`. Under stable Rust, the anonymous future returned by an `async fn` inside a trait does not automatically implement the `Send` bound. When Task 7's generic `run_supervisor<D>` awaits `driver.connect_once(...)`, the resulting outer future of `run_supervisor` becomes non-`Send`. Consequently, in Task 8's host, the scheduler's `tokio::spawn(run_supervisor(...))` will fail to compile. The compiler will halt with a blocker indicating that the spawned future cannot be sent across threads safely.
+*   **Concrete Fix**: [Structural] Replace standard `async fn` in the trait with a returning `futures::future::BoxFuture<'a, AttemptOutcome>` which enforces `Send` explicitly without any experimental bounds or macros.
+    Update `ProviderDriver::connect_once` in Task 4 to:
+    ```rust
+    use futures::future::BoxFuture;
+
+    pub trait ProviderDriver: Send + Sync + 'static {
+        fn validate(&self) -> Result<(), String> { Ok(()) }
+
+        fn connect_once<'a>(
+            &'a self,
+            symbols: &'a [String],
+            tx: &'a mpsc::Sender<MarketEvent>,
+            sub_rx: &'a mut mpsc::Receiver<Vec<String>>,
+            stop_rx: &'a mut mpsc::Receiver<()>,
+        ) -> BoxFuture<'a, AttemptOutcome>;
+    }
+    ```
+    Then, wrap the returned future in Task 6 (`finnhub_driver.rs`) using `.boxed()` from `futures::future::FutureExt`:
+    ```rust
+    use futures::future::FutureExt;
+    // ...
+    fn connect_once<'a>(&'a self, ...) -> BoxFuture<'a, AttemptOutcome> {
+        async move {
+            // connection and auth implementation
+        }.boxed()
+    }
+    ```
+
+#### 🔴 Blocker — Persistent Subscription DB State Loss on Startup
+*   **Design Area**: Task 8 ([core/host.rs](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-438ebde6/rust/src/markets/nasdaq/datafeeds/streaming/core/host.rs#L590-L621)), Task 9 ([finnhub_streamer.rs](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-438ebde6/rust/src/markets/nasdaq/datafeeds/streaming/finnhub/finnhub_streamer.rs#L687-L722))
+*   **Verification**: [VERIFIED]
+*   **Issue**: Although the spec mandates keeping `redb` subscription persistence, the design completely overlooks loading existing records from `redb` at startup! `WebsocketStreamerHost::new()` opens the DB block, but never reads it. `FinnhubStreaming::start(symbols)` invokes the host monitor task using only the symbols passed in via the initial TS array. If a process restarts or instantiates a new streaming delegate, any previously tracked symbols stored in the redb file are completely ignored/lost, defeating the purpose of the b-1 database layer.
+*   **Concrete Fix**: [Structural] Implement a method on `WebsocketStreamerHost` that reads previously persisted subscription tickers from the `redb` table. Fetch and merge them inside the facade's `start()` method:
+    ```rust
+    // In core/host.rs
+    pub fn get_persisted_subscriptions(&self) -> Vec<String> {
+        let table: TableDefinition<&str, bool> = TableDefinition::new(self.table);
+        let mut subs = Vec::new();
+        if let Ok(rtx) = self.db.begin_read() {
+            if let Ok(t) = rtx.open_table(table) {
+                if let Ok(mut iter) = t.iter() {
+                    while let Some(Ok((k, _))) = iter.next() {
+                        subs.push(k.value().to_string());
+                    }
+                }
+            }
+        }
+        subs
+    }
+    ```
+    In `FinnhubStreaming::start()`, merge these with the passed-in symbols list before calling `host.start()`.
+
+#### 🔴 Blocker — NAPI callback parameter calling payload as Error (null)
+*   **Design Area**: Task 11 ([FinnhubStreaming.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-438ebde6/ts-markets/src/nasdaq/datafeeds/streaming/finnhub/FinnhubStreaming.ts#L775-L797))
+*   **Verification**: [VERIFIED]
+*   **Issue**: In Task 11, the TS constructor passes `onPricing` and other callbacks directly to the native `new Native(config, onPricing, ..., ...)` constructor. By default, napi-rs threadsafer functions call JS callbacks using the Node.js standard: `callback(err, data)`. Passing `onPricing: (d: FinnhubPricingData) => void` directly means the FFI invocation `on_pricing.call(Ok(p))` will issue `callback(null, p)`. The JS runtime will bind `null` to `d` on the JS side, completely blocking the pricing payload.
+*   **Concrete Fix**: [Surgical] Discard the error parameter and forward correct payloads to the TS wrapper constructor:
+    ```typescript
+    this.#native = new Native(
+      config,
+      (err: any, d: FinnhubPricingData) => onPricing(d),
+      (err: any, e: { type: string; data?: string }) => onEvent(e),
+      (err: any, l: { level: string; msg: string; extras?: string }) => onLog(l)
+    );
+    ```
+
+#### 🔴 Blocker — Hardcoded ProviderKind in Generic Host's Panic Monitor Breaks Phase 2
+*   **Design Area**: Task 8 ([core/host.rs](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-438ebde6/rust/src/markets/nasdaq/datafeeds/streaming/core/host.rs#L605-L619))
+*   **Verification**: [VERIFIED]
+*   **Issue**: The supervisor's panic monitor task inside Task 8's `start()` method handles a panic and hardcodes the provider tag as `ProviderKind::Finnhub` when emitting the synthetic `Status::Error`:
+    ```rust
+    status: ProviderStatus::Error { provider: ProviderKind::Finnhub, message: "supervisor task panicked; stream is dead".into() }
+    ```
+    If `WebsocketStreamerHost` is to be a generic abstraction capable of migrating Alpaca and Yahoo streams during Phase 2, this hardcoding is a critical architectural violation: their panics would be emitted as Finnhub errors.
+*   **Concrete Fix**: [Surgical] Thread `ProviderKind` down to the host instance during creation. Add `provider: ProviderKind` straight into `WebsocketStreamerHost::new()` and its private fields, and map it inside the monitor's synthetic error payload.
+
+#### 🟡 Should-Fix — TS Constructor Mismatch Breaks Per-Provider Shape Consistency
+*   **Design Area**: Task 9 ([finnhub_streamer.rs](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-438ebde6/rust/src/markets/nasdaq/datafeeds/streaming/finnhub/finnhub_streamer.rs#L687-L695)) and Task 11 ([FinnhubStreaming.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-438ebde6/ts-markets/src/nasdaq/datafeeds/streaming/finnhub/FinnhubStreaming.ts#L775-L797))
+*   **Verification**: [VERIFIED]
+*   **Issue**: To keep the per-provider facades completely unchanged and compatible with corelib conventions, `FinnhubStreaming` must mirror `AlpacaStreaming`. However, the plan's TS constructor takes the configuration and callbacks at constructor-time and lacks an `EventEmitter` interface. Alpaca and Yahoo streams take 0 arguments, extend `EventEmitter`, and use `.on("pricing", ...)` to register observers. They initialize asynchronously via `async init(config)` and `async start()`.
+*   **Concrete Fix**: [Structural] Reconfigure `FinnhubStreaming` to match Alpaca's structure exactly:
+    1. Expose 0-argument constructor in `FinnhubStreaming` (TS). Extend `EventEmitter`.
+    2. Pass 3 threadsafe callbacks (matching the `on_*` emitters) to the FFI construct.
+    3. Expose `async init(config)` on both Rust and TS boundaries.
+
+#### 🟢 Nit — Re-export `FinnhubStreaming` at Core Root
+*   **Design Area**: Task 1 ([lib.rs](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-438ebde6/rust/src/lib.rs#L53-L117))
+*   **Verification**: [THEORETICAL]
+*   **Issue**: The plan forgets to re-export `FinnhubStreaming` and `FinnhubConfig` at the Rust root level of `lib.rs` alongside Alpaca and Yahoo (e.g. `pub use markets::nasdaq::datafeeds::streaming::finnhub::{...}`). Failing to do so makes it harder to surface the schema cleanly.
+*   **Concrete Fix**: Add the re-exports inside `lib.rs` under `#[cfg(feature = "finnhub")]` guard.
+
+---
+
+### 2. Creative Improvements
+
+*   **BoxFuture Standard Paradigm**: Shifting `connect_once` return signatures to `BoxFuture` represents the easiest and cleanest way to de-risk generic traits and multithreaded lifetimes, assuring that Phase 2 migrations compile out-of-the-box smoothly without macro overhead.
+*   **Deduplicated FFI Initialization Helpers**: Standardize a helper inside `core/host.rs` to automatically setup `redb` subscription tables on host creation. Right now, Alpaca explicitly does table schema checks inside it's constructor, so moving table checks inside `WebsocketStreamerHost::new` removes manual schema instantiation logic from the delegator facade.
+
+---
+
+### 3. Highest Conviction Recommendation
+
+The single highest-conviction fix is to **standardize the `ProviderDriver::connect_once` signature to return `BoxFuture<'a, AttemptOutcome>` and resolve the `redb` subscription load regression inside the generic host.**
+
+By enforcing explicit `Send` futures through standard box pinning, compiled FFI tasks compile cleanly on any stable Rust platform. Simultaneously, introducing `get_persisted_subscriptions()` on the host preserves the hard-earned, highly crash-resilient `redb` capabilities of the corelib stream pipeline, resolving both blockers in one unified pass. (Plan Task 4, 8, 9).
+
 
