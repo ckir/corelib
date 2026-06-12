@@ -1223,3 +1223,83 @@ Every aspect of the implemented architecture has been audited and statically ver
 
 The Phase 2a Alpaca dual-mode migration implementation is exceptionally clean, robust, and mathematically sound. It completely resolves the startup race conditions identified during the earlier planning phases, guarantees full back-compat with raw-only telemetry consumers, and successfully transitions both Alpaca and Finnhub onto the shared generic websocket engine.
 
+---
+
+## 2026-06-13 — (d) Phase 2b — divergent (carrier shape)
+
+### 1. Divergent Design Review: Carrier Shape Fork for Multi-Event Yahoo Integration
+
+We analyze the design space for migrating Yahoo's protobuf-decoded real-time streamer onto the shared dual-mode `WebsocketStreamerHost` engine built in Phase 2a. The primary architectural tension lies in how to carry multiple unified events (`MarketEvent` Trade and/or Quote) alongside a single raw wire payload (`JsPricingData`) on the engine channel `CoreEvent::Pricing` with zero regression risk to already-shipped Alpaca and Finnhub providers.
+
+---
+
+### 2. Formative Options Evaluation
+
+#### Option A: Generalize `uni: Option<MarketEvent>` → `uni: Vec<MarketEvent>` on `CoreEvent::Pricing`
+We refactor the shared `CoreEvent::Pricing` variant in [types.rs](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-9218b4ff/rust/src/markets/nasdaq/datafeeds/streaming/core/types.rs):
+```rust
+pub enum CoreEvent {
+    Status(ProviderStatus),
+    Pricing {
+        raw: RawPricing,
+        uni: Vec<MarketEvent>,
+    },
+}
+```
+Alpaca and Finnhub wrap their single parsed unified event as `vec![ev]` (or empty vectors for raw-only bars). Their respective streaming facade pumps iterate over the vector to call the JS callback `on_market_event`.
+
+*   **Pros**:
+    *   **Unified & Mathematically Sound**: Perfectly models the true 1-to-N relationship between a raw packet on physical wires and the logical events it maps to.
+    *   **Atomicity Guard (No Double-Pricing Fire)**: Because there is exactly *one* `CoreEvent::Pricing` sent per incoming protobuf message, the raw payload triggers `on_pricing` exactly once. There is no duplicate telemetry volume calculated.
+    *   **Chronological Order Preservation**: Inside the `Vec<MarketEvent>`, order is fully deterministic and guaranteed (e.g., Trade before Quote).
+    *   **Clean Pump Logic**: Avoids duplicating any processing or state between background drivers and the foreground facade pumps.
+    *   **Future Proof**: Prepares the engine for potential Phase 3 API Gateway or other multi-event providers (e.g., multi-depth L2/L3 books) without future refactoring.
+*   **Cons**:
+    *   **Refactoring Scope**: Cross-cutting touch to Alpaca and Finnhub pumps/drivers. However, the regression surface is extremely small and compile-time checked: Alpaca's parser ([alpaca_driver.rs](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-9218b4ff/rust/src/markets/nasdaq/datafeeds/streaming/alpaca/alpaca_driver.rs)) changes from wrapping in `Some(uni)` to `vec![uni]`, and its pump ([alpaca_streamer.rs](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-9218b4ff/rust/src/markets/nasdaq/datafeeds/streaming/alpaca/alpaca_streamer.rs)) changes an `if let Some` to a clean `for u in uni` loop.
+
+#### Option B: Additive Sibling Variant `CoreEvent::Uni(MarketEvent)`
+We keep `uni: Option<MarketEvent>` on `CoreEvent::Pricing` unchanged. To accommodate the second unified event from Yahoo, we add a new variant, e.g., `CoreEvent::Uni(MarketEvent)`. Yahoo's driver dispatches `CoreEvent::Pricing { raw, uni: Some(trade) }` and then immediately follows it with `CoreEvent::Uni(quote)`.
+
+*   **Pros**:
+    *   **Zero Regression on Alpaca/Finnhub**: Alpaca and Finnhub engines remain untouched since they do not construct or match on `CoreEvent::Uni`.
+*   **Cons**:
+    *   **Splits Raw and Unified Context**: Splits a single logical wire message across multiple asynchronous channels, stripping the raw-metadata context from the second `MarketEvent`.
+    *   **Increased Complexity**: The facade supervisor and host pumps must now monitor two distinct event path variants instead of a single uniform channel format.
+    *   **Ordering Race Conditions**: While bounded in memory, pushing multiple items over the queue can introduce subtle interleaving risks if other higher-priority events (such as disconnect/error signals) are multiplexed.
+
+#### Option C: Yahoo-Local Parsing in the Facade Pump
+We keep `uni: Option<MarketEvent>` on `CoreEvent::Pricing`. The Yahoo driver only decodes the protobuf block and dispatches `CoreEvent::Pricing { raw, uni: None }`. The Yahoo streaming facade pump intercepts the raw payload, decodes it a second time (or parses it), constructs both unified events, and triggers the callbacks locally.
+
+*   **Pros**:
+    *   Zero touch to other providers or the shared `CoreEvent` enum.
+*   **Cons**:
+    *   **Violates Phase 2a Core Architecture**: Violates the established "driver parses once, constructs raw + uni" invariant.
+    *   **Performance Overhead**: Duplicate JSON decoding, binary parsing, or structural checks inside the front-facing API wrapper, defeating the single-allocation pipeline.
+
+---
+
+### 3. Ranked Recommendations & Verdict
+
+| Rank | Option | Verdict | Verdict Reasoning & Core Trade-offs |
+| :--- | :--- | :--- | :--- |
+| **1** | **Option A (Generalize to `Vec<MarketEvent>`)** | **WINNER (Selected)** | **Highly Recommended.** It is the only option that honors the single-pass parsing architecture of Phase 2a while offering 100% telemetry correctness (no double-pricing callback triggers). The trade-off is touching Alpaca + Finnhub drivers; however, this is fully verified by the compiler and has an extremely low regression footprint. |
+| **2** | **Option B (Additive Sibling Variant)** | **Contingent/Decline** | **Highly discouraged.** It compromises the structural clean-design principles by splitting single multi-field updates into disjoint, decoupled channel messages and introduces unnecessary asymmetry. |
+| **3** | **Option C (Yahoo-Local Pump Parsing)** | **Decline** | **Rejected.** It introduces severe performance penalty (double decoding/processing) and completely breaks the design consistency across stream providers. |
+
+#### Specific Winning Resolution Mechanics:
+1. **Single Pricing Callbacks**: By emitting a single `CoreEvent::Pricing` with the `raw` payload and a vector of unified events, `on_pricing` is invoked exactly once per wire message. Correctness is fully guaranteed.
+2. **Order Preservation**: Chronological order is strictly maintained inside the vector (e.g., `vec![trade, quote]`).
+3. **Borrow/Send Safety**: Because `MarketEvent` is an owned, serializable enum implementing `Send + Sync + 'static`, there are zero borrowing or async lifetime issues in the moving channel queue.
+
+---
+
+### 4. Secondary Phase 2b Forks Identified
+
+*   **F1: Heartbeat / Keep-Alive Filtering**
+    *   *Analysis*: Yahoo sends keep-alive/heartbeat messages (`quote_type == 7`).
+    *   *Recommendation*: Keep-alives must reset the silence detection timer inside the `WebsocketStreamerHost`, but should **not** emit `CoreEvent::Pricing` or any `MarketEvent` downstream. This protects the JS layer from junk packets while maintaining connection health.
+*   **F2: Single-Channel redb Subscriptions Mapping**
+    *   *Analysis*: Unlike Alpaca's three discrete channels (trades, quotes, bars), Yahoo features a flat WebSocket subscription model where symbols are subscribed globally.
+    *   *Recommendation*: Reuse the host's `redb` subscription tables by mapping them all under a single uniform table key structure (e.g. `symbol`) and subscribing flatly during `load_subscriptions()`. This keeps total parity with Finnhub's flat model and utilizes our existing reconnect-resume mechanics.
+
+
