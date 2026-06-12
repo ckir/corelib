@@ -59,6 +59,11 @@ export type {
 export { Historical } from "./nasdaq/datafeeds/polling/historical/Historical";
 export { NasdaqPolling } from "./nasdaq/datafeeds/polling/nasdaq/NasdaqPolling";
 export { AlpacaStreaming } from "./nasdaq/datafeeds/streaming/alpaca/AlpacaStreaming";
+export {
+	type FinnhubConfig,
+	type FinnhubPricingData,
+	FinnhubStreaming,
+} from "./nasdaq/datafeeds/streaming/finnhub/FinnhubStreaming";
 export { YahooStreaming } from "./nasdaq/datafeeds/streaming/yahoo/YahooStreaming";
 export { getSymbolsTop100 } from "./nasdaq/groups/Top100";
 export { MarketMonitor, type MarketPhase } from "./nasdaq/MarketMonitor";
