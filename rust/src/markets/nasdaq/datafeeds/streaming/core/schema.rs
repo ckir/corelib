@@ -32,6 +32,7 @@ pub struct FinnhubTradeExtras {
 
 /// Provider-specific trade metadata (extended per provider in later phases).
 #[allow(dead_code)] // wired up in later tasks
+#[allow(clippy::large_enum_variant)] // YahooTradeExtras is intentionally wide (finstream superset)
 #[derive(Debug, Clone)]
 pub enum TradeExtras {
     Finnhub(FinnhubTradeExtras),
@@ -78,6 +79,51 @@ pub struct AlpacaQuoteExtras {
     pub tape: Option<String>,
 }
 
+/// Yahoo option-instrument metadata (populated only when `quote_type == 13`).
+#[allow(dead_code)]
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct YahooOptionExtras {
+    #[serde(skip_serializing_if = "is_zero_f64")]
+    pub strike_price: f64, // proto tag 17
+    pub option_type: i32, // proto tag 20 (Call/Put); kept i32 (YAGNI to stringify)
+    #[serde(skip_serializing_if = "is_zero_i64")]
+    pub open_interest: i64, // proto tag 19
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub underlying_symbol: String, // proto tag 18
+    #[serde(skip_serializing_if = "is_zero_i64")]
+    pub expire_date: i64, // proto tag 14
+    #[serde(skip_serializing_if = "is_zero_i64")]
+    pub mini_option: i64, // proto tag 21
+}
+
+/// Map a Yahoo `quote_type` i32 to a portable lowercase label. Unknown values fall back to the
+/// numeric string. Numeric codes are the authority defined by `QuoteType` in
+/// `yahoo/yahoo_streaming_proto_handler.rs`; keep these arms in sync with that enum.
+pub fn quote_type_label(qt: i32) -> String {
+    match qt {
+        0 => "none",
+        5 => "altsymbol",
+        7 => "heartbeat",
+        8 => "equity",
+        9 => "index",
+        11 => "mutualfund",
+        12 => "moneymarket",
+        13 => "option",
+        14 => "currency",
+        15 => "warrant",
+        17 => "bond",
+        18 => "future",
+        20 => "etf",
+        23 => "commodity",
+        28 => "ecnquote",
+        41 => "cryptocurrency",
+        42 => "indicator",
+        1000 => "industry",
+        other => return other.to_string(),
+    }
+    .to_string()
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct YahooTradeExtras {
@@ -110,6 +156,20 @@ pub struct YahooTradeExtras {
     pub ask_size: i64,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub short_name: String,
+    // ── Phase 2b additions ──
+    #[serde(skip_serializing_if = "is_zero_i64")]
+    pub last_size: i64, // proto tag 22 — per-trade size (finstream gap)
+    pub quote_type: String, // proto tag 6 via quote_type_label(); always emitted (discriminator)
+    #[serde(skip_serializing_if = "is_zero_i64")]
+    pub vol_24hr: i64, // proto tag 28
+    #[serde(skip_serializing_if = "is_zero_i64")]
+    pub vol_all_currencies: i64, // proto tag 29
+    #[serde(skip_serializing_if = "is_zero_f64")]
+    pub circulating_supply: f64, // proto tag 32
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub from_currency: String, // proto tag 30
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options: Option<YahooOptionExtras>,
 }
 
 #[allow(dead_code)]
@@ -126,6 +186,10 @@ pub struct YahooQuoteExtras {
     pub change: f64,
     #[serde(skip_serializing_if = "is_zero_f64")]
     pub change_pct: f64,
+    // ── Phase 2b additions ──
+    pub quote_type: String, // always emitted (discriminator)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options: Option<YahooOptionExtras>,
 }
 
 #[allow(dead_code)]
@@ -339,5 +403,129 @@ mod schema_expansion_tests {
         };
         let v = serde_json::to_value(&ev).unwrap();
         assert_eq!(v["timestamp"], "2023-11-14T22:13:20Z");
+    }
+
+    #[test]
+    fn quote_type_label_maps_known_and_unknown() {
+        assert_eq!(quote_type_label(8), "equity");
+        assert_eq!(quote_type_label(20), "etf");
+        assert_eq!(quote_type_label(41), "cryptocurrency");
+        assert_eq!(quote_type_label(13), "option");
+        assert_eq!(quote_type_label(7), "heartbeat");
+        assert_eq!(quote_type_label(9999), "9999"); // unknown falls back to numeric string
+    }
+
+    #[test]
+    fn yahoo_equity_trade_extras_omit_crypto_and_option_fields() {
+        let x = YahooTradeExtras {
+            exchange: "NMS".into(),
+            currency: "USD".into(),
+            market_hours: 0,
+            change: 0.0,
+            change_pct: 0.0,
+            volume: 0,
+            open: 0.0,
+            day_high: 0.0,
+            day_low: 0.0,
+            prev_close: 0.0,
+            market_cap: 0.0,
+            bid: 0.0,
+            ask: 0.0,
+            bid_size: 0,
+            ask_size: 0,
+            short_name: String::new(),
+            last_size: 0,
+            quote_type: quote_type_label(8),
+            vol_24hr: 0,
+            vol_all_currencies: 0,
+            circulating_supply: 0.0,
+            from_currency: String::new(),
+            options: None,
+        };
+        let v = serde_json::to_value(&x).unwrap();
+        assert_eq!(v["quote_type"], "equity");
+        assert_eq!(v["market_hours"], 0);
+        assert!(v.get("vol_24hr").is_none());
+        assert!(v.get("circulating_supply").is_none());
+        assert!(v.get("from_currency").is_none());
+        assert!(v.get("options").is_none());
+        assert!(v.get("last_size").is_none());
+    }
+
+    #[test]
+    fn yahoo_crypto_trade_extras_include_crypto_fields() {
+        let x = YahooTradeExtras {
+            exchange: "CCC".into(),
+            currency: "USD".into(),
+            market_hours: 0,
+            change: 0.0,
+            change_pct: 0.0,
+            volume: 0,
+            open: 0.0,
+            day_high: 0.0,
+            day_low: 0.0,
+            prev_close: 0.0,
+            market_cap: 0.0,
+            bid: 0.0,
+            ask: 0.0,
+            bid_size: 0,
+            ask_size: 0,
+            short_name: String::new(),
+            last_size: 0,
+            quote_type: quote_type_label(41),
+            vol_24hr: 123,
+            vol_all_currencies: 456,
+            circulating_supply: 19.5,
+            from_currency: "BTC".into(),
+            options: None,
+        };
+        let v = serde_json::to_value(&x).unwrap();
+        assert_eq!(v["quote_type"], "cryptocurrency");
+        assert_eq!(v["vol_24hr"], 123);
+        assert_eq!(v["vol_all_currencies"], 456);
+        assert_eq!(v["circulating_supply"], 19.5);
+        assert_eq!(v["from_currency"], "BTC");
+    }
+
+    #[test]
+    fn yahoo_option_trade_extras_nest_options() {
+        let x = YahooTradeExtras {
+            exchange: "OPR".into(),
+            currency: "USD".into(),
+            market_hours: 0,
+            change: 0.0,
+            change_pct: 0.0,
+            volume: 0,
+            open: 0.0,
+            day_high: 0.0,
+            day_low: 0.0,
+            prev_close: 0.0,
+            market_cap: 0.0,
+            bid: 0.0,
+            ask: 0.0,
+            bid_size: 0,
+            ask_size: 0,
+            short_name: String::new(),
+            last_size: 0,
+            quote_type: quote_type_label(13),
+            vol_24hr: 0,
+            vol_all_currencies: 0,
+            circulating_supply: 0.0,
+            from_currency: String::new(),
+            options: Some(YahooOptionExtras {
+                strike_price: 100.0,
+                option_type: 1,
+                open_interest: 50,
+                underlying_symbol: "AAPL".into(),
+                expire_date: 1_700_000_000,
+                mini_option: 0,
+            }),
+        };
+        let v = serde_json::to_value(&x).unwrap();
+        assert_eq!(v["quote_type"], "option");
+        assert_eq!(v["options"]["strike_price"], 100.0);
+        assert_eq!(v["options"]["underlying_symbol"], "AAPL");
+        assert_eq!(v["options"]["open_interest"], 50);
+        assert!(v["options"].get("mini_option").is_none());
     }
 }
