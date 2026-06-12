@@ -51,10 +51,14 @@ pub enum QuoteExtras {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct AlpacaTradeExtras {
     pub size: f64,
-    #[serde(skip_serializing_if = "Option::is_none")] pub exchange: Option<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]    pub conditions: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub tape: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub id: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exchange: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub conditions: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tape: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
 }
 
 #[allow(dead_code)]
@@ -64,10 +68,14 @@ pub struct AlpacaQuoteExtras {
     pub ask: f64,
     pub bid_size: f64,
     pub ask_size: f64,
-    #[serde(skip_serializing_if = "Option::is_none")] pub bid_exchange: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub ask_exchange: Option<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]    pub conditions: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub tape: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bid_exchange: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ask_exchange: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub conditions: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tape: Option<String>,
 }
 
 #[allow(dead_code)]
@@ -76,19 +84,32 @@ pub struct YahooTradeExtras {
     pub exchange: String,
     pub currency: String,
     pub market_hours: i32,
-    #[serde(skip_serializing_if = "is_zero_f64")] pub change: f64,
-    #[serde(skip_serializing_if = "is_zero_f64")] pub change_pct: f64,
-    #[serde(skip_serializing_if = "is_zero_i64")] pub volume: i64,
-    #[serde(skip_serializing_if = "is_zero_f64")] pub open: f64,
-    #[serde(skip_serializing_if = "is_zero_f64")] pub day_high: f64,
-    #[serde(skip_serializing_if = "is_zero_f64")] pub day_low: f64,
-    #[serde(skip_serializing_if = "is_zero_f64")] pub prev_close: f64,
-    #[serde(skip_serializing_if = "is_zero_f64")] pub market_cap: f64,
-    #[serde(skip_serializing_if = "is_zero_f64")] pub bid: f64,
-    #[serde(skip_serializing_if = "is_zero_f64")] pub ask: f64,
-    #[serde(skip_serializing_if = "is_zero_i64")] pub bid_size: i64,
-    #[serde(skip_serializing_if = "is_zero_i64")] pub ask_size: i64,
-    #[serde(skip_serializing_if = "String::is_empty")] pub short_name: String,
+    #[serde(skip_serializing_if = "is_zero_f64")]
+    pub change: f64,
+    #[serde(skip_serializing_if = "is_zero_f64")]
+    pub change_pct: f64,
+    #[serde(skip_serializing_if = "is_zero_i64")]
+    pub volume: i64,
+    #[serde(skip_serializing_if = "is_zero_f64")]
+    pub open: f64,
+    #[serde(skip_serializing_if = "is_zero_f64")]
+    pub day_high: f64,
+    #[serde(skip_serializing_if = "is_zero_f64")]
+    pub day_low: f64,
+    #[serde(skip_serializing_if = "is_zero_f64")]
+    pub prev_close: f64,
+    #[serde(skip_serializing_if = "is_zero_f64")]
+    pub market_cap: f64,
+    #[serde(skip_serializing_if = "is_zero_f64")]
+    pub bid: f64,
+    #[serde(skip_serializing_if = "is_zero_f64")]
+    pub ask: f64,
+    #[serde(skip_serializing_if = "is_zero_i64")]
+    pub bid_size: i64,
+    #[serde(skip_serializing_if = "is_zero_i64")]
+    pub ask_size: i64,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub short_name: String,
 }
 
 #[allow(dead_code)]
@@ -101,8 +122,10 @@ pub struct YahooQuoteExtras {
     pub exchange: String,
     pub currency: String,
     pub market_hours: i32,
-    #[serde(skip_serializing_if = "is_zero_f64")] pub change: f64,
-    #[serde(skip_serializing_if = "is_zero_f64")] pub change_pct: f64,
+    #[serde(skip_serializing_if = "is_zero_f64")]
+    pub change: f64,
+    #[serde(skip_serializing_if = "is_zero_f64")]
+    pub change_pct: f64,
 }
 
 #[allow(dead_code)]
@@ -115,8 +138,12 @@ pub struct Quote {
     pub raw: Option<String>,
 }
 
-fn is_zero_f64(v: &f64) -> bool { *v == 0.0 }
-fn is_zero_i64(v: &i64) -> bool { *v == 0 }
+fn is_zero_f64(v: &f64) -> bool {
+    *v == 0.0
+}
+fn is_zero_i64(v: &i64) -> bool {
+    *v == 0
+}
 
 /// A normalized trade.
 #[allow(dead_code)] // wired up in later tasks
@@ -179,13 +206,15 @@ impl serde::Serialize for MarketEvent {
                 m.serialize_entry("source", source)?;
                 m.serialize_entry("type", "trade")?;
                 m.serialize_entry("ticker", &data.ticker)?;
-                m.serialize_entry("timestamp", &data.timestamp.timestamp_millis())?;
+                m.serialize_entry("timestamp", &data.timestamp)?;
                 m.serialize_entry("price", &data.price)?;
-                if let Some(raw) = &data.raw { m.serialize_entry("raw", raw)?; }
+                if let Some(raw) = &data.raw {
+                    m.serialize_entry("raw", raw)?;
+                }
                 match &data.extras {
                     TradeExtras::Finnhub(v) => m.serialize_entry("finnhub", v)?,
-                    TradeExtras::Yahoo(v)   => m.serialize_entry("yahoo", v)?,
-                    TradeExtras::Alpaca(v)  => m.serialize_entry("alpaca", v)?,
+                    TradeExtras::Yahoo(v) => m.serialize_entry("yahoo", v)?,
+                    TradeExtras::Alpaca(v) => m.serialize_entry("alpaca", v)?,
                 }
                 m.end()
             }
@@ -194,12 +223,14 @@ impl serde::Serialize for MarketEvent {
                 m.serialize_entry("source", source)?;
                 m.serialize_entry("type", "quote")?;
                 m.serialize_entry("ticker", &data.ticker)?;
-                m.serialize_entry("timestamp", &data.timestamp.timestamp_millis())?;
+                m.serialize_entry("timestamp", &data.timestamp)?;
                 m.serialize_entry("price", &data.price)?;
-                if let Some(raw) = &data.raw { m.serialize_entry("raw", raw)?; }
+                if let Some(raw) = &data.raw {
+                    m.serialize_entry("raw", raw)?;
+                }
                 match &data.extras {
                     QuoteExtras::Alpaca(v) => m.serialize_entry("alpaca", v)?,
-                    QuoteExtras::Yahoo(v)  => m.serialize_entry("yahoo", v)?,
+                    QuoteExtras::Yahoo(v) => m.serialize_entry("yahoo", v)?,
                 }
                 m.end()
             }
@@ -208,7 +239,9 @@ impl serde::Serialize for MarketEvent {
                 m.serialize_entry("source", source)?;
                 let val = serde_json::to_value(status).map_err(serde::ser::Error::custom)?;
                 if let serde_json::Value::Object(obj) = val {
-                    for (k, v) in obj { m.serialize_entry(&k, &v)?; }
+                    for (k, v) in obj {
+                        m.serialize_entry(&k, &v)?;
+                    }
                 }
                 m.end()
             }
@@ -222,7 +255,10 @@ mod schema_expansion_tests {
     use chrono::TimeZone;
 
     fn ts() -> chrono::DateTime<chrono::Utc> {
-        chrono::Utc.timestamp_millis_opt(1_700_000_000_000).single().unwrap()
+        chrono::Utc
+            .timestamp_millis_opt(1_700_000_000_000)
+            .single()
+            .unwrap()
     }
 
     #[test]
@@ -234,8 +270,14 @@ mod schema_expansion_tests {
                 timestamp: ts(),
                 price: 191.5,
                 extras: QuoteExtras::Alpaca(AlpacaQuoteExtras {
-                    bid: 191.0, ask: 192.0, bid_size: 1.0, ask_size: 2.0,
-                    bid_exchange: None, ask_exchange: None, conditions: vec![], tape: None,
+                    bid: 191.0,
+                    ask: 192.0,
+                    bid_size: 1.0,
+                    ask_size: 2.0,
+                    bid_exchange: None,
+                    ask_exchange: None,
+                    conditions: vec![],
+                    tape: None,
                 }),
                 raw: None,
             },
@@ -258,8 +300,11 @@ mod schema_expansion_tests {
                 timestamp: ts(),
                 price: 420.0,
                 extras: TradeExtras::Alpaca(AlpacaTradeExtras {
-                    size: 50.0, exchange: Some("V".into()), conditions: vec!["@".into()],
-                    tape: Some("C".into()), id: Some(7),
+                    size: 50.0,
+                    exchange: Some("V".into()),
+                    conditions: vec!["@".into()],
+                    tape: Some("C".into()),
+                    id: Some(7),
                 }),
                 raw: None,
             },
@@ -269,5 +314,30 @@ mod schema_expansion_tests {
         assert_eq!(v["ticker"], "MSFT");
         assert_eq!(v["alpaca"]["size"], 50.0);
         assert_eq!(v["alpaca"]["conditions"][0], "@");
+    }
+
+    #[test]
+    fn timestamp_serializes_as_rfc3339_string_for_finstream_parity() {
+        // The unified event mirrors finstream's wire format (chrono `serde` feature),
+        // so `timestamp` is an RFC3339 string, not an epoch int — keeps the uni event a
+        // true superset of finstream for cross-provider switching.
+        let ev = MarketEvent::Trade {
+            source: "alpaca_main".into(),
+            data: Trade {
+                ticker: "MSFT".into(),
+                timestamp: ts(),
+                price: 420.0,
+                extras: TradeExtras::Alpaca(AlpacaTradeExtras {
+                    size: 50.0,
+                    exchange: None,
+                    conditions: vec![],
+                    tape: None,
+                    id: None,
+                }),
+                raw: None,
+            },
+        };
+        let v = serde_json::to_value(&ev).unwrap();
+        assert_eq!(v["timestamp"], "2023-11-14T22:13:20Z");
     }
 }
