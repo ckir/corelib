@@ -841,4 +841,108 @@ sequenceDiagram
 3. **Pumping & Translation**: The N-API host layer loops over the channel messages. It pushes `raw` fields directly into the existing `on_pricing` thread-safe functions, maintaining perfect typed native bindings. If the optional `on_market_event` callback was registered, the host serializes `uni` using `serde_json::to_string` on-the-fly and fires it as a fast JSON string callback.
 4. **TS Layer**: The TS EventEmitter captures the JSON string, parses it back to a robust TypeScript typed object, and acts as the final multiplexing boundary (emitting `"pricing"` with raw data, and `"market"` with unified data).
 
+---
+
+## 2026-06-12 — (d) Phase 2a — Alpaca subscription-mirror scope: divergent pass
+
+### 1. Critical Review & Fork Resolution
+
+#### 1.1 S1 — How deep should the Alpaca subscription mirror go?
+
+* **Recommendation**: **(S1-b) FULL channel surface** (via overload of the TS/FFI contract).
+* **Reasoning**:
+  - **Faithful Mirror Mandate**: The user's explicit mandate is clear: *"mirror each provider (user can set all parameters accepted by a provider)"* and *"FAITHFUL MIRROR of the provider's native streaming API (full parameter fidelity on BOTH config and subscription)"*. Limiting the channels to quotes/trades/bars ([S1-a](#)) or quotes/trades only ([S1-c](#)) directly violates this instruction and breaks product intent.
+  - **FFI & TS Compatibility**: We can introduce the richer subscription surface over N-API/TS while remaining byte-compatible with the old JS/TS contract. This is achieved by using an **overloaded signature** in TypeScript and Rust (`napi::Either`). The `subscribe()` method accepts either `string[]` (which defaults to subscribing them to `"quotes"` for backward compatibility) OR a structured subscription object:
+    ```typescript
+    interface AlpacaSubscription {
+      trades?: string[];
+      quotes?: string[];
+      bars?: string[];
+      updatedBars?: string[];
+      dailyBars?: string[];
+      statuses?: string[];
+      lulds?: string[];
+      corrections?: string[];
+      cancelErrors?: string[];
+    }
+    ```
+  - **redb Persistence (Composite Keys)**: To avoid complex DB migrations, we retain the existing `TableDefinition<&str, bool>` schema but transition to a **composite key pattern**: `channel:symbol` (e.g. `"quotes:AAPL"`, `"trades:MSFT"`, `"bars:TSLA"`).
+    - *Resume-on-Restart Implications*: On boot, the streamer reads all keys from the database. It splits each key by the first colon `":"`. If no colon is present, it fallback-defaults the channel to `"quotes"` (preserving flawless backward compatibility with old databases). It buckets the symbols by channel, then issues a single consolidated WebSocket subscription payload.
+    - *Dynamic Unsubscribe*: Unsubscribing a symbol from one channel (e.g., removing `AAPL` from `quotes` but keeping it in `trades`) is completely precise and independent, preventing accidental global unsubscribes.
+
+#### 1.2 S2 — How should "uni" handle channels it cannot represent?
+
+* **Recommendation**: **(S2-a) Raw-only** on non-finstream channels.
+* **Reasoning**:
+  - **Strict Portability**: The explicit purpose of the "uni" format is portability/easy switching between providers. The unified format must remain a verbatim mapping of `finstream`'s types.
+  - **Zero Schema Drift**: If we adopt S2-b and extend corelib's `MarketEvent` representation with a `Bar` variant (or other custom types), our internal schema diverges from `finstream`, creating a proprietary superset. This forces downstream consumers intending to switch providers to support custom extensions, violating the original "easy switching" premise and increasing future re-sync costs.
+  - **The Native/Unified Clean Divide**: Emitting non-finstream channels (like `bars`, `statuses`, `lulds`) exclusively via the raw `on_pricing` typed callback, while keeping `quotes` and `trades` dual-emitting to both `on_pricing` (raw) and `on_market_event` (unified JSON), beautifully divides the native capabilities from the unified, portable capabilities. Consumers looking for unified, swappable structures use `"market"`, while consumers needing specialized features (like Alpaca-native bars) hook into `"pricing"` (raw).
+
+---
+
+### 2. Concrete Architectural Design & Integration
+
+#### N-API / TypeScript Overload Signature
+```typescript
+// Exposed to JS/TS consumers
+export interface AlpacaSubscribeOpts {
+  trades?: string[];
+  quotes?: string[];
+  bars?: string[];
+  updatedBars?: string[];
+  dailyBars?: string[];
+  statuses?: string[];
+  lulds?: string[];
+  corrections?: string[];
+  cancelErrors?: string[];
+}
+
+// subscribe method signature
+subscribe(subscriptions: string[] | AlpacaSubscribeOpts): Promise<void>;
+```
+
+#### Rust FFI Translation Layer (`lib.rs` / `alpaca_streamer.rs`)
+Using N-API's `Either` type to represent the union signature in Rust:
+```rust
+#[napi(object)]
+#[derive(Clone, Serialize, Deserialize)]
+pub struct AlpacaSubscribeOpts {
+    pub trades: Option<Vec<String>>,
+    pub quotes: Option<Vec<String>>,
+    pub bars: Option<Vec<String>>,
+    pub updated_bars: Option<Vec<String>>,
+    pub daily_bars: Option<Vec<String>>,
+    pub statuses: Option<Vec<String>>,
+    pub lulds: Option<Vec<String>>,
+    pub corrections: Option<Vec<String>>,
+    pub cancel_errors: Option<Vec<String>>,
+}
+
+// In AlpacaStreaming N-API implementation:
+#[napi]
+pub async fn subscribe(&self, input: napi::Either<Vec<String>, AlpacaSubscribeOpts>) -> Result<()> {
+    match input {
+        napi::Either::A(legacy_quotes) => {
+            // Treat as quotes only to preserve backwards compatibility
+            self.core.subscribe_channel("quotes", legacy_quotes).await;
+        }
+        napi::Either::B(opts) => {
+            // Sub select each provided channel dynamically
+            if let Some(q) = opts.quotes { self.core.subscribe_channel("quotes", q).await; }
+            if let Some(t) = opts.trades { self.core.subscribe_channel("trades", t).await; }
+            if let Some(b) = opts.bars { self.core.subscribe_channel("bars", b).await; }
+            // ... apply for all other optional channel options
+        }
+    }
+    Ok(())
+}
+```
+
+---
+
+### 3. Ultimate Architect's Synthesis
+
+If I were implementing the Phase 2a Alpaca subscription mirror, I would resolve both forks by implementing **S1-b** (FULL channel surface) paired with **S2-a** (Raw-only for non-finstream events). I would define the FFI `subscribe()` contract to accept a `napi::Either<Vec<String>, AlpacaSubscribeOpts>` union payload matching the TS/JS signature, mapping `Vec<String>` directly to the `"quotes"` channel to keep current systems operational. On the persistence boundary, I would retain the existing `redb` database shape (`TableDefinition<&str, bool>`) but format stored keys as `channel:symbol` strings; when loading subscriptions on container boot, any key lacking a colon divider would default to `"quotes"`, offering 100% backward-compatibility without requiring a migration. This lightweight, elegant architecture achieves absolute "faithful mirror" parameter fidelity for advanced users, keeps the "uni" schema strictly isomorphic to `finstream` for portable multi-provider switching, and avoids structural over-building by utilizing composite string keys to solve persistence without breaking existing schemas.
+
+
 
