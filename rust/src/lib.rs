@@ -125,6 +125,5 @@ pub use markets::nasdaq::datafeeds::streaming::yahoo::{
     EventRecord, LogRecord, RustCallbacks, YahooConfig, YahooStreaming, YahooStreamingCore,
 };
 
-// TODO(task 9): uncomment once finnhub_streamer defines these
-// #[cfg(feature = "finnhub")]
-// pub use markets::nasdaq::datafeeds::streaming::finnhub::finnhub_streamer::{FinnhubStreaming, FinnhubConfig, FinnhubPricingData};
+#[cfg(feature = "finnhub")]
+pub use markets::nasdaq::datafeeds::streaming::finnhub::finnhub_streamer::{FinnhubStreaming, FinnhubConfig, FinnhubPricingData};
