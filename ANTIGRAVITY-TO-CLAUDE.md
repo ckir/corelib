@@ -143,4 +143,46 @@ This review performs a spec-phase pressure-test on the committed Integration Tes
 
 Our single highest-conviction suggestion is to **augment the ConfigManager API to accept explicit arguments** to prevent CLI option clashes under Vitest, and to **strictify the secret scrubber to intercept JSON bodies**.
 
+---
 
+## 2026-06-12 — Roadmap sequencing of 4 subprojects (divergent)
+
+### 1. Critical Review of Candidate Roadmaps
+
+#### 1.1 The User's Sequence: `a → b → c → d`
+*   **Severe E2E Rework Risk (Undertesting & Rework Blockers)**: Writing integration/E2E tests (c) before porting the unified provider surface (d) is an anti-pattern. Porting providers from `finstream` introduces a unified TS/Rust schema and adds **Finnhub**. Writing MSW contract fixtures and testing streams over the *old* endpoints means a complete rewrite of the replay contracts in `tests/integration/_contracts/` immediately after (d) is completed.
+*   **Swapping Safety Nets (Refactoring with No Test Coverage)**: Retro-instrumenting legacy modules (a) with trace/debug logging is a large, sweeping operation touching many files. Running this before establishing (c) means we have no integration safety net to guard against runtime typos, circular references in error serialization, or initialization crashes of child loggers.
+*   **Premature Global Audit**: Conducting a deep code review (b) before (d) means the largest and most complex chunk of newly modified content (the multi-provider Rust WebSocket engine) entirely escapes global auditing.
+
+#### 1.2 Claude's Recommendation Sequence: `a → d → c → b`
+*   **Sound Progress**: Claude correctly identified the tension between (c) and (d), placing the provider porting (d) before E2E testing (c) to ensure tests cover the final, stable schemas and endpoints, preventing throwing away test code.
+*   **The Unshielded Refactoring Flaw**: Claude's order still places the sweeping, legacy-wide trace retro-instrumentation (a) *first*. This is a high-risk refactoring phase done without an integration test tier. A single invalid child logger signature or bad parameter serialization in a core database/network path will bypass unit mocks and crash the production system.
+*   **FFI Base Instability (Garbage In, Voyage Out)**: Porting finstream's highly asynchronous, multi-threaded WebSocket providers into `corelib-rust` (d) before verifying the core FFI napi/Rust execution engine via a baseline audit (b) introduces a massive risk of compounding memory leaks, resource exhaustion, or unhandled tokio runtime panics.
+
+### 2. Creative Improvements & Split/Merge Analysis
+
+*   **Split the Global Audit (b-1 & b-2)**: Rather than doing one massive audit, split it:
+    *   **`(b-1) Baseline FFI Audit`**: A highly focused, surgical audit of the pre-existing FFI bridge, N-API rust boundaries, and the shared test harness setup. We clean up the foundation before building heavy real-time data ingestion models.
+    *   **`(b-2) Capstone Global Audit`**: A complete, high-level product correctness and architectural review at the post-integration, post-trace final stage.
+*   **Leverage the Standing Mandate (§12 "Debug & Trace Logging" of [AGENTS.md](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b63f1108/AGENTS.md#L190-L218))**: New code is self-instrumented "at birth". By porting providers (d) *before* doing retro-instrumentation (a), all ported providers are written directly with proper trace/debug logging, eliminating duplicated refactoring loops on those modules.
+*   **Use Integration Tests (c) as the Logging Safety Net**: By implementing the integration/E2E tier (c) *before* legacy retro-instrumentation (a), we gain a repeatable contract-replay harness. Any subsequent sweeping logging modifications to `ts-core` can be verified in milliseconds, turning a manual, high-risk refactor into a safe, automated pass.
+
+### 3. Final Recommendation: Proposed Roadmap Sequence
+
+We recommend a specialized split-and-staged roadmap that maximizes safety and eliminates throwaway contract work:
+
+```mermaid
+graph TD
+    B1["(b-1) Baseline FFI Audit<br>Sanitize Rust FFI & N-API foundation"] --> D["(d) Port Providers<br>Alpaca/Finnhub/Yahoo with unified schema"]
+    D --> C["(c) Integration/E2E Tests<br>Zero-rework contracts over stable endpoints"]
+    C --> A["(a) Trace Retro-instrumentation<br>Sweeping legacy logs, integration-verified"]
+    A --> B2["(b-2) Capstone Global Audit<br>Final correctness, performance & edge cases"]
+```
+
+#### The Sequence: `b-1 → d → c → a → b-2`
+
+1.  **`(b-1) Baseline FFI Audit`**: Sanitizes the underlying Rust N-API/FFI execution model and async runtime pool, ensuring a rock-solid, non-leaking native core before porting.
+2.  **`(d) Port Providers`**: Ports Yahoo/Alpaca/Finnhub into the audited FFI, unified under a standard provider schema, self-instrumented at birth per §12.
+3.  **`(c) Integration/E2E Tests`**: Implements the exhaustive integration suite over the finalized and stable provider endpoints, avoiding costly contract rework.
+4.  **`(a) Trace Retro-instrumentation`**: Retro-instruments legacy modules with extensive logs, utilizing the newly built test suite (c) as a real-world runtime safety net.
+5.  **`(b-2) Capstone Global Audit`**: Conducts the ultimate global architectural and edge-case correctness review over a complete, tested, and high-visibility monorepo.
