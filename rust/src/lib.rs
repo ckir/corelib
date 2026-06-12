@@ -89,8 +89,7 @@ pub mod markets {
                     pub mod yahoo_streaming_proto_handler;
                     /// Re-export Yahoo streaming components for convenience.
                     pub use yahoo_streamer::{
-                        EventRecord, LogRecord, RustCallbacks, YahooConfig, YahooStreaming,
-                        YahooStreamingCore,
+                        EventRecord, LogRecord, YahooConfig, YahooStreaming,
                     };
                 }
                 /// Shared trait-backed streaming engine (driver trait, schema, reconnect, supervisor, host).
@@ -126,7 +125,7 @@ pub use markets::nasdaq::datafeeds::streaming::alpaca::{
 
 /// Re-export Yahoo streaming components.
 pub use markets::nasdaq::datafeeds::streaming::yahoo::{
-    EventRecord, LogRecord, RustCallbacks, YahooConfig, YahooStreaming, YahooStreamingCore,
+    EventRecord, LogRecord, YahooConfig, YahooStreaming,
 };
 
 #[cfg(feature = "finnhub")]
