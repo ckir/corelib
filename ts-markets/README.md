@@ -184,6 +184,41 @@ stream.on("event", (event) => {
 stream.stop();
 ```
 
+#### Finnhub Finance Stream
+```ts
+import { FinnhubStreaming } from '@ckir/corelib-markets';
+
+const stream = new FinnhubStreaming();
+
+// Initialize with optional token (falls back to FINNHUB_API_KEY env var)
+await stream.init({ token: "YOUR_FINNHUB_API_KEY" });
+
+await stream.start();
+
+// Subscribe to symbols
+stream.subscribe(["AAPL", "MSFT", "NVDA"]);
+
+stream.on("pricing", (data) => {
+  // data.timestamp is a numeric epoch in milliseconds
+  console.log(`[${data.message_type}] ${data.symbol}: $${data.price} (vol: ${data.volume}) @ ${data.timestamp}`);
+});
+
+// Connection lifecycle events
+stream.on("connected", () => console.log("Finnhub connected"));
+stream.on("disconnected", (reason) => console.log("Finnhub disconnected:", reason));
+stream.on("reconnecting", (detail) => console.log("Finnhub reconnecting:", detail));
+stream.on("error", (msg) => console.error("Finnhub error:", msg));
+
+stream.on("log", (record) => {
+  console.log(`[${record.level}] ${record.msg}`);
+});
+
+// Stop the stream
+await stream.stop();
+```
+
+Events emitted: `pricing` (`FinnhubPricingData`), `log` (`{level, msg, extras?}`), `connected`, `disconnected`, `reconnecting`, `error`. The `pricing` event's `timestamp` field is a numeric epoch in milliseconds (as provided by Finnhub).
+
 ### 6. Persistent Symbol Database (MarketSymbols)
 Automated Nasdaq symbol directory with auto-refresh and environment-aware search sequencing.
 

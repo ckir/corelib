@@ -17,6 +17,13 @@ sequencing of 4 subprojects"). Five subprojects, each its own spec → plan → 
 2. **(d) Port finstream providers** — bring Alpaca / Finnhub / Yahoo from `finstream`
    (`C:/Users/user/Development/Rust/finstream`, Rust + napi) into corelib's Rust core + FFI under a
    unified `Trade`/`Quote`/`Status` schema (adds **Finnhub**). New code self-instruments per AGENTS.md §12.
+   - **Phase 1 (Finnhub pilot) — COMPLETE** (branch `feat/finnhub-provider-phase1`): shared
+     `ProviderDriver`/`MarketEvent`/`ReconnectPolicy` engine + `WebsocketStreamerHost` +
+     `FinnhubStreaming`; b-1 hardening checklist satisfied (Drop both tasks, backoff reset on
+     healthy-drop, per-instance redb, masked-secret Debug, panic→JS propagation, jitter).
+   - **Phase 2 (migrate Alpaca / Yahoo)** — port existing Alpaca and Yahoo streamers onto the shared
+     `WebsocketStreamerHost` engine; unify `subscribe`/`unsubscribe`/`stop` semantics.
+   - **Phase 3 (gateway)** — unified streaming gateway / fan-out layer across all providers.
 3. **(c) Integration / e2e tests** — implement the spec'd tier
    (`docs/superpowers/specs/2026-06-12-integration-tests-design.md`) over the **final** provider set, so
    no contract rework. *(Sequencing d-before-c resolves that spec's "new providers" Deferred risk.)*
