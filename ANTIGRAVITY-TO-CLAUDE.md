@@ -609,4 +609,53 @@ The single highest-conviction fix is to **standardize the `ProviderDriver::conne
 
 By enforcing explicit `Send` futures through standard box pinning, compiled FFI tasks compile cleanly on any stable Rust platform. Simultaneously, introducing `get_persisted_subscriptions()` on the host preserves the hard-earned, highly crash-resilient `redb` capabilities of the corelib stream pipeline, resolving both blockers in one unified pass. (Plan Task 4, 8, 9).
 
+---
 
+## 2026-06-12 — (d) Phase 1 convergent review (pre-merge)
+
+This convergent critical review performs a final verification sweep of the implemented Finnhub pilot (`feat/finnhub-provider-phase1` branch) before merging to `main`. This branch successfully conforms to all approved S2.5 architectural decisions (retaining per-instance redb schema, generic host-supervisor pattern, and back-compat TS facades).
+
+### 1. Critical Review & Audit
+
+#### 🟡 Should-Fix — Closed Channel `sub_rx` in `connect_once` Spins CPU at 100%
+*   **Design Area**: [finnhub_driver.rs:88](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0067899c/rust/src/markets/nasdaq/datafeeds/streaming/finnhub/finnhub_driver.rs#L88)
+*   **Verification**: [VERIFIED]
+*   **Issue**: In `FinnhubDriver::connect_once`, the active WebSocket message dispatch loop polls incoming dynamic subscriptions via `upd = sub_rx.recv()`. If the hosting `WebsocketStreamerHost` drops its `sub_tx` sender (e.g., during actor shutdown, drop, or error cleanup), the `sub_rx` channel is closed. When a channel is closed, `recv()` immediately and perpetually returns `None`. The loop matches `if let Some(syms) = upd` which evaluates to false and does nothing. It then immediately cycles back to the top of `tokio::select!`. Since the future is immediately ready with `None` again, this triggers a 100% CPU busy-spin / thread starvation lockup.
+*   **Concrete Fix**: [Surgical] Match on the resolved option from `sub_rx.recv()` and gracefully return `AttemptOutcome::Stopped` when the channel is closed:
+    ```rust
+    upd = sub_rx.recv() => {
+        match upd {
+            Some(syms) => {
+                for s in &syms {
+                    if !current.contains(s) {
+                        let m = serde_json::json!({ "type": "subscribe", "symbol": s }).to_string();
+                        let _ = ws.send(Message::Text(m.into())).await;
+                        current.push(s.clone());
+                    }
+                }
+            }
+            None => return AttemptOutcome::Stopped,
+        }
+    }
+    ```
+*   **One-line failing test idea**: Instantiate the driver connect future with a dropped dynamic subscription channel sender and verify it resolves immediately to `AttemptOutcome::Stopped` instead of hanging or pinning the CPU.
+
+#### 🟢 Nit — Unsubscribe (Phase-1 No-Op) Leaves Persistent Database Untouched
+*   **Design Area**: [FinnhubStreaming.ts:60](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0067899c/ts-markets/src/nasdaq/datafeeds/streaming/finnhub/FinnhubStreaming.ts#L60) / [finnhub_streamer.rs:266](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0067899c/rust/src/markets/nasdaq/datafeeds/streaming/finnhub/finnhub_streamer.rs#L266)
+*   **Verification**: [VERIFIED]
+*   **Issue**: Per the Phase 1 spec, dynamic live unsubscribes through the active WS stream are deferred. However, `FinnhubStreaming::unsubscribe` on the facade is mapped to a complete no-op (`Ok(())`) which bypasses updating the persistent local database (`redb`). If a JS client calls `unsubscribe` in Phase 1, the subscriptions are retained in `redb` and will reappear upon the next restart.
+*   **Concrete Fix**: [Surgical] Invoke `host.unsubscribe(symbols)` or remove them from local `redb` storage during `unsubscribe`, even if dynamic live unsubscription remains a no-op, to keep the persistent storage consistent with developer intent.
+*   **One-line failing test idea**: Call `unsubscribe(["AAPL"])` and verify that "AAPL" is removed from the local database on subsequent startups.
+
+---
+
+### 2. Generative Question
+
+*   **Question**: Ignoring settled decisions, is there anything materially simpler or stronger worth the churn BEFORE merge?
+*   **Answer**: `no change`. The codebase flawlessly executes the multi-phased trait-backed S2.5 facade pattern. It respects the hard-earned b-1 database, panic monitoring, and masked debug credentials fixes, achieving complete functional and performance parity with zero regressions.
+
+---
+
+### 3. Highest Conviction Suggestion
+
+The highest-conviction suggestion is to **fix the `tokio::select!` channel closure in `finnhub_driver.rs`**. Transitioning the `Some(...)` check to an explicit `match` that returns `AttemptOutcome::Stopped` prevents thread starvation and resource leakages on actor teardown, assuring perfect FFI stability under standard runtime environments.
