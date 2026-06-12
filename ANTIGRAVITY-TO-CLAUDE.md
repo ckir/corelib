@@ -659,3 +659,89 @@ This convergent critical review performs a final verification sweep of the imple
 ### 3. Highest Conviction Suggestion
 
 The highest-conviction suggestion is to **fix the `tokio::select!` channel closure in `finnhub_driver.rs`**. Transitioning the `Some(...)` check to an explicit `match` that returns `AttemptOutcome::Stopped` prevents thread starvation and resource leakages on actor teardown, assuring perfect FFI stability under standard runtime environments.
+
+---
+
+## 2026-06-12 — (d) Phase 2 — migrate Alpaca/Yahoo onto shared engine: divergent design pass
+
+### 1. Hard Architectural Review
+
+This section performs a rigorous, pre-implementation architectural review of the Phase 2 migration, checking for protocol mismatches, hidden FFI boundaries, and potential code regressions on migrating Alpaca and Yahoo onto the shared streaming engine.
+
+#### 🔴 Blocker — Flat FFI Callback Contracts Mismatch internally in shared engine
+* **Design Area**: [schema.rs](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-ee4ba9ba/rust/src/markets/nasdaq/datafeeds/streaming/core/schema.rs#L42-L48) and N-API Facade mapping inside [alpaca_streamer.rs](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-ee4ba9ba/rust/src/markets/nasdaq/datafeeds/streaming/alpaca/alpaca_streamer.rs#L67-L85) / [yahoo_streamer.rs](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-ee4ba9ba/rust/src/markets/nasdaq/datafeeds/streaming/yahoo/yahoo_streamer.rs#L64-L128).
+* **Issue**: The current shared streaming engine's internal schema [schema.rs](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-ee4ba9ba/rust/src/markets/nasdaq/datafeeds/streaming/core/schema.rs) contains a single-price `Trade` structure which cannot represent:
+  1. Alpaca's multi-dimensional pricing types (`quote` containing `bid_price`, `ask_price`, `volume` representing bid size proxy, and `bar` containing close price + volume). It also requires a high-precision `String` timestamp format, whereas `Trade` uses `DateTime<Utc>`.
+  2. Yahoo's monolithic 33-field PB snapshot containing session high, low, opening, market hours, circulating supply, etc., mapped to the heavy `JsPricingData`.
+  Forcing these diverse payloads into the single-price `MarketEvent::Trade` variant will cause severe information loss or fail the FFI byte-identical validation contract for Node.js consumer files.
+* **Proposed Fork Resolution**: We analyze this under Fork A. Our recommendation is **Option A1: Centralized Strongly-Typed Enum Expansion**. We extend [MarketEvent](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-ee4ba9ba/rust/src/markets/nasdaq/datafeeds/streaming/core/schema.rs#L74-L84) with:
+  ```rust
+  Quote { source: String, data: Quote },
+  Bar { source: String, data: Bar },
+  YahooSnapshot { source: String, data: Box<PricingData> },
+  ```
+  Box-allocating the heavy Yahoo protobuf snapshot protects the channel from stack frames size bloat. The per-provider facades map these unified variant streams back to the flat `AlpacaPricingData` and `JsPricingData` structs right before issuing the thread-safe N-API callback loop.
+
+#### 🔴 Blocker — Missing Clean/Database Table Deletion on WebsocketStreamerHost
+* **Design Area**: [host.rs](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-ee4ba9ba/rust/src/markets/nasdaq/datafeeds/streaming/core/host.rs#L32-L41)
+* **Issue**: The FFI interface for Alpaca and Yahoo demands a `.clean()` method that removes all subscription records from the persistence layer. Currently, [WebsocketStreamerHost](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-ee4ba9ba/rust/src/markets/nasdaq/datafeeds/streaming/core/host.rs) wraps `Database` as a private field but completely lacks a method to delete the underlying `redb` subscriptions table.
+* **Concrete Fix**: Add a public method on `WebsocketStreamerHost` that performs safe, transactional table deletion:
+  ```rust
+  pub fn delete_subscriptions_table(&self) -> Result<(), String> {
+      let table: TableDefinition<&str, bool> = TableDefinition::new(self.table);
+      if let Ok(wtx) = self.db.begin_write() {
+          if wtx.delete_table(table).is_ok() {
+              let _ = wtx.commit();
+              return Ok(());
+          }
+      }
+      Err("Failed to delete subscriptions table".to_string())
+  }
+  ```
+  This implements correct table drop semantics inside the host with clean encapsulation.
+
+#### 🟡 Should-Fix — Obsolete generic Trait Layers & Duplicate callbacks
+* **Design Area**: `AlpacaCallbacks` / `YahooCallbacks` in [alpaca_streamer.rs](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-ee4ba9ba/rust/src/markets/nasdaq/datafeeds/streaming/alpaca/alpaca_streamer.rs#L87-L95) and [yahoo_streamer.rs](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-ee4ba9ba/rust/src/markets/nasdaq/datafeeds/streaming/yahoo/yahoo_streamer.rs#L64-L72).
+* **Issue**: The original Alpaca and Yahoo integrations utilize complex generic structs (`AlpacaStreamingCore<C: AlpacaCallbacks>`) and traits to support both native Rust execution (stdout dumps) and FFI/N-API callbacks. This results in heavy, duplicate boilerplate.
+* **Concrete Fix**: By moving of reconnection, db persistence, and thread orchestration directly to `WebsocketStreamerHost`, we can delete all callback traits, generic bounds, and intermediate `Inner` / `*Core` structs. The N-API classes (`AlpacaStreaming`, `YahooStreaming`) interact directly with `WebsocketStreamerHost`, and the standalone binaries [alpaca_streamer.rs (bin)](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-ee4ba9ba/rust/src/bin/alpaca_streamer.rs) and [yahoo_streamer.rs (bin)](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-ee4ba9ba/rust/src/bin/yahoo_streamer.rs) are rewritten to leverage the host and drivers directly via a standard Rust closure pump.
+
+---
+
+### 2. Open Forks Analysis & Recommendations
+
+#### Fork A: Schema Strategy to Carry Provider-Rich Payloads
+* **A1) Centralized Enum Expansion**: Extend `schema.rs` with `Quote`/`Bar` and a boxed `YahooSnapshot` (Recommended).
+* **A2) Escape Hatch (`MarketEvent::ProviderRaw`)**: Pass `Box<dyn Any + Send>` or `serde_json::Value`.
+* **A3) Generic Host and Associated Types**: Parameterize `WebsocketStreamerHost<D>` with associated types on `ProviderDriver`.
+* **Deep Evaluation**:
+  `Option A3` introduces extreme generic propagation to structures inside the N-API wrappers. Since napi-rs blocks export of generic structures, we would have to implement monomorphized wrappers, which creates substantial intermediate type pollution. Furthermore, to route status/lifecycle updates alongside prices, a generic host would still require wrapping data inside a generic enum anyway (e.g., `enum ProviderUpdate<P> { Status(ProviderStatus), Data(P) }`).
+  `Option A2` bypasses static compilation safety and strips out the core benefit of compiling under a standard engine.
+  **Our Recommendation**: **Option A1 (Centralized Strongly-Typed Enum Expansion)**. Extending the central `MarketEvent` retains 100% static type safety across drivers. It ensures `WebsocketStreamerHost` remains flat and non-generic, simplifying N-API bindings immensely and avoiding compilation pollution on complex thread-safe wrappers.
+
+#### Fork B: Where do proactive ping + silence-detection live?
+* **Recommendation**: **Inside the individual Driver's `connect_once` loop (coinciding with the Finnhub layout)**.
+* **Reasoning**: The active connection sink/stream lies strictly captured within the driver's task frame. Neither the host nor the supervisor has access to the WebSocket writer to emit periodic Pings. Additionally, Pings are protocol-specific (e.g., text frames vs binary frames). When the silence timer fires, returning `AttemptOutcome::ConnectedThenDropped` perfectly informs the supervisor to trigger immediate reconnect with a reset backoff (as if it was a standard socket drop), whereas initial connection failures correctly scale the backoff.
+
+#### Fork C: Sequencing (One combined pass vs split 2a / 2b)
+* **Recommendation**: **Split the migration into Phase 2a (Alpaca) and Phase 2b (Yahoo)**.
+* **Reasoning**: Split ensures we focus, isolate, and debug one variable set at a time. Phase 2a addresses multi-message text frames, auth handshakes (Fatal auth error mapping), and silence timeouts. Phase 2b isolates protobuf-decoding (`prost` integration), Base64 binary processing, and the heavy 33-field mapping of Yahoo. This ensures every PR remains easily reviewable and compiles perfectly.
+
+#### Fork D: Cleanup Scope (Retain vs Delete Generic Core & Callbacks)
+* **Recommendation**: **Delete old `*StreamingCore<C>`, `Callbacks`, and `RustCallbacks` traits entirely**.
+* **Reasoning**: Standardizing entire streaming routines around `WebsocketStreamerHost` completely subsumes these generic state wrappers. The CLI binaries [alpaca_streamer.rs (bin)](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-ee4ba9ba/rust/src/bin/alpaca_streamer.rs) and [yahoo_streamer.rs (bin)](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-ee4ba9ba/rust/src/bin/yahoo_streamer.rs) become lighter and more elegant, calling `WebsocketStreamerHost::start` and printing incoming events directly from the closure pump.
+
+---
+
+### 3. Landmines, Gaps, and Hidden Nuances
+
+1. **Dead Configuration Options (`db_path`)**: `AlpacaConfig::db_path` is exposed to JS but holds no functional backing in the original Rust implementation (the DB is statically initialized in the constructor prior to config parsing). This field must remain in the `#[napi(object)]` config to prevent breaking TS interface byte-identity, but it should be noted as a legacy no-op.
+2. **Channel Starvation on Closed Sender (`sub_rx`)**: As seen in Finnhub, all drivers must robustly match on `sub_rx.recv()` options to resolve closed channel reads (`None`) as `AttemptOutcome::Stopped` immediately. Failing to do so will thread-starve the thread via a 100% CPU select busy-spin on drop.
+
+---
+
+### 4. Highest Conviction Recommendation
+
+**Migrate Alpaca and Yahoo onto the shared engine via a Split Phase 2, utilizing Centralized Enum schemas (Option A1) while removing generic callbacks traits completely.**
+
+If I were executing this migration, I would extend [MarketEvent](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-ee4ba9ba/rust/src/markets/nasdaq/datafeeds/streaming/core/schema.rs#L74-L84) to natively support first-class `Quote`, `Bar`, and boxed `YahooSnapshot` variants. I would house pings and silence thresholds inside each driver's respective `connect_once` select! loops, returning `AttemptOutcome::ConnectedThenDropped` on silence timeouts is optimal for quick, self-healing backoff resets. I would split work into two pristine PRs—first migrating the JSON actions of Alpaca (2a) before addressing the binary Protobuf mapping of Yahoo (2b)—and delete all obsolete callback and core traits, transforming the native binaries to consume the flat `WebsocketStreamerHost` directly. Finally, I would append a public `.delete_subscriptions_table()` method to the host to facilitate backend-driven table cleanups cleanly.
+
