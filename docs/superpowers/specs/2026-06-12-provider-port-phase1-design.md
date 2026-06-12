@@ -1,7 +1,7 @@
 # Provider Port — Phase 1 Design Spec (finstream → corelib)
 
 - **Date:** 2026-06-12
-- **Status:** Approved (design); agy brainstorm-phase pass complete. Spec-phase agy pass pending.
+- **Status:** Approved (design); agy brainstorm + spec-phase divergent passes complete. Pending user review.
 - **Subproject:** (d) Port finstream providers — **Phase 1 of 3** (scope S2.5).
 - **Review record:** `ANTIGRAVITY-TO-CLAUDE.md` → "(d) Provider port scope (divergent)".
 - **Roadmap:** `ROADMAP.md` → subproject (d), after (b-1 ✅).
@@ -36,8 +36,9 @@ Alpaca/Yahoo code or consumers.
 The shared engine and the `FinnhubStreaming` facade **MUST** satisfy every item that subproject b-1 fixed
 in the bespoke streamers (commit `06c7404`), audited explicitly:
 
-1. **GC teardown** — `impl Drop` on the N-API facade signals stop + aborts the supervisor/monitor so a
-   JS-dropped instance leaks no task/socket/TSFN.
+1. **GC teardown** — `Drop` (on the host) signals stop + aborts **both** the supervisor/monitor task
+   **and** the mpsc→TSFN pump task, so a JS-dropped instance leaks no task/socket/TSFN. (Leaving the pump
+   alive holds a strong TSFN ref and prevents clean Node exit — agy spec-pass 🔴.)
 2. **Backoff reset on healthy connect** — the reconnect attempt counter resets to 0 once a connection
    authenticates/receives data, so a later blip never inherits a long sticky delay. (finstream's
    `ReconnectPolicy::next_delay(attempt)` is attempt-based → reset = set `attempt = 0` on success;
@@ -59,46 +60,99 @@ in the bespoke streamers (commit `06c7404`), audited explicitly:
 - **`schema.rs`** — the unified `MarketEvent` { `Trade`/`Quote`/`Status`, source-tagged } enum plus
   `Trade`, `Quote`, `ProviderStatus`, `ProviderKind`, and the provider-`extras` types. Ported from
   finstream `types.rs`, trimmed to what Phase 1 needs (Finnhub trade extras + the common fields).
-- **`driver.rs`** — the `ProviderDriver` trait: `kind()`, `name()`, `validate()`,
-  `spawn(symbols, tx: mpsc::Sender<MarketEvent>, policy: ReconnectPolicy) -> JoinHandle<()>`.
+- **`driver.rs`** — the `ProviderDriver` trait. **corelib's trait differs from finstream's:** the driver
+  performs a **single connection attempt**, not its own reconnect loop (the supervisor owns the loop — see
+  below). Shape:
+  ```rust
+  trait ProviderDriver: Send + 'static {
+      fn kind(&self) -> ProviderKind;
+      fn name(&self) -> &str;
+      fn validate(&self) -> Result<(), FinStreamError> { Ok(()) }
+      // one connection attempt; returns when the socket drops or a fatal/stop occurs.
+      async fn connect_once(
+          &self,
+          symbols: &[String],
+          tx: &mpsc::Sender<MarketEvent>,    // normalized events out (incl. Status::Connected)
+          sub_rx: &mut mpsc::Receiver<Vec<String>>, // dynamic subscribe/unsubscribe while live
+          stop_rx: &mut mpsc::Receiver<()>,  // graceful stop
+      ) -> AttemptOutcome;                    // Connected-then-dropped | NeverConnected | Fatal | Stopped
+  }
+  ```
+  This mirrors corelib's existing hardened `run_loop`/`ws_loop` split (the bespoke `ws_loop` already is a
+  single-attempt unit returning `WsLoopResult`). `sub_rx` closes the b-1/dynamic-subscription gap — a
+  `subscribe()` after `start()` reaches the live socket, not just redb. *(agy spec-pass 🔴 ×2.)*
 - **`reconnect.rs`** — `ReconnectPolicy` ported from finstream (`initial_delay`/`max_delay`/`jitter`/
-  `max_retries`/`max_duration`, `next_delay(attempt)`), with the b-1 success-reset semantics enforced by
-  the supervisor.
-- **`supervisor.rs`** — the shared run-loop host that drives a `ProviderDriver`, applies the §3 checklist
-  (attempt reset on healthy connect, panic monitor, graceful stop channel), and forwards `MarketEvent`s
-  to the facade's mapper.
+  `max_retries`/`max_duration`, `next_delay(attempt)`), jitter via `std` nanos (§7).
+- **`supervisor.rs`** — **owns the reconnect loop.** It calls `driver.connect_once(...)`; on return it
+  inspects `AttemptOutcome` (and/or observes a `MarketEvent::Status::Connected` on `tx`) to **reset
+  `attempt = 0` on a healthy connect**, grows `attempt` only on `NeverConnected`, breaks on `Fatal`/
+  `Stopped`, sleeps `policy.next_delay(attempt)`, and re-invokes the driver. It also runs the panic
+  monitor (`JoinHandle::is_panic` → `on_event("error")`). This is the single place for backoff/state/
+  teardown — no dual scheduler. *(agy spec-pass 🔴 [Structural].)*
+- **`host.rs`** — a generic **`WebsocketStreamerHost<D: ProviderDriver>`** that owns ALL the FFI
+  coordination so each per-provider FFI class is a thin delegate: the per-instance **redb** file +
+  configurable table name, the supervisor task, the **mpsc→TSFN pump task**, the dynamic-sub channel, the
+  stop channel, and `Drop` (aborts **both** supervisor and pump). Constructed with the driver, the redb
+  table name (e.g. `"finnhub_subscriptions"`), and the three TSFNs. *(agy creative — makes Phase 2 a thin
+  wrap of Alpaca/Yahoo drivers.)*
 
-This module is internal (not a new public FFI surface in Phase 1).
+This module is internal (not a new public FFI surface in Phase 1). `napi-derive` cannot put generics on
+FFI structs, so the per-provider `#[napi]` classes stay separate but each wraps a
+`WebsocketStreamerHost<D>`.
 
 ### 4.2 FinnhubDriver
 
-`rust/src/markets/nasdaq/datafeeds/streaming/finnhub/finnhub_driver.rs` — port of finstream
-`providers/finnhub.rs` implementing `ProviderDriver`: `connect_async`, subscribe via
-`{"type":"subscribe","symbol":<sym>}`, parse `{"type":"trade","data":[…]}` frames into
-`MarketEvent::Trade { source, data: Trade { extras: FinnhubTradeExtras } }`, and emit
-`MarketEvent::Status` on connect/reconnect/error.
+`rust/src/markets/nasdaq/datafeeds/streaming/finnhub/finnhub_driver.rs` — adapted from finstream
+`providers/finnhub.rs` implementing corelib's `connect_once` contract (§4.1): one `connect_async`, emit
+`MarketEvent::Status::Connected` on success (the supervisor's reset signal), apply pending `sub_rx`
+updates + initial `subscribe` via `{"type":"subscribe","symbol":<sym>}`, parse `{"type":"trade","data":[…]}`
+frames into `MarketEvent::Trade { source, data: Trade { extras: FinnhubTradeExtras } }`, and return an
+`AttemptOutcome` when the socket drops/stops. **finstream's internal reconnect loop is dropped** — the
+supervisor owns looping (§4.1), so the driver only does a single attempt.
 
 ### 4.3 FinnhubStreaming N-API facade
 
 `rust/src/markets/nasdaq/datafeeds/streaming/finnhub/finnhub_streamer.rs` — a `#[napi]` class whose
-**public shape mirrors `AlpacaStreaming`**: `new(callbacks)`, async `init(config)`, `start()`, `stop()`,
-`subscribe(symbols)`, `unsubscribe(symbols)`, with `on_pricing` / `on_event` / `on_log` threadsafe
-functions. Responsibilities:
+**public shape mirrors `AlpacaStreaming`** (`new`, async `init(config)`, `start`, `stop`,
+`subscribe(symbols)`, `unsubscribe(symbols)`, `on_pricing`/`on_event`/`on_log` TSFNs) but is a **thin
+delegate** to `WebsocketStreamerHost<FinnhubDriver>` (§4.1 `host.rs`). It:
 
-- Owns a **per-instance redb** file (`FINNHUB_DB` env override; default unique `finnhub_streaming_{pid}_{seq}_{nanos}.redb`) and loads/stores the active subscription set for resume-on-restart (mirrors the hardened Alpaca pattern).
-- Spawns a `FinnhubDriver` through the shared `supervisor`, receiving `MarketEvent`s on an mpsc channel.
-- **Event-flattening mapper (§4.4)** — converts each internal `MarketEvent` to the flat
-  `FinnhubPricingData` payload before calling `on_pricing`, and `MarketEvent::Status` → `on_event`.
-- `impl Drop` per §3.1; `FinnhubConfig` with masked `Debug` per §3.3.
+- Constructs the host with a `FinnhubDriver`, redb table name `"finnhub_subscriptions"`, and a
+  per-instance redb path (`FINNHUB_DB` env override; default unique `finnhub_streaming_{pid}_{seq}_{nanos}.redb`).
+- Supplies the **event-flattening mapper (§4.4)** the host's pump applies: `MarketEvent::Trade/Quote` →
+  flat `FinnhubPricingData` → typed `on_pricing`; `MarketEvent::Status` → `on_event`; logs → `on_log`.
+- Delegates `start/stop/subscribe/unsubscribe` to the host (which routes `subscribe` to both redb and the
+  live `sub_rx`).
+- `FinnhubConfig` carries the API token (env fallback `FINNHUB_API_KEY`) with a masked `Debug` per §3.3.
+
+The host owns teardown: its `Drop` aborts **both** the supervisor task and the mpsc→TSFN pump task and
+signals `stop` (§3.1, §3.4), so the facade itself needs no bespoke lifecycle code.
 
 ### 4.4 Event-flattening mapper (FFI boundary contract)
 
-A pure function `market_event_to_finnhub_pricing(MarketEvent) -> Option<FinnhubPricingData>` (and the
-status path) defines the Rust→JS contract. `FinnhubPricingData` is a `#[napi(object)]` flat struct in the
-existing style of `AlpacaPricingData` (`symbol`, `message_type`, `price`, `volume`, `timestamp`, plus a
-typed `raw`/extras field as needed). The mapper lives in the facade, NOT the driver, so drivers stay
+A pure function `market_event_to_finnhub_pricing(&MarketEvent) -> Option<FinnhubPricingData>` (plus the
+status path) defines the Rust→JS contract. The flat struct is **pinned** (Finnhub streams a numeric epoch,
+not an RFC3339 string — so `timestamp` is `f64`, unlike Alpaca's string):
+
+```rust
+#[napi(object)]
+#[derive(Clone, Serialize, Deserialize)]
+pub struct FinnhubPricingData {
+    pub symbol: String,
+    pub message_type: String,        // "trade"
+    pub price: f64,
+    pub volume: f64,
+    pub timestamp: f64,              // numeric epoch ms (f64 for napi compat)
+    pub conditions: Option<Vec<String>>, // Finnhub trade-condition codes
+}
+```
+
+The mapper lives in the facade (provided to the host's pump), NOT the driver, so drivers stay
 provider-pure and only the facade knows the legacy flat shape. Non-pricing events (`Status`) route to
-`on_event`; logs route to `on_log`.
+`on_event`; logs route to `on_log`. **Callback types:** `EventRecord`/`LogRecord` are reused from the
+crate root (`crate::{EventRecord, LogRecord}`) to keep event/logger contracts aligned; the pricing
+payload (`FinnhubPricingData`) and its `FinnhubCallbacks`/TSFN bundle are provider-specific. *(agy
+spec-pass 🟡/🟢.)*
 
 ## 5. TypeScript surface
 
@@ -110,8 +164,14 @@ index and the package `index.ts`. Self-instruments debug/trace per AGENTS.md §1
 
 ## 6. Build, features, packaging
 
-- **Cargo feature `finnhub`** gates the driver (consistent with finstream's `#[cfg(feature="finnhub")]`),
-  enabled in corelib's default build so the `.node` includes it.
+- **Cargo feature `finnhub`** gates the driver (consistent with finstream's `#[cfg(feature="finnhub")]`).
+  corelib's `rust/Cargo.toml` currently has **no `[features]` block** — Phase 1 adds one, with `finnhub`
+  in `default` so the `.node` includes the class without extra flags *(agy spec-pass 🟡)*:
+  ```toml
+  [features]
+  default = ["finnhub"]
+  finnhub = []
+  ```
 - The shared `core/` module compiles unconditionally (it is provider-agnostic).
 - Release pipeline (AGENTS.md §4): the `.node` gains the `FinnhubStreaming` class; no new CLI bin is
   required in Phase 1 (the existing alpaca/yahoo streamer bins are untouched).
@@ -157,8 +217,15 @@ index and the package `index.ts`. Self-instruments debug/trace per AGENTS.md §1
 
 ## 11. agy Review Provenance
 
-Brainstorm-phase divergent pass selected **S2.5** over Claude's S2: S2 would have flattened the FFI to a
-single stream, breaking `ts-markets` consumers and invalidating the (c) integration spec (§5.4 names the
+**Brainstorm-phase pass** selected **S2.5** over Claude's S2: S2 would have flattened the FFI to a single
+stream, breaking `ts-markets` consumers and invalidating the (c) integration spec (§5.4 names the
 per-provider classes) and regressing redb persistence. S2.5 keeps per-provider facades + redb, adopts the
-trait/schema/engine internally, and phases the work. Full record in `ANTIGRAVITY-TO-CLAUDE.md`. The
-Spec-phase divergent pass runs against this document before the implementation plan.
+trait/schema/engine internally, and phases the work.
+
+**Spec-phase pass** raised three 🔴 (folded above): the `spawn` snapshot missed dynamic subscriptions →
+`connect_once` now takes `sub_rx` (§4.1); the mpsc→TSFN pump task would leak → `Drop` aborts both tasks
+(§3.1, §4.3); driver-vs-supervisor reconnect ambiguity → supervisor owns the loop, driver does one attempt
+and reports `Status::Connected` (§4.1) — mirroring corelib's existing `run_loop`/`ws_loop`. Plus 🟡s:
+the missing Cargo `[features]` block (§6) and the pinned `FinnhubPricingData` with numeric `f64` timestamp
+(§4.4). Adopted agy's `WebsocketStreamerHost<D>` so each FFI class is a thin delegate and Phase 2 becomes
+a thin wrap of the Alpaca/Yahoo drivers. Full record in `ANTIGRAVITY-TO-CLAUDE.md`.
