@@ -28,17 +28,21 @@ export declare class AlpacaStreaming {
  */
 export declare class FinnhubStreaming {
   /**
-   * Constructs a new `FinnhubStreaming` with the three JS callback functions.
-   * Order matches `AlpacaStreaming`: (on_log, on_pricing, on_event).
+   * Constructs a new `FinnhubStreaming` with the JS callback functions.
+   * Order matches `AlpacaStreaming`: (on_log, on_pricing, on_event, [on_market_event]).
+   * `on_market_event` is optional — pass it to also receive the unified `"market"` stream.
    */
-  constructor(onLog: ((err: Error | null, arg: LogRecord) => any), onPricing: ((err: Error | null, arg: FinnhubPricingData) => any), onEvent: ((err: Error | null, arg: EventRecord) => any))
+  constructor(onLog: ((err: Error | null, arg: LogRecord) => any), onPricing: ((err: Error | null, arg: FinnhubPricingData) => any), onEvent: ((err: Error | null, arg: EventRecord) => any), onMarketEvent?: (((err: Error | null, arg: string) => any)) | undefined | null)
   /** Set token/name (token falls back to `FINNHUB_API_KEY` env var). */
   init(config: FinnhubConfig): Promise<void>
   /** Start streaming; resumes any persisted subscriptions (redb) as the initial symbol set. */
   start(): Promise<void>
   /** Subscribe to additional symbols (persisted to redb + sent live to the driver). */
   subscribe(symbols: Array<string>): Promise<void>
-  /** Phase 1: live unsubscribe through the driver is deferred to Phase 2 (kept for API parity). */
+  /**
+   * Removes `symbols` from the persisted set (so they don't resume on restart). Live
+   * WS-unsubscribe through the driver is deferred to Phase 2.
+   */
   unsubscribe(symbols: Array<string>): Promise<void>
   /** Gracefully stops the streaming supervisor. */
   stop(): Promise<void>
