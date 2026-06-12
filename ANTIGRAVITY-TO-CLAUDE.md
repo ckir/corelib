@@ -1045,3 +1045,122 @@ This section presents a rigorous design-level and compile-safety pressure test o
 **Verdict: [ITERATE]**
 
 The Phase 2a design is highly mature, but we must **iterate once** to finalize the `CoreEvent` monitor compilation bridge inside `host.rs` and cleanly parameterize the subscription persistence mappings to ensure the pilot Finnhub driver keeps compiling seamlessly. Once these type-safety gaps are resolved, the spec will be fully ready for implementation planning.
+
+
+
+## 2026-06-12 — (d) Phase 2a — plan-phase pass
+
+### 1. Critical Plan Review
+
+This review pressure-tests the Step-by-Step Implementation Plan for **Phase 2a (Alpaca dual-mode migration)** against the design parameters, compile-safety boundaries, and FFI-landmines under TDD.
+
+#### 🔴 Blocker — Startup Race Condition Drops Initial Subscriptions (Point 4)
+* **Design Area**: [AlpacaStreaming::start](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-acc4cf30/docs/superpowers/plans/2026-06-12-provider-port-phase2a.md#L1063-L1106)
+* **Status**: [VERIFIED]
+* **Issue**: In Task 8 Step 3, the plan schedules the loading of persisted channel subscriptions and pre-queues them via `subscribe_channel_live` **before** spawning the supervisor:
+  ```rust
+  for ch in ["trades", "quotes", "bars"] {
+      let syms = g.host.get_persisted_subscriptions_for_channel(ch, "quotes");
+      if !syms.is_empty() { g.host.subscribe_channel_live(ch, syms); }
+  }
+  g.host.start(driver, Vec::new(), ...)
+  ```
+  However, at this point, `g.host.start(...)` has not yet been executed. Inside `g.host`, `self.sub_tx` is still `None` (it is initialized as `None` in `new()` and is only populated as `Some(sub_tx)` inside `start()`). Therefore, `subscribe_channel_live` (which only sends on `sub_tx` *if present*) will silently ignore and discard the symbols. The supervisor is then started with `Vec::new()`, resulting in a connection that subscribes to **zero** symbols on startup.
+* **Pre-empted Fix**: Do **not** pre-queue symbols via `subscribe_channel_live` on the sender side before the coordinator channel exists. Instead, pass the clones of `db` and `table` directly to the `AlpacaDriver` struct upon instantiating it inside `start()`. Let the driver read its initial state directly from the database inside `connect_once`, resolving race conditions elegantly (§1.3).
+
+#### 🔴 Blocker — Dynamic Subscription State Loss Across Reconnects (Point 5)
+* **Design Area**: [AlpacaDriver::connect_once subscription logic](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-acc4cf30/docs/superpowers/plans/2026-06-12-provider-port-phase2a.md#L902-L913)
+* **Status**: [VERIFIED]
+* **Issue**: The plan's subscription resume flow relies on `connect_once` draining `sub_rx.try_recv()` at first boot to acquire symbols, while passing `Vec::new()` as the supervisor's static `symbols` argument. However, **the supervisor's static `symbols` vec is never updated during runtime** when live subscription updates flow through `sub_rx`.
+  Once a connection is established, if the user calls `subscribe` for 10 new symbols, they are processed and consumed from `sub_rx` by the active loop, but the supervisor's `symbols` vec remains empty. If the connection drops and reconnects:
+  1. `run_supervisor` calls `connect_once(&symbols, ...)` where `symbols` is still empty.
+  2. `sub_rx` has already been drained of previous symbols, so `try_recv()` is empty.
+  3. **Result**: The stream completely forgets all dynamic subscriptions registered during that session and reconnects with zero active tickers.
+* **Pre-empted Fix**: Re-architect `AlpacaDriver` so that it clones the host's `redb::Database` handle and `table` name. On every connect and reconnect execution inside `connect_once`, query the database directly to populate its starting channels. This guarantees 100% session persistence and eliminates reconnect-loss.
+
+#### 🔴 Blocker — Forgotten AlpacaStreamingCore Re-export Breaks Crate Compilation (Point 7)
+* **Design Area**: [lib.rs exports](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-acc4cf30/rust/src/lib.rs#L118-L121)
+* **Status**: [VERIFIED]
+* **Issue**: Task 8 deletes the legacy bespoke `AlpacaStreamingCore` from `alpaca_streamer.rs` as it is fully subsumed by the shared host + driver engine. However, `lib.rs:120` contains an active re-export: `pub use markets::nasdaq::datafeeds::streaming::alpaca::{..., AlpacaStreamingCore}`. If this re-export is not removed, deleting `AlpacaStreamingCore` will immediately cause a fatal crate-level compilation error. The implementation plan completely understates and overlooks this file editing dependency.
+* **Pre-empted Fix**: Explicitly modify Task 8 to include editing `rust/src/lib.rs` to remove `AlpacaStreamingCore` from the re-export checklist.
+
+#### 🟢 [VERIFIED] — Green-Between Task Ordering & Compile-Safety (Point 1)
+* **Analysis**: Moving `AlpacaPricingData` and `FinnhubPricingData` to `core/types.rs` in Task 2 and re-exporting them in `alpaca_streamer.rs` and `finnhub_streamer.rs` leaves the tree compiling. The legacy `AlpacaStreamingCore` bespoke engine does not implement `ProviderDriver` so modifying `ProviderDriver`'s signature in Task 3 does not break Alpaca. There are no other implementations of `ProviderDriver` except `FinnhubDriver` (verified), which is clean-migrated in Task 3. Moving `FinnhubPricingData` out of the conditional `#[cfg(feature="finnhub")]` gate into `core/types.rs` is fully compile-safe because the struct represents raw pricing primitives and is completely self-contained with zero external dependencies.
+
+#### 🟢 [VERIFIED] — napi Registration, typescript signatures & optional callbacks (Point 2)
+* **Analysis**: Re-exporting `AlpacaPricingData` and `FinnhubPricingData` using `pub use` statements does not duplicate N-API registrations. napi-rs registers definitions exactly once at their primary declaration site (`core/types.rs`), generating identical type naming contracts in `index.d.ts`. Defining `on_market_event` as an `Option<ThreadsafeFunction<String>>` optional 4th constructor argument compiles seamlessly in napi-rs (v3) as a nullable/undefined optional JS argument, which provides flawless backward compatibility with existing JS builders. Declaring `AlpacaSubscribeOpts` with all `Option` fields maps nicely to optional TS properties.
+
+#### 🟢 [VERIFIED] — Async borrows in Task 8 AlpacaStreaming::start (Point 3)
+* **Analysis**: Loading active ticker maps via `get_persisted_subscriptions_for_channel` (which takes `&self` and returns an owned `Vec<String>`) ends the immutable lifetime on `host` before `g.host.start` (which takes `&mut self`) is called. Thus, there is no overlapping borrow violation under Rust's Non-Lexical Lifetimes (NLL).
+
+#### 🟢 [VERIFIED] — Finnhub Parity & TS Backwards Compatibility (Point 6)
+* **Analysis**: Leaving `get_persisted_subscriptions` untouched on `WebsocketStreamerHost` (only adding additive channel-specific helper methods) ensures the existing Finnhub bare-symbol database mapping (`finnhub_subscriptions`) continues to function perfectly. The Finnhub TS wrapper passing only 3 arguments compiles and executes properly, since napi-rs treats omitted arguments as `None` in Rust.
+
+---
+
+### 2. Concrete Code-Level Architecture Adjustments
+
+To address the data loss race conditions in Point 4 & 5, we recommend replacing the "pre-queuing via `subscribe_channel_live` BEFORE start" approach with a more robust **direct database reader** strategy inside the driver.
+
+#### Modernized AlpacaDriver Struct:
+```rust
+pub struct AlpacaDriver {
+    pub name: String,
+    pub base_url: Option<String>,
+    pub key_id: String,
+    pub secret_key: String,
+    pub silence_seconds: u32,
+    pub db: redb::Database,     // Cloned from host
+    pub table: &'static str,    // Passed from host
+}
+```
+
+#### Inside `connect_once` execution block (Task 7):
+```rust
+async move {
+    let url = self.base_url.clone().unwrap_or_else(|| DEFAULT_ALPACA_WS_URL.to_string());
+    
+    // ... connect + auth handshakes ...
+    
+    let _ = tx.send(CoreEvent::Status(ProviderStatus::Connected { provider: ProviderKind::Alpaca })).await;
+
+    // Load ALWAYS fresh subscription list from redb directly on every connect/reconnect!
+    let mut by_channel: Vec<(String, Vec<String>)> =
+        ALPACA_CHANNELS.iter().map(|c| (c.to_string(), Vec::new())).collect();
+        
+    let table = TableDefinition::<&str, bool>::new(self.table);
+    if let Ok(rtx) = self.db.begin_read() {
+        if let Ok(t) = rtx.open_table(table) {
+            if let Ok(iter) = t.iter() {
+                for item in iter {
+                    if let Ok(entry) = item {
+                        let key = entry.0.value().to_string();
+                        let (ch, sym) = key.split_once(':').unwrap_or(("quotes", key.as_str()));
+                        if let Some(slot) = by_channel.iter_mut().find(|(c, _)| c == ch) {
+                            if !slot.1.contains(&sym.to_string()) {
+                                slot.1.push(sym.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(payload) = self.initial_subscribe_json(&by_channel) {
+        if ws.send(Message::Text(payload.into())).await.is_err() { 
+            return AttemptOutcome::ConnectedThenDropped; 
+        }
+    }
+    
+    // ... select! dynamic updates run as normal ...
+}
+```
+
+---
+
+### 3. "Ship / Iterate" Verdict
+
+**Verdict: [ITERATE]**
+
+While 8 of our 11 implementation steps are completely flawless and safe, the plan **must be iterated once** to resolve the startup/reconnect data-loss bug (Points 4 & 5) and explicitly include the `lib.rs` cleanup of `AlpacaStreamingCore` (Point 7) in Task 8. Proceeding with these modifications guarantees a green, highly resilient real-time trading broker.
