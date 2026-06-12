@@ -156,7 +156,7 @@ impl ProviderDriver for FinnhubDriver {
                             // dual-mode: each trade carries the raw FinnhubPricingData + the unified MarketEvent.
                             for ev in parse_finnhub_frame(&t, &self.name) {
                                 if let Some(raw) = market_event_to_finnhub_pricing(&ev) {
-                                    let _ = tx.send(CoreEvent::Pricing { raw: RawPricing::Finnhub(raw), uni: Some(ev) }).await;
+                                    let _ = tx.send(CoreEvent::Pricing { raw: RawPricing::Finnhub(raw), uni: vec![ev] }).await;
                                 }
                             }
                         }
