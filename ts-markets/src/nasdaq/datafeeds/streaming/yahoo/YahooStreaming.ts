@@ -36,6 +36,11 @@ export class YahooStreaming extends EventEmitter {
 					this.emit(event.type, event.data ?? null);
 				}
 			},
+			(_err: any, json: string) => {
+				try {
+					this.emit("market", JSON.parse(json));
+				} catch {}
+			},
 		);
 
 		// Auto-clean in development
@@ -102,6 +107,7 @@ export class YahooStreaming extends EventEmitter {
 }
 
 // Events emitted:
-// - pricing (PricingData)
+// - pricing (JsPricingData)
 // - log ({level, msg, extras?})
-// - connected, disconnected, reconnecting, silence-reconnect, error
+// - market (unified MarketEvent JSON, parsed object)
+// - connected, disconnected, reconnecting, error
