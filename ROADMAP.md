@@ -17,7 +17,7 @@ sequencing of 4 subprojects"). Five subprojects, each its own spec → plan → 
 2. **(d) Port finstream providers** — bring Alpaca / Finnhub / Yahoo from `finstream`
    (`C:/Users/user/Development/Rust/finstream`, Rust + napi) into corelib's Rust core + FFI under a
    unified `Trade`/`Quote`/`Status` schema (adds **Finnhub**). New code self-instruments per AGENTS.md §12.
-   - **Phase 1 (Finnhub pilot) — COMPLETE** (branch `feat/finnhub-provider-phase1`): shared
+   - **Phase 1 (Finnhub pilot) — COMPLETE** (merged to `main` 2026-06-12, commit `4bc0b24`): shared
      `ProviderDriver`/`MarketEvent`/`ReconnectPolicy` engine + `WebsocketStreamerHost` +
      `FinnhubStreaming`; b-1 hardening checklist satisfied (Drop both tasks, backoff reset on
      healthy-drop, per-instance redb, masked-secret Debug, panic→JS propagation, jitter).
