@@ -186,3 +186,69 @@ graph TD
 3.  **`(c) Integration/E2E Tests`**: Implements the exhaustive integration suite over the finalized and stable provider endpoints, avoiding costly contract rework.
 4.  **`(a) Trace Retro-instrumentation`**: Retro-instruments legacy modules with extensive logs, utilizing the newly built test suite (c) as a real-world runtime safety net.
 5.  **`(b-2) Capstone Global Audit`**: Conducts the ultimate global architectural and edge-case correctness review over a complete, tested, and high-visibility monorepo.
+
+---
+
+## 2026-06-12 — (b-1) Baseline FFI/N-API audit
+
+### 1. Critical Review
+
+This section presents a baseline safety, lifecycle, and resource-teardown audit of the pre-existing FFI bridge, N-API rust boundaries, and async WebSocket streaming runtimes before porting the finstream providers (d).
+
+#### 🔴 Blocker — Perpetual Background Task & Socket Leak on Javascript Garbage Collection
+*   **Design Area**: `AlpacaStreamingCore::start()` ([alpaca_streamer.rs:L234-L237](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b2b76043/rust/src/markets/nasdaq/datafeeds/streaming/alpaca/alpaca_streamer.rs#L234-L237)) & `YahooStreamingCore::start()` ([yahoo_streamer.rs:L231-L234](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b2b76043/rust/src/markets/nasdaq/datafeeds/streaming/yahoo/yahoo_streamer.rs#L231-L234)).
+*   **Verification**: [VERIFIED]
+*   **Issue**: Long-running background supervisor loops are spawned using `tokio::spawn(Self::run_loop(Arc::clone(&inner), ...))`, capturing a strong owned `Arc` reference to the core streamer instance. When JavaScript drops/GCs the `AlpacaStreaming` or `YahooStreaming` instance without calling `.stop()`, the Rust struct is freed by V8 but the underlying struct destructor is never completed because its strong `Arc` count remains $\ge 1$ inside the Tokio pool. Sockets, pings, background timers, and the threadsafe-functions (TSFNs) survive and reconnect indefinitely, leaking heavy platform resources.
+*   **Concrete Fix**: [Surgical] Implement the `Drop` trait for the public FFI structs (`AlpacaStreaming`/`YahooStreaming`) to explicitly trigger graceful teardown (`core.stop()`) on GC drop. Alternatively, move task state to a weak-reference pattern (`Arc::downgrade`) inside the supervisor loop, terminating the loop once the upgrading weak reference fails.
+
+#### 🔴 Blocker — Sticky Exponential Backoff Locks Reconnect Loop at 1 Hour
+*   **Design Area**: `alpaca_streamer.rs:L240-L284` ([alpaca_streamer.rs:L240-L284](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b2b76043/rust/src/markets/nasdaq/datafeeds/streaming/alpaca/alpaca_streamer.rs#L240-L284)) & `yahoo_streamer.rs:L236-L269` ([yahoo_streamer.rs:L236-L269](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b2b76043/rust/src/markets/nasdaq/datafeeds/streaming/yahoo/yahoo_streamer.rs#L236-L269)).
+*   **Verification**: [VERIFIED]
+*   **Issue**: Reconnection interval `backoff` is initialized at 5 seconds and doubles on every iteration, capped at 1 hour (3600 seconds). However, **the backoff duration state is never reset** once a connection is successfully established. If a stream has a long outage and reaches a high backoff value, the subsequent successful reconnection retains that backoff state. The very next minor disconnect will wait for the high sticky backoff time (up to 1 hour) before attempting to reconnect, breaking client stream self-healing.
+*   **Concrete Fix**: [Surgical] Restructure `run_loop` to reset the `backoff` to its base value (e.g., 5 seconds) whenever the underlying `ws_loop` succeeds, authenticates, and receives its first data frames.
+
+#### 🔴 Blocker — Synchronous Redb Multi-File Lock Prevents Concurrent Streams
+*   **Design Area**: `AlpacaStreamingCore::new()` ([alpaca_streamer.rs:L147-L182](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b2b76043/rust/src/markets/nasdaq/datafeeds/streaming/alpaca/alpaca_streamer.rs#L147-L182)) & `YahooStreamingCore::new()` ([yahoo_streamer.rs:L154-L192](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b2b76043/rust/src/markets/nasdaq/datafeeds/streaming/yahoo/yahoo_streamer.rs#L154-L192)).
+*   **Verification**: [VERIFIED]
+*   **Issue**: Constructors for both Alpaca and Yahoo streams synchronously initialize a local database using `Database::create(&db_env)`. By default, they resolve to static global filenames (`corelib_streaming.redb` and `yahoo_streaming.redb`) under the system temp directory. Because `redb` enforces exclusive single-writer file locking on open, **creating a second instance of the same streaming provider (or initializing multiple concurrent feeds) will panic or freeze the entire process** during construction.
+*   **Concrete Fix**: [Surgical] Randomized or uniqueify persistent db file names per instance (e.g. including instance UUID/PID) or provide a fallback to opt-out of local persistence database writes completely (such as passing `"NOT_SET"` to run fully in-memory).
+
+#### 🟡 Should-Fix — Synchronous Disk I/O Blocking the JS Event Loop
+*   **Design Area**: `AlpacaStreamingCore::new()` ([alpaca_streamer.rs:L159](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b2b76043/rust/src/markets/nasdaq/datafeeds/streaming/alpaca/alpaca_streamer.rs#L159)) & `YahooStreamingCore::new()` ([yahoo_streamer.rs:L168](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b2b76043/rust/src/markets/nasdaq/datafeeds/streaming/yahoo/yahoo_streamer.rs#L168)).
+*   **Verification**: [VERIFIED]
+*   **Issue**: Calling `Database::create` inside the synchronous constructor blocks V8's main thread with synchronous file creation and transactional I/O. Any disk delay directly lags the single-threaded JS event loop.
+*   **Concrete Fix**: [Surgical] Shift database creation and pre-loaded subscription tasks out of the synchronous constructor and into the asynchronous `init()` method.
+
+#### 🟡 Should-Fix — Stderr-Only Crash Propagation on Task Panics
+*   **Design Area**: `AlpacaStreamingCore::run_loop` ([alpaca_streamer.rs:L235](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b2b76043/rust/src/markets/nasdaq/datafeeds/streaming/alpaca/alpaca_streamer.rs#L235)).
+*   **Verification**: [VERIFIED]
+*   **Issue**: Unhandled panics in database operations (such as unwrap on corrupt tables, database write-lock contention, or file permission crashes) unwind inside Tokio, silently killing the supervisor loop. The Javascript wrapper is never notified and continues waiting on a dead stream.
+*   **Concrete Fix**: [Surgical] Wrap the worker thread closure using `catch_unwind` or monitor the task's `JoinHandle` to propagate execution state crashes cleanly as JS errors or `on_event("error")` callbacks.
+
+#### 🟡 Should-Fix — Plaintext Secrets Exposure via Primitive Debug Derives
+*   **Design Area**: `AlpacaConfig` ([alpaca_streamer.rs:L35-L48](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b2b76043/rust/src/markets/nasdaq/datafeeds/streaming/alpaca/alpaca_streamer.rs#L35-L48)).
+*   **Verification**: [VERIFIED]
+*   **Issue**: `AlpacaConfig` derives a basic `Debug` trait. Sensitive API tokens and credentials (`key_id`, `secret_key`) are fully readable. Normal logging statements (e.g. `log.debug!("{:?}", config)`) or assertions will write plaintext passwords directly into rotating log files.
+*   **Concrete Fix**: [Surgical] Formally implement a custom `Debug` trait for `AlpacaConfig` that intercepts and masks private credential fields.
+
+#### 🟢 Nit — Lack of Jitter on Reconnection Backoff
+*   **Design Area**: `alpaca_streamer.rs:L279` ([alpaca_streamer.rs:L279](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b2b76043/rust/src/markets/nasdaq/datafeeds/streaming/alpaca/alpaca_streamer.rs#L279)) & `yahoo_streamer.rs:L265` ([yahoo_streamer.rs:L265](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b2b76043/rust/src/markets/nasdaq/datafeeds/streaming/yahoo/yahoo_streamer.rs#L265)).
+*   **Verification**: [VERIFIED]
+*   **Issue**: Sleep times are strictly deterministic. In high-concurrency provider workloads (d), simultaneous disconnections will trigger synchronized attempts back onto the provider with no random variance, risking systematic rate limits or DDoS flags.
+*   **Concrete Fix**: [Surgical] Introduce randomised millisecond jitter inside the reconnection sleep delay.
+
+---
+
+### 2. Creative Improvements
+
+*   **Define a Unified `StreamingProvider` Lifecycle Trait**:
+    To eliminate code duplication across the separate Alpaca and Yahoo streamers during subproject (d), introduce a shared `StreamingProvider` engine. By genericizing WebSocket connections, keep-alive ping loops, silence-reconnect timers, error handling states, and channel dispatches inside a standard Rust trait wrapper, developers can deploy any new provider (like Finnhub or others) cleanly by simply implementing parsing, authentication hooks, and endpoint definitions.
+*   **Backpressure and Dynamic Flow Control**:
+    High-frequency market feeds can choke V8 when dispatched using fully non-blocking TSFNs under market load. Establish queue limits or dynamic message grouping inside the FFI boundary. If the JS event processing loop falls behind, Rust can coalesce quote frames (retaining only the newest symbol price) to ensure memory consumption remains stable.
+
+---
+
+### 3. Highest Conviction Safety Suggestion
+
+Our highest-conviction recommendation is to **implement custom Drop traits on the public napi wrappers and force a sticky-backoff reset parameter**. Ensuring clean task-aborting on GC prevent resource exhaustion under high instantiation, and resolving the backoff lock establishes self-healing connectivity.
+
