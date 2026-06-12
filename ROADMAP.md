@@ -9,9 +9,11 @@ than being lost. One bullet per item: what, why deferred, and the trigger that s
 Decided 2026-06-12 (user + Claude + agy divergent pass — see `ANTIGRAVITY-TO-CLAUDE.md` "Roadmap
 sequencing of 4 subprojects"). Five subprojects, each its own spec → plan → implementation cycle:
 
-1. **(b-1) Baseline FFI audit** — focused agy review of the existing `corelib-rust` N-API/FFI boundary,
-   async runtime, and the shared integration-test harness, *before* heavy provider porting lands on it.
-   Cheap insurance against compounding tokio panics / leaks on an unaudited base.
+1. **(b-1) Baseline FFI audit** — ✅ **DONE** (2026-06-12, commit `06c7404`). agy audit found 3 blockers
+   + 3 should-fixes in the Alpaca/Yahoo streamers; all remediated: Drop-based GC teardown, backoff reset
+   on healthy-drop, per-instance redb path (concurrent feeds), masked-secret Debug, panic→JS propagation,
+   reconnect jitter. Audit record in `ANTIGRAVITY-TO-CLAUDE.md`. *Deferred to (d):* moving the sync
+   `Database::create` out of the constructor into async `init()` (folds into the StreamingProvider refactor).
 2. **(d) Port finstream providers** — bring Alpaca / Finnhub / Yahoo from `finstream`
    (`C:/Users/user/Development/Rust/finstream`, Rust + napi) into corelib's Rust core + FFI under a
    unified `Trade`/`Quote`/`Status` schema (adds **Finnhub**). New code self-instruments per AGENTS.md §12.
