@@ -31,8 +31,9 @@ new **unified** event — while widening its subscription surface to a true (pri
 - **Migrating Yahoo** — Phase 2b.
 - **Alpaca admin channels** (`statuses`, `lulds`, `corrections`, `cancelErrors`) — deferred (S1-a). Only
   the **pricing** channels (`trades`, `quotes`, `bars`) are mirrored now.
-- **A `MarketEvent::Bar` (or any) extension to the unified schema** — uni stays **finstream-verbatim**
-  (S2-a); anything finstream can't represent is **raw-only**.
+- **A `MarketEvent::Bar` variant** — bars stay **raw-only** (no unified representation). corelib's uni
+  *does* add `TradeExtras::Alpaca` (a documented superset of finstream, §5.3) so Alpaca **trades** are
+  portable; **bars** remain the only S1-a channel without a uni mapping.
 - **A multiplexed external gateway** — Phase 3, optional.
 - **Changing the existing raw flat payload (`AlpacaPricingData`) or the 3-callback / `subscribe(symbols)`
   byte-compat contract** — all additions are additive.
@@ -53,7 +54,7 @@ All resolved via the agy-first protocol (agy + Claude recommendations, user choi
 | **3 — Finnhub retrofit** | **Yes** — wire Finnhub's `on_market_event` in the foundation task for 3-provider parity. | both rec |
 | **4 — task structure** | A **2a-0 foundation** task: adopt finstream `types.rs` into `core/schema.rs` + `CoreEvent` + `host.delete_subscriptions_table()`, `#[allow(dead_code)]` until wired. | both rec |
 | **S1 — Alpaca subs depth** | **S1-a:** `trades` + `quotes` + `bars` only, per-symbol selectable, additive. (Not full 9-channel surface.) | user (agy rec'd S1-b) |
-| **S2 — uni for non-finstream channels** | **S2-a:** raw-only; uni stays finstream-verbatim. | both rec; user |
+| **S2 — uni for non-finstream channels** | **S2-a + Alpaca-trade extension:** non-representable channels (bars) stay raw-only, BUT add `TradeExtras::Alpaca` so Alpaca **trades** are uni-portable — corelib uni is a documented **superset** of finstream (§5.3). | user (adopting agy spec-pass nit) |
 
 ## 4. Architecture
 
@@ -62,13 +63,14 @@ All resolved via the agy-first protocol (agy + Claude recommendations, user choi
 Compile-checked type/host groundwork both the Alpaca migration and (later) Yahoo build on. No driver
 behavior changes here.
 
-1. **Expand `core/schema.rs` to finstream-verbatim** (port `crates/core/src/types.rs`): add the
+1. **Expand `core/schema.rs` from finstream** (port `crates/core/src/types.rs`, + the §5.3 superset): add the
    `MarketEvent::Quote { source, data: Quote }` variant, the `Quote` struct, `QuoteExtras { Alpaca, Yahoo }`,
    `TradeExtras::Yahoo`, and the per-provider extras structs (`AlpacaQuoteExtras`, `YahooTradeExtras`,
    `YahooQuoteExtras`; `FinnhubTradeExtras` already exists), plus the **flattening `Serialize`** impls
    (nest extras under a provider-named key; `type:"trade"|"quote"`; `Status` flattens its tagged fields).
    `ProviderKind`/`ProviderStatus` already match finstream. Yahoo-only items get `#[allow(dead_code)]`
-   until 2b. **Note:** finstream has **no `TradeExtras::Alpaca`** — see §5.3.
+   until 2b. **corelib superset:** also add `TradeExtras::Alpaca(AlpacaTradeExtras)` — *not* present in
+   finstream — so Alpaca trades are uni-portable (§5.3).
 2. **Introduce `CoreEvent`** (new, in `core/types.rs`) — see §4.1.
 3. **`WebsocketStreamerHost` changes** (§4.6): channel becomes `mpsc::Sender<CoreEvent>`; `start`'s pump
    becomes `FnMut(CoreEvent)`; add `pub fn delete_subscriptions_table(&self) -> Result<(), String>` for
@@ -91,7 +93,7 @@ pub enum CoreEvent {
     Status(ProviderStatus),
     Pricing {
         raw: RawPricing,            // lossless, byte-identical to the legacy typed payload
-        uni: Option<MarketEvent>,   // None ⇒ raw-only (S2-a): bars, Alpaca trades (§5.3), admin
+        uni: Option<MarketEvent>,   // None ⇒ raw-only: bars (no Bar variant); quotes+trades map to Some (§5.3)
     },
 }
 
@@ -103,8 +105,8 @@ pub enum RawPricing {
 ```
 
 The **driver** decodes a frame once and emits `CoreEvent::Pricing { raw, uni }` — building `raw` (the flat
-typed payload) and, when the channel has a finstream-verbatim representation, the matching `uni`
-`MarketEvent`. `AlpacaPricingData` (and `FinnhubPricingData`) **move into `core/types.rs`** keeping their
+typed payload) and, when the channel has a unified representation, the matching `uni`
+`MarketEvent` (quotes + trades; `None` for bars). `AlpacaPricingData` (and `FinnhubPricingData`) **move into `core/types.rs`** keeping their
 `#[napi(object)]` derive — a single source of truth that both `core` and the facade reference (no mirror
 struct, no `From` boilerplate, no layering inversion since they live in `core`). Re-export from `lib.rs`
 under the existing names so the public FFI surface is unchanged.
@@ -120,7 +122,8 @@ must become `CoreEvent`):**
   through as `CoreEvent`. The Finnhub driver + facade pump (Phase 1) are migrated to `CoreEvent` in the
   same 2a-0 foundation task (they are the only existing `MarketEvent` users).
 - `CoreEvent::Status` carries `ProviderStatus` (source is the facade's own instance — the status→
-  `EventRecord` pump mapping needs only the status), keeping `MarketEvent` itself finstream-verbatim.
+  `EventRecord` pump mapping needs only the status), keeping `MarketEvent` itself close to finstream (plus
+  the documented `TradeExtras::Alpaca` superset, §5.3).
 
 ### 4.2 AlpacaDriver
 
@@ -141,8 +144,8 @@ behavior exactly, now emitting `CoreEvent`:
   `sub_rx` closed (`None`) → `Stopped` (no busy-spin).
 - **Frame parsing** (`t:"q"|"t"|"b"`): build `AlpacaPricingData` (`message_type` `"quote"|"trade"|"bar"`,
   string `timestamp`) for **`raw`**; build **`uni`** per §5.3 (quotes → `Some(MarketEvent::Quote)`;
-  trades/bars → `None`). Emit `CoreEvent::Pricing { raw, uni }`. `subscription`/`error`/unknown frames →
-  log via the status/log path.
+  trades → `Some(MarketEvent::Trade)`; bars → `None`). Emit `CoreEvent::Pricing { raw, uni }`.
+  `subscription`/`error`/unknown frames → log via the status/log path.
 
 The `sub_rx` payload is **channel-aware** — `Vec<(Channel, Vec<String>)>` or an equivalent tagged type —
 not a bare `Vec<String>`, so a live `subscribe({ trades: [...] })` reaches the socket on the right channel.
@@ -243,9 +246,10 @@ Only `trades`/`quotes`/`bars` (S1-a). The Rust FFI takes the single struct (no `
 
 ### 5.1 Source
 
-finstream `crates/core/src/types.rs` (read-verified). Port **verbatim** into `core/schema.rs`:
+finstream `crates/core/src/types.rs` (read-verified). Port into `core/schema.rs`:
 `MarketEvent{Trade,Quote,Status}`, `Trade`, `Quote`, `TradeExtras{Finnhub,Yahoo}`,
-`QuoteExtras{Alpaca,Yahoo}`, the extras structs, and the custom flattening `Serialize` impls.
+`QuoteExtras{Alpaca,Yahoo}`, the extras structs, and the custom flattening `Serialize` impls — **plus one
+documented superset addition**: `TradeExtras::Alpaca(AlpacaTradeExtras)` (§5.3), which finstream lacks.
 
 ### 5.2 Alpaca quote → unified `Quote`
 
@@ -254,15 +258,37 @@ finstream `crates/core/src/types.rs` (read-verified). Port **verbatim** into `co
 `  extras: QuoteExtras::Alpaca(AlpacaQuoteExtras{ bid: bp, ask: ap, bid_size: bs, ask_size: as_,`
 `     bid_exchange, ask_exchange, conditions, tape }), raw: Some(<frame json>) } }`.
 
-### 5.3 ⚠️ Alpaca trades & bars are raw-only (S2-a consequence — flag for user review)
+### 5.3 Alpaca trade → unified `Trade` (corelib superset) + bars raw-only
 
-finstream's `TradeExtras` has **only `Finnhub` and `Yahoo`** variants — **no Alpaca** (finstream models
-Alpaca purely as quotes). Under "uni == finstream verbatim" + S2-a, an Alpaca **trade** therefore has **no
-unified representation**, so Alpaca trades emit `uni = None` (raw-only), exactly like **bars** (no
-`MarketEvent::Bar`). **Net:** of the three S1-a channels, only **quotes** ride the portable `"market"`
-stream; **trades and bars are raw-only** on `"pricing"`. This follows directly from the S2-a choice but is
-non-obvious — if Alpaca-trade portability is wanted, the option is to add `TradeExtras::Alpaca` (accepting
-a documented divergence from finstream-verbatim); listed in §11 Deferred.
+finstream's `TradeExtras` has only `Finnhub` and `Yahoo` (it models Alpaca purely as quotes), so to make
+Alpaca **trades** portable on the `"market"` stream we **add a corelib-only variant**
+`TradeExtras::Alpaca(AlpacaTradeExtras)` — a **documented superset** of finstream (user decision, adopting
+agy's spec-pass nit). Mapping:
+
+`MarketEvent::Trade { source: <instance name>, data: Trade {`
+`  ticker: S, timestamp: parse(t)→DateTime<Utc>, price: p,`
+`  extras: TradeExtras::Alpaca(AlpacaTradeExtras{ size: s, exchange, conditions, tape, id }),`
+`  raw: Some(<frame json>) } }`.
+
+```rust
+#[derive(Debug, Clone, Serialize)]
+pub struct AlpacaTradeExtras {
+    pub size: f64,
+    #[serde(skip_serializing_if = "Option::is_none")] pub exchange: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]    pub conditions: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub tape: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub id: Option<i64>,
+}
+```
+
+**Net for the three S1-a channels:** **quotes → `MarketEvent::Quote`** and **trades → `MarketEvent::Trade`**
+are both uni-portable (dual-emit on `"pricing"` + `"market"`); **bars are raw-only** (`"pricing"` only —
+finstream has no `Bar` variant and we are **not** adding one in 2a, §11).
+
+**Divergence note (low cost):** uni is serialize-only (Rust→JSON→JS consumers), so the superset never
+breaks a Rust `Deserialize` round-trip; the only cost is conceptual drift from finstream. If finstream
+later adds its own Alpaca-trade extras, re-sync the field shape. Keeping the `"alpaca"`-keyed extras object
+shape close to finstream's `AlpacaQuoteExtras` style eases that.
 
 ## 6. TypeScript surface
 
@@ -291,8 +317,9 @@ The migrated Alpaca path **MUST** retain every b-1 fix — they are already sati
   Some/None per §5.3) against recorded Alpaca frames; auth-error frame → `AttemptOutcome::Fatal`;
   composite-key redb resume (legacy colon-less key → `quotes`; per-channel unsubscribe precision);
   `delete_subscriptions_table`. Reuse the existing redb per-instance isolation test.
-- **Unified mapping:** Alpaca quote → `MarketEvent::Quote` JSON shape (mid price, nested `alpaca` extras
-  key, `type:"quote"`).
+- **Unified mapping:** Alpaca quote → `MarketEvent::Quote` (mid price, nested `alpaca` extras, `type:"quote"`)
+  and Alpaca trade → `MarketEvent::Trade` (`TradeExtras::Alpaca`, nested `alpaca` extras, `type:"trade"`);
+  bar → `uni = None`.
 - **Finnhub regression:** existing Finnhub mapper/driver tests still green after the `CoreEvent` migration;
   add a Finnhub `uni = Some(Trade)` assertion.
 - **TS:** `AlpacaStreaming.test.ts` — `"market"` event parses + emits; `subscribe` overload (both arms);
@@ -316,7 +343,7 @@ The migrated Alpaca path **MUST** retain every b-1 fix — they are already sati
 | **Byte-compat regression** (raw payload, 3-callback ctor, `subscribe(symbols)`) | All additions additive; covered by retained TS/Rust tests (§8). |
 | **CoreEvent migration touches merged Finnhub** | Intentional (Fork 3/§4.0); Finnhub tests re-run green; retrofit folds in. |
 | **Channel-aware persistence/`sub_rx`** affects Finnhub | Existing bare-`Vec<String>` host API left intact (additive `*_channel` helpers); Finnhub keeps bare-symbol storage + default channel `"trades"`; `connect_once`'s `sub_rx` tag change is mechanical (Finnhub ignores the tag). |
-| **Alpaca trades/bars not portable in uni** (§5.3) | Documented consequence of S2-a; user reviews in spec; `TradeExtras::Alpaca` is the deferred escape hatch. |
+| **Alpaca bars not portable in uni** (§5.3) | Bars are raw-only (no `MarketEvent::Bar`); quotes + trades are portable via the `TradeExtras::Alpaca` superset. Documented finstream divergence; serialize-only so no round-trip break. |
 | **Timestamp parse** (Alpaca RFC3339 string → `DateTime<Utc>` for uni) | Parse for `uni`; `raw` keeps the original string verbatim (byte-compat). |
 | **b-1 regressions** | Re-asserted as acceptance tests (§7/§8). |
 
@@ -326,9 +353,8 @@ The migrated Alpaca path **MUST** retain every b-1 fix — they are already sati
   `RawPricing`; `YahooTradeExtras`/`YahooQuoteExtras` uni).
 - **Alpaca admin channels** (`statuses`, `lulds`, `corrections`, `cancelErrors`, `updatedBars`,
   `dailyBars`) — the rest of the full mirror (agy's S1-b); revive when a consumer needs them.
-- **`TradeExtras::Alpaca`** — to make Alpaca **trades** uni-portable, accepting documented divergence from
-  finstream-verbatim. Revive if cross-provider trade switching is needed.
-- **Bar (and other) variants in uni** (S2-b) — only if portable bars become a product need.
+- **Bar (and other) variants in uni** (S2-b) — only if portable bars become a product need. (Alpaca
+  **trades** are now portable via the `TradeExtras::Alpaca` superset, §5.3 — no longer deferred.)
 
 ## 12. agy review provenance
 
@@ -337,7 +363,9 @@ pass (Forks A–E: schema/ping/sequencing/cleanup/landmines), the dual-mode pass
 FFI surface, Finnhub retrofit, task structure), the Alpaca subscription-scope pass (S1/S2), and the
 spec-phase pass on this document. Claude refined Fork 1 (single-definition raw structs vs agy's duplicated
 mirrors) and corrected agy on the live CLI bins (real, not deletable no-ops — they are rewritten onto the
-host). User chose S1-a (vs agy's S1-b) and confirmed S2-a.
+host). User chose S1-a (vs agy's S1-b); on S2, the user **adopted agy's spec-pass nit** — add
+`TradeExtras::Alpaca` so Alpaca trades are uni-portable (corelib uni = documented superset of finstream;
+§5.3) — so only bars remain raw-only.
 
 **Spec-phase pass (ITERATE → folded):** two 🔴 verified and fixed above — (1) the `CoreEvent` migration was
 incomplete (the `host.rs` panic monitor + `connect_once` `tx` still typed `MarketEvent`) → §4.1 now lists
@@ -345,7 +373,7 @@ every send site; (2) widening the shared `get_persisted_subscriptions` return ty
 Finnhub → §4.4 keeps the bare-`Vec<String>` API intact and **adds** channel-aware helpers, single-channel
 providers keep bare-symbol storage. One 🟡 folded: drop `napi::Either`, resolve the `string[] | opts`
 overload in the TS wrapper (§4.5/§6). One 🟡 (optional 4th `on_market_event` ctor arg) was already in the
-design (§4.3). **Held against:** agy's 🟢 nit to add `TradeExtras::Alpaca` so Alpaca trades are uni-portable
-— this re-litigates the user's locked **S2-a** (uni == finstream verbatim); kept as the §11 deferred escape
-hatch and surfaced in §5.3 for user review rather than adopted. agy's "self-healing redb migration" creative
-idea is deferred (the read-time default already gives back-compat; YAGNI).
+design (§4.3). agy's 🟢 nit to add `TradeExtras::Alpaca` so Alpaca trades are uni-portable was surfaced to
+the user at the spec-review gate and **adopted** (§5.3) — corelib uni becomes a documented superset of
+finstream. agy's "self-healing redb migration" creative idea is deferred (the read-time default already
+gives back-compat; YAGNI).
