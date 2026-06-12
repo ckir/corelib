@@ -366,3 +366,129 @@ graph TD
     *   **Phase 2**: Reimplement Alpaca and Yahoo internally to implement `ProviderDriver`, wrapping them in the back-compat N-API/redb host layer to keep TS bindings fully stable.
     *   **Phase 3**: Optional final unification. Once the integration tests are fully deployed and stable, deprecate the individual TS wrappers and introduce a multiplexed stream gateway if product requirements demand it.
 
+---
+
+## 2026-06-12 — (d) Phase 1 spec-phase divergent pass
+
+### 1. Critical Review
+
+This section performs a spec-phase pressure-test on the proposed "Provider Port — Phase 1 Design Spec" and the shared engine, checking for hidden holes, contradictions, and missing requirements that would cause rework or break existing execution architectures.
+
+#### 🔴 Blocker — Missing Dynamic Subscription Channel in ProviderDriver Trait
+*   **Design Area**: `ProviderDriver` trait boundary and `spawn()` signature ([2026-06-12-provider-port-phase1-design.md#L62-L63](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-bc77faeb/docs/superpowers/specs/2026-06-12-provider-port-phase1-design.md#L62-L63)), §4.1 `driver.rs`.
+*   **Verification**: [VERIFIED]
+*   **Issue**: The proposed `spawn` method signature:
+    `spawn(symbols, tx: mpsc::Sender<MarketEvent>, policy: ReconnectPolicy) -> JoinHandle<()>`
+    accepts only a static snapshot of `symbols: Vec<String>` at task boot time. However, parent/legacy client facades (such as [AlpacaStreaming.ts:L91-L93](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-bc77faeb/ts-markets/src/nasdaq/datafeeds/streaming/alpaca/AlpacaStreaming.ts#L91-L93)) support dynamic symbol subscriptions on an active stream, which are captured by [alpaca_streamer.rs:L657-L684](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-bc77faeb/rust/src/markets/nasdaq/datafeeds/streaming/alpaca/alpaca_streamer.rs#L657-L684).
+    If `ProviderDriver::spawn` has no receiver for dynamic updates, **dynamic subscriptions are completely broken**. Any symbol requested after `start()` will write to `redb` but will never be sent to the underlying provider's WebSocket stream.
+*   **Concrete Fix**: [Surgical] Update the `ProviderDriver::spawn` method to accept an `mpsc::Receiver` for dynamic subscription updates:
+    ```rust
+    spawn(
+        symbols: Vec<String>,
+        tx: mpsc::Sender<MarketEvent>,
+        sub_rx: mpsc::Receiver<Vec<String>>,
+        policy: ReconnectPolicy
+    ) -> JoinHandle<()>
+    ```
+    This enables the running driver task to accept incoming dynamic symbol lists in the exact style of the hardened Alpaca streamer.
+
+#### 🔴 Blocker — Leaked Facade Pump Task & TSFN Hold on Class Destruction
+*   **Design Area**: FFI lifecycle and Drop implementation ([2026-06-12-provider-port-phase1-design.md#L38-L40](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-bc77faeb/docs/superpowers/specs/2026-06-12-provider-port-phase1-design.md#L38-L40) [§3.1] & [2026-06-12-provider-port-phase1-design.md#L83-L93](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-bc77faeb/docs/superpowers/specs/2026-06-12-provider-port-phase1-design.md#L83-L93) [§4.3]).
+*   **Verification**: [VERIFIED]
+*   **Issue**: Separating the async streamer into a decoupled `supervisor`/`driver` task (which sends to an mpsc) and an FFI `facade` means there are now **two distinct background tasks**. The spec describes storing and aborting the supervisor's `JoinHandle` inside the facade. However, the facade must also spawn a pump task that polls the `mpsc::Receiver` and invokes the JS Threadsafe Functions (TSFNs).
+    If the facade pump task's handle is not explicitly stored and aborted, a blocked or hung supervisor/driver (e.g., stuck on reading from a WebSocket loop or synchronous lock) will keep the channel open. The pump task will wait indefinitely, holding onto the active TSFNs. TSFNs hold a strong reference to the Node.js main loop, so **the Node process will never exit cleanly and GC fails**, breaking the target teardown requirement.
+*   **Concrete Fix**: [Surgical] The `FinnhubStreaming` facade struct must store **both** `ws_task` (the supervisor/driver monitor) AND `pump_task` (the FFI pump). The `impl Drop` block must abort both tasks atomically:
+    ```rust
+    if let Some(task) = guard.pump_task.take() {
+        task.abort();
+    }
+    ```
+
+#### 🔴 Blocker — Contradictory Reconnection Boundaries (Who Loops?)
+*   **Design Area**: Reconnect engine and state-management model ([2026-06-12-provider-port-phase1-design.md#L62-L69](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-bc77faeb/docs/superpowers/specs/2026-06-12-provider-port-phase1-design.md#L62-L69) [§4.1]).
+*   **Verification**: [VERIFIED]
+*   **Issue**: S2.5 states that the "supervisor applies the reset/panic/stop" (§4.1), but finstream's `spawn()` signature passes `policy: ReconnectPolicy` directly to the Driver. If the Driver owns its own internal loop and schedules its own retries, the Supervisor task is a redundant pass-through. If the Driver loops itself, there is no way for the Supervisor to sleep, apply backoff increments, or control retry boundaries.
+    Furthermore, how does the Supervisor know a connection succeeded to "reset" the backoff attempt to `0`? If the Driver is an opaque task, it must emit a success state over the channel (such as `MarketEvent::Status { status: Connected }`) which the Supervisor observes to reset the counter.
+*   **Concrete Fix**: [Structural] Resolve the architectural dual-scheduler conflict cleanly by shifting the reconnection loop **entirely to the Supervisor**. The Driver's execution method should cover a **single connection attempt**. When that attempt returns or crashes:
+    1. The Supervisor intercepts the exit.
+    2. The Supervisor calculates the next backoff delay from `policy.next_delay(attempt)` (plus std-based jitter).
+    3. The Supervisor sleeps and then spawns a *new* instance of the driver.
+    If the Supervisor reads a `MarketEvent::Status { status: ProviderStatus::Connected }` from the mpsc channel, it instantly resets `attempt = 0`. This decouples the network driver from policy tracking and creates a single place for state control.
+
+#### 🟡 Should-Fix — Missing Feature Definitions in Cargo.toml
+*   **Design Area**: Cargo features configuration ([Cargo.toml#L1-L53](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-bc77faeb/rust/Cargo.toml#L1-L53) and [2026-06-12-provider-port-phase1-design.md#L111-L115](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-bc77faeb/docs/superpowers/specs/2026-06-12-provider-port-phase1-design.md#L111-L115) [§6.0]).
+*   **Verification**: [VERIFIED]
+*   **Issue**: §6 specifies that the `finnhub` feature gates the driver compilation and is "enabled in corelib's default build so the .node includes it." However, corelib's `Cargo.toml` has no `[features]` block defined. Attempting to build with `--features finnhub` or using conditional compilation `#[cfg(feature = "finnhub")]` without the feature block in `Cargo.toml` will fail or compile the pilot code out entirely by default.
+*   **Concrete Fix**: [Surgical] Define the `[features]` section in `rust/Cargo.toml` explicitly:
+    ```toml
+    [features]
+    default = ["finnhub"]
+    finnhub = []
+    ```
+
+#### 🟡 Should-Fix — Underspecified FFI Payload Object mapping (FinnhubPricingData)
+*   **Design Area**: Map data structures ([2026-06-12-provider-port-phase1-design.md#L94-L101](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-bc77faeb/docs/superpowers/specs/2026-06-12-provider-port-phase1-design.md#L94-L101) [§4.4]).
+*   **Verification**: [THEORETICAL]
+*   **Issue**: `FinnhubPricingData` is described as dynamic or flat "as needed". To prevent developer variance and ensure typescript consumer stability, the flat structure must be formally specified. Because Finnhub websocket feeds stream numerical Unix epoch timestamps (seconds/milliseconds) instead of RFC3339 strings, the types must support numeric mapping seamlessly.
+*   **Concrete Fix**: [Surgical] Hardcode the FFI flat boundary contract for `FinnhubPricingData`:
+    ```rust
+    #[napi(object)]
+    #[derive(Clone, Serialize, Deserialize)]
+    pub struct FinnhubPricingData {
+        pub symbol: String,
+        pub message_type: String, // "trade"
+        pub price: f64,
+        pub volume: f64,
+        pub timestamp: f64, // Numeric epoch (f64 for napi compatibility)
+        pub conditions: Option<Vec<String>>, // Finnhub trade conditions array
+    }
+    ```
+
+#### 🟢 Nit — Callback Trait Isolation & Common Models Reuse
+*   **Design Area**: Struct definitions sharing ([2026-06-12-provider-port-phase1-design.md#L94-L101](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-bc77faeb/docs/superpowers/specs/2026-06-12-provider-port-phase1-design.md#L94-L101) [§4.4]).
+*   **Verification**: [THEORETICAL]
+*   **Issue**: It is ambiguous whether `FinnhubStreaming` should implement custom callbacks or share types.
+*   **Concrete Fix**: Clarify that:
+    1. `EventRecord` and `LogRecord` are imported directly from crate root (`crate::{EventRecord, LogRecord}`) to keep error events and logger contracts aligned.
+    2. `FinnhubCallbacks` is defined separately inside `finnhub_streamer.rs` to keep pricing payload contracts generic-free and clean.
+
+---
+
+### 2. Creative Improvements
+
+#### The websocket-streamer-host Delegation Template (Phase 2 Masterstroke)
+While `napi-derive` does not support Rust generic parameters on FFI-exposed structs directly (so we must maintain separate `AlpacaStreaming`, `YahooStreaming`, and `FinnhubStreaming` structs for FFI binding), we can de-duplicate **100% of the FFI coordination complexity** by creating a common `WebsocketStreamerHost<D: ProviderDriver>` struct inside the core library.
+
+This internal host is configured with:
+1. The unique `redb` subscriptions table name (e.g. `"finnhub_subscriptions"` vs `"alpaca_subscriptions"`).
+2. The custom mpsc-pump callback execution logic.
+
+Our FFI classes then become simple delegating facades:
+```rust
+#[napi]
+pub struct FinnhubStreaming {
+    host: WebsocketStreamerHost<FinnhubDriver>,
+}
+
+#[napi]
+impl FinnhubStreaming {
+    #[napi(constructor)]
+    pub fn new(on_log: TSFN, on_pricing: TSFN, on_event: TSFN) -> Self {
+        Self {
+            host: WebsocketStreamerHost::new("finnhub_subscriptions", on_log, on_pricing, on_event)
+        }
+    }
+    // ... thin delegations for start(), stop(), subscribe(), unsubscribe() ...
+}
+```
+This reduces the FFI boilerplate code for Finnhub, Alpaca, and Yahoo down from hundreds of lines of complex, duplicated timer/task/channel orchestrating code to a highly secure, 30-line delegation wrapper. It guarantees flawless FFI behavior across the entire monorepo during Phase 2.
+
+---
+
+### 3. Highest Conviction Suggestion
+
+The single highest-conviction architectural adjustment is to **center entire connection scheduling and backoff control inside the internal Supervisor block**, turning the individual `ProviderDriver` blocks into clean, single-connection attempts that report status updates via the common `mpsc::Sender<MarketEvent>` channel. 
+
+By having the Supervisor monitor for a `MarketEvent::Status { status: Connected }` frame to reset its internal delay `attempt = 0`, we port the b-1 reconnect fix cleanly into a shared, trait-backed paradigm, avoiding any dual-ownership code-drift regressions during Phase 1.
+
+
