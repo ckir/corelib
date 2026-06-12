@@ -1,7 +1,7 @@
 # Integration Test Tier — Design Spec
 
 - **Date:** 2026-06-12
-- **Status:** Approved (design); agy divergent pass complete (brainstorm phase). Spec-phase agy pass pending.
+- **Status:** Approved (design); agy divergent passes complete (brainstorm + spec). Pending final user review.
 - **Subproject:** Exhaustive integration tests for the corelib monorepo.
 - **Review record:** `ANTIGRAVITY-TO-CLAUDE.md` → "2026-06-12 — Integration-test tier (divergent design pass)".
 
@@ -71,8 +71,27 @@ its node and worker projects.
 ### 4.3 Shared harness
 
 A shared, dependency-light harness lives at repo root `tests/integration/_harness/` and is imported by
-each package's integration setup (resolved via a workspace path alias, e.g. `@itest/harness`). It must not
-pull package-specific runtime assumptions; the worker project imports only the REST-replay pieces.
+each package's integration setup via an `@itest/*` alias. It must not pull package-specific runtime
+assumptions; the worker project imports only the REST-replay pieces.
+
+**Alias isolation (do NOT add `@itest/*` to `tsconfig.base.json`).** Putting the alias in the base config
+exposes it to every `src/` file, and since `@itest` is not marked external in `tsup.config.ts`, an
+accidental import would compile test-only code (and `msw`/`workerd` deps) into `dist/`. Instead: define
+`@itest/*` in a dedicated `tsconfig.integration.json` (extends base, `include: ["tests/integration"]`) and
+in each package's `vitest.integration.config.ts` `resolve.alias`. Production `tsconfig`/`tsup` never see
+the alias. *(agy spec-pass 🟡.)*
+
+### 4.4 Prerequisite source change — `ConfigManager.initialize(args?)`
+
+`ConfigManager.initialize()` (`ts-core/src/configs/ConfigManager.ts:160`) reads `process.argv.slice(2)`
+(`:165`) and parses it with commander, binding `-C, --config <path>` (`:169`). Under Vitest, the runner's
+own `--config vitest.integration.config.ts` is hijacked — ConfigManager treats the `.ts` path as a config
+file and crashes. Any cross-package test exercising real `ConfigManager` hits this.
+
+**Required (blocker) change:** widen the signature to `initialize(args?: string[])` using
+`args ?? process.argv.slice(2)`; the harness calls `initialize([])` to bypass commander's argv scan.
+Backward-compatible (optional param). This is a prerequisite implementation task, sequenced before the
+cross-package suite. *(agy spec-pass 🔴 [VERIFIED].)*
 
 ## 5. Seam Coverage
 
@@ -100,8 +119,10 @@ recorded fixtures in replay mode.
 
 ### 5.3 ffi-scalar (real native boundary)
 
-Through the real `corelib-rust.node`: `isFfiAvailable()`, `getVersion()` (asserts it matches the crate
-version, not the JS fallback), `logAndDouble()` (asserts the Rust-computed result), and `Core`. Guarded
+Through the real `corelib-rust.node`: `isFfiAvailable()`, `getVersion()` — asserted **equal to
+`ts-core/package.json`'s `version`** (loaded at test time), which doubles as a monorepo crate↔package
+sync check (both are `0.1.17` today; the assert catches drift on release runs) — `logAndDouble()`
+(asserts the Rust-computed result, not the JS fallback throw), and `Core`. Guarded
 by `describe.skipIf(!isFfiAvailable())` — but a skip prints a **loud yellow diagnostic** naming the
 missing platform/binary so coverage holes are never silent.
 
@@ -123,16 +144,36 @@ One test body runs three ways, selected by env var:
 | Record | `INTEGRATION_RECORD=1` | Unmatched requests pass through to the real API; the response is **scrubbed** then written to its fixture. |
 | Live | `INTEGRATION_LIVE=1` | MSW disabled; tests hit real APIs with loose shape/status assertions (drift safety-net; nightly/manual). |
 
-### 6.1 Secret scrubbing (mandatory, blocks fixture writes)
+### 6.1 Retries & sequential responses
+
+`RequestUnlimited` retries (up to 5, backoff to ~3000ms), so the harness cannot use naive one-to-one
+URL→fixture mapping for failure paths. Two requirements:
+- **Sequential response queues.** A fixture may be an *ordered array* of responses for a URL+method;
+  the replay player returns the next entry per request, so a `timeout → retry → 200` path is expressible
+  (`[504, 504, 200]`). Single-object fixtures remain shorthand for "same response every time".
+- **Bounded retries in failure tests.** Failure/timeout tests override the retry limit to a small value
+  (e.g. `limit: 1`) via `ConfigManager`/`DEFAULT_REQUEST_OPTIONS` injection so a CI thread never stalls
+  on full backoff. Success-path tests keep production retry settings. *(agy spec-pass 🟡.)*
+
+### 6.2 Secret scrubbing (mandatory, blocks fixture writes)
 
 Before **any** fixture is serialized in record mode, the harness runs a sanitization pass replacing the
 values of sensitive headers/fields with `<REDACTED>`. Minimum denylist (case-insensitive):
 `authorization`, `cookie`, `set-cookie`, `apca-api-key-id`, `apca-api-secret-key`, `x-api-key`,
 `x-amz-security-token`, and any header matching `/key|secret|token|auth|session/i`. Query-string secrets
-(e.g. `?apikey=`) are redacted likewise. A fixture that still contains an unredacted denylisted value
+(e.g. `?apikey=`) are redacted likewise.
+
+**Bodies too (not just headers).** Some providers carry credentials in request/response **bodies**
+(e.g. Alpaca `keyId`/`secretKey` in JSON payloads). The scrubber deserializes string bodies and
+**recursively** redacts any object key matching `/key|secret|token|auth|session|password/i` (and the
+explicit `keyId`/`secretKey`/`apiKey` names), then re-serializes. *(agy spec-pass 🟡.)*
+
+**Record-mode dry-run diff.** In `INTEGRATION_RECORD=1`, before writing, the recorder prints a unified
+diff of raw → scrubbed to the console so the developer sees exactly what was redacted before committing.
+*(agy creative.)* A fixture that still contains an unredacted denylisted value (header, query, or body)
 fails the validator (§8).
 
-### 6.2 Fixture format & location
+### 6.3 Fixture format & location
 
 Committed under `tests/integration/_contracts/<service>/<name>.json`:
 
@@ -144,13 +185,17 @@ Committed under `tests/integration/_contracts/<service>/<name>.json`:
 
 Fixtures are deterministic, offline, and reviewed in PRs.
 
-## 7. Determinism Rules
+## 7. Determinism & Isolation
 
 - Every streaming/socket test (live tier) sets a hard timeout (≤ `1000ms` connect, bounded total) and
   closes the socket in teardown — no open handles leaking into CI.
 - Time/cron tests (`croner`, Rust `cron`) use fake timers / manual tick injection — never wait on the
   wall clock. Where a module reads the clock, the integration test injects a fixed instant.
 - No test depends on market open/close state; market-phase logic is driven by fixture/clock injection.
+- **Parallel isolation (Vitest runs files in parallel).** The harness exposes `getTestTempDir()` (a
+  randomized, per-test temp dir) and `createTestDatabase()` (an isolated SQLite instance — `:memory:` or
+  a unique temp file) so concurrent tests never collide on a shared dir or DB file. A global teardown
+  registers cleanup hooks that recursively prune temp dirs and close DB connections. *(agy creative.)*
 
 ## 8. Coverage Matrix & Validator
 
@@ -160,6 +205,16 @@ enumerating, per seam:
 - **external:** each provider × { success, 404, 500, timeout→retry, malformed-body }.
 - **cross-package:** each real consumer→provider binding listed in §5.1.
 - **ffi-scalar:** each exported native function + the availability-fallback path.
+
+Each entry is a typed `SeamCell` so the mapping is unambiguous for static analysis:
+
+```ts
+interface SeamCell {
+  seam: "external" | "cross-package" | "ffi-scalar";
+  id: string;                 // e.g. "nasdaq.marketStatus.500"
+  fixturePath?: string;       // required for external; relative to _contracts/ (omit for non-HTTP seams)
+}
+```
 
 A `coverage-validator` script (run in CI and via `test:integration` setup) asserts:
 1. every external matrix cell has a corresponding `_contracts/**` fixture;
@@ -187,8 +242,9 @@ ts-cloud/
   tests/integration/*.integration.test.ts
 ```
 
-(Harness path alias `@itest/*` added to `tsconfig.base.json` `paths` and each integration config's
-`resolve.alias`.)
+Plus a root `tsconfig.integration.json` (extends base, includes `tests/integration/`, defines the
+`@itest/*` paths) — **not** in `tsconfig.base.json` (see §4.3). Each integration config also sets the
+`@itest/*` `resolve.alias`.
 
 ## 10. CI Wiring
 
@@ -220,9 +276,13 @@ push gate fast.
 
 ## 13. agy Review Provenance
 
-Brainstorm-phase divergent pass (2026-06-12) raised three 🔴 blockers — single-root runtime conflict,
-MSW-cannot-intercept-FFI-sockets, worker-sandbox DB limits — all verified true and resolved above; two
-🟡 (secret leakage, source-vs-dist) folded/deferred; creative ideas adopted (coverage validator, loud
-FFI diagnostic). Forks F1/F2 resolved with agy. Full record in `ANTIGRAVITY-TO-CLAUDE.md`. The
-Spec-phase divergent pass (gap/ambiguity pressure-test) runs against this document before the
-implementation plan.
+**Brainstorm-phase pass** raised three 🔴 blockers — single-root runtime conflict,
+MSW-cannot-intercept-FFI-sockets, worker-sandbox DB limits — all verified and resolved above; two 🟡
+(secret leakage, source-vs-dist) folded/deferred; creative ideas adopted (coverage validator, loud FFI
+diagnostic). Forks F1/F2 resolved with agy.
+
+**Spec-phase pass** raised one 🔴 (ConfigManager commander/argv clash with Vitest → §4.4 prerequisite
+change, independently verified) plus 🟡s folded above: `@itest` alias pollution (§4.3/§9), retry/sequential
+fixtures (§6.1), body scrubbing + record dry-run (§6.2), version-vs-package.json assert (§5.3), `SeamCell`
+mapping (§8), and parallel temp/DB isolation (§7). agy's verdict: "[Verified Clean] with adjustments —
+exceptionally cohesive and highly implementable." Full record in `ANTIGRAVITY-TO-CLAUDE.md`.
