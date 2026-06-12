@@ -36,6 +36,11 @@ export class AlpacaStreaming extends EventEmitter {
 					this.emit(event.type, event.data ?? null);
 				}
 			},
+			(_err: any, json: string) => {
+				try {
+					this.emit("market", JSON.parse(json));
+				} catch {}
+			},
 		);
 
 		// Auto-clean in development
@@ -86,18 +91,24 @@ export class AlpacaStreaming extends EventEmitter {
 
 	/**
 	 * Subscribes to real-time updates for the specified symbols.
-	 * @param {string[]} symbols - Array of trading symbols.
+	 * @param {string[] | { trades?: string[]; quotes?: string[]; bars?: string[] }} input - Array of symbols (mapped to quotes) or subscription options object.
 	 */
-	subscribe(symbols: string[]) {
-		this.rust.subscribe(symbols);
+	subscribe(
+		input: string[] | { trades?: string[]; quotes?: string[]; bars?: string[] },
+	) {
+		const opts = Array.isArray(input) ? { quotes: input } : input;
+		this.rust.subscribe(opts);
 	}
 
 	/**
 	 * Unsubscribes from updates for the specified symbols.
-	 * @param {string[]} symbols - Array of trading symbols.
+	 * @param {string[] | { trades?: string[]; quotes?: string[]; bars?: string[] }} input - Array of symbols (mapped to quotes) or subscription options object.
 	 */
-	unsubscribe(symbols: string[]) {
-		this.rust.unsubscribe(symbols);
+	unsubscribe(
+		input: string[] | { trades?: string[]; quotes?: string[]; bars?: string[] },
+	) {
+		const opts = Array.isArray(input) ? { quotes: input } : input;
+		this.rust.unsubscribe(opts);
 	}
 
 	/**
@@ -118,4 +129,5 @@ export class AlpacaStreaming extends EventEmitter {
 // Events emitted:
 // - pricing (AlpacaPricingData)
 // - log ({level, msg, extras?})
+// - market (unified MarketEvent JSON, parsed object)
 // - connected, disconnected, reconnecting, silence-reconnect, error

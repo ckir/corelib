@@ -23,6 +23,16 @@ sequencing of 4 subprojects"). Five subprojects, each its own spec → plan → 
      healthy-drop, per-instance redb, masked-secret Debug, panic→JS propagation, jitter).
    - **Phase 2 (migrate Alpaca / Yahoo)** — port existing Alpaca and Yahoo streamers onto the shared
      `WebsocketStreamerHost` engine; unify `subscribe`/`unsubscribe`/`stop` semantics.
+     - **Phase 2a (Alpaca) — COMPLETE** (2026-06-13, branch `feat/alpaca-provider-phase2a`): Alpaca
+       migrated onto the shared host as the first **dual-mode** provider — emits the byte-identical
+       raw `AlpacaPricingData` AND a unified (finstream-superset, RFC3339-timestamp) `MarketEvent`
+       via an optional 4th `on_market_event` callback. Engine channel migrated to `CoreEvent`/
+       `SubRequest`; Finnhub retrofitted dual-mode in the same change. Subscription surface widened to
+       trades/quotes/bars with channel-aware redb persistence (the single source of truth for
+       resume — `AlpacaDriver.load_subscriptions()` reads it fresh on every connect, reconnect-safe);
+       bars are raw-only. b-1 hardening inherited via the shared host. agy convergent review PASS.
+     - **Phase 2b (Yahoo)** — port the Yahoo (proto-decoded) streamer onto the same dual-mode engine.
+
    - **Phase 3 (gateway)** — unified streaming gateway / fan-out layer across all providers.
    - *Deferred (Phase 2a plan-pass, agy):* **Finnhub reconnect-resume of in-session subscriptions.** Finnhub
      resumes from the `symbols` snapshot passed at `start()`, so dynamic subscribes added mid-session are lost

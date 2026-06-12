@@ -1,20 +1,8 @@
 //! FinnhubStreaming N-API facade, flat payload, and MarketEvent→flat mapper.
 use crate::markets::nasdaq::datafeeds::streaming::core::schema::{MarketEvent, Trade, TradeExtras};
+pub use crate::markets::nasdaq::datafeeds::streaming::core::types::FinnhubPricingData;
 use napi_derive::napi;
 use serde::{Deserialize, Serialize};
-
-/// Flat per-provider pricing payload sent to JS `on_pricing` (mirrors AlpacaPricingData shape;
-/// Finnhub timestamps are numeric epoch ms, so `timestamp` is f64).
-#[napi(object)]
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-pub struct FinnhubPricingData {
-    pub symbol: String,
-    pub message_type: String,
-    pub price: f64,
-    pub volume: f64,
-    pub timestamp: f64,
-    pub conditions: Option<Vec<String>>,
-}
 
 /// Map a MarketEvent::Trade to the flat FinnhubPricingData. Returns None for non-pricing events.
 pub fn market_event_to_finnhub_pricing(ev: &MarketEvent) -> Option<FinnhubPricingData> {
@@ -32,6 +20,7 @@ pub fn market_event_to_finnhub_pricing(ev: &MarketEvent) -> Option<FinnhubPricin
         } => {
             let (volume, conditions) = match extras {
                 TradeExtras::Finnhub(x) => (x.volume, x.conditions.clone()),
+                _ => return None,
             };
             Some(FinnhubPricingData {
                 symbol: ticker.clone(),
@@ -46,7 +35,7 @@ pub fn market_event_to_finnhub_pricing(ev: &MarketEvent) -> Option<FinnhubPricin
                 },
             })
         }
-        MarketEvent::Status { .. } => None,
+        MarketEvent::Quote { .. } | MarketEvent::Status { .. } => None,
     }
 }
 
@@ -99,6 +88,29 @@ mod tests {
         };
         assert!(market_event_to_finnhub_pricing(&ev).is_none());
     }
+
+    #[test]
+    fn finnhub_trade_maps_to_unified_market_event_trade() {
+        let ev = MarketEvent::Trade {
+            source: "finnhub_main".into(),
+            data: Trade {
+                ticker: "AAPL".into(),
+                timestamp: chrono::Utc
+                    .timestamp_millis_opt(1_700_000_000_000)
+                    .single()
+                    .unwrap(),
+                price: 191.5,
+                extras: TradeExtras::Finnhub(FinnhubTradeExtras {
+                    volume: 100.0,
+                    conditions: vec!["@".into()],
+                }),
+                raw: None,
+            },
+        };
+        let v = serde_json::to_value(&ev).unwrap();
+        assert_eq!(v["type"], "trade");
+        assert_eq!(v["finnhub"]["volume"], 100.0);
+    }
 }
 
 // ─── Task 9: FinnhubStreaming N-API facade ────────────────────────────────────
@@ -108,6 +120,7 @@ use crate::markets::nasdaq::datafeeds::streaming::core::host::{
 };
 use crate::markets::nasdaq::datafeeds::streaming::core::reconnect::ReconnectPolicy;
 use crate::markets::nasdaq::datafeeds::streaming::core::schema::{ProviderKind, ProviderStatus};
+use crate::markets::nasdaq::datafeeds::streaming::core::types::{CoreEvent, RawPricing};
 use crate::markets::nasdaq::datafeeds::streaming::finnhub::finnhub_driver::FinnhubDriver;
 use crate::{EventRecord, LogRecord};
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
@@ -151,17 +164,22 @@ pub struct FinnhubStreaming {
     on_log: Arc<ThreadsafeFunction<LogRecord>>,
     on_pricing: Arc<ThreadsafeFunction<FinnhubPricingData>>,
     on_event: Arc<ThreadsafeFunction<EventRecord>>,
+    /// Optional unified-event sink: receives the finstream-superset `MarketEvent` as a JSON string.
+    /// Absent when JS constructs with only 3 callbacks (back-compat).
+    on_market_event: Option<Arc<ThreadsafeFunction<String>>>,
 }
 
 #[napi]
 impl FinnhubStreaming {
-    /// Constructs a new `FinnhubStreaming` with the three JS callback functions.
-    /// Order matches `AlpacaStreaming`: (on_log, on_pricing, on_event).
+    /// Constructs a new `FinnhubStreaming` with the JS callback functions.
+    /// Order matches `AlpacaStreaming`: (on_log, on_pricing, on_event, [on_market_event]).
+    /// `on_market_event` is optional — pass it to also receive the unified `"market"` stream.
     #[napi(constructor)]
     pub fn new(
         on_log: ThreadsafeFunction<LogRecord>,
         on_pricing: ThreadsafeFunction<FinnhubPricingData>,
         on_event: ThreadsafeFunction<EventRecord>,
+        on_market_event: Option<ThreadsafeFunction<String>>,
     ) -> Self {
         let host = WebsocketStreamerHost::new(
             unique_db_path("finnhub_streaming", "FINNHUB_DB"),
@@ -180,6 +198,7 @@ impl FinnhubStreaming {
             on_log: Arc::new(on_log),
             on_pricing: Arc::new(on_pricing),
             on_event: Arc::new(on_event),
+            on_market_event: on_market_event.map(Arc::new),
         }
     }
 
@@ -220,6 +239,7 @@ impl FinnhubStreaming {
                                                             // Arc-clone the TSFNs so the pump closure can hold them (TSFN is Send+Sync, not Clone).
         let on_pricing = Arc::clone(&self.on_pricing);
         let on_event = Arc::clone(&self.on_event);
+        let on_market_event = self.on_market_event.clone();
         g.host.start(
             driver,
             symbols,
@@ -227,10 +247,20 @@ impl FinnhubStreaming {
                 jitter: true,
                 ..Default::default()
             },
-            move |ev: MarketEvent| {
-                if let Some(p) = market_event_to_finnhub_pricing(&ev) {
+            move |ev: CoreEvent| match ev {
+                // dual-mode: raw FinnhubPricingData via on_pricing + optional unified JSON via on_market_event.
+                CoreEvent::Pricing {
+                    raw: RawPricing::Finnhub(p),
+                    uni,
+                } => {
                     let _ = on_pricing.call(Ok(p), ThreadsafeFunctionCallMode::NonBlocking);
-                } else if let MarketEvent::Status { status, .. } = ev {
+                    if let (Some(cb), Some(u)) = (on_market_event.as_ref(), uni) {
+                        if let Ok(j) = serde_json::to_string(&u) {
+                            let _ = cb.call(Ok(j), ThreadsafeFunctionCallMode::NonBlocking);
+                        }
+                    }
+                }
+                CoreEvent::Status(status) => {
                     let (t, d) = match status {
                         ProviderStatus::Connected { .. } => ("connected".to_string(), None),
                         ProviderStatus::Disconnected { reason, .. } => {
@@ -251,6 +281,8 @@ impl FinnhubStreaming {
                         ThreadsafeFunctionCallMode::NonBlocking,
                     );
                 }
+                // RawPricing::Alpaca never reaches the Finnhub pump.
+                _ => {}
             },
         );
         g.started = true;

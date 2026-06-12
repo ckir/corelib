@@ -74,6 +74,7 @@ mod tests {
                         assert_eq!(x.volume, 100.0);
                         assert_eq!(x.conditions, vec!["@".to_string()]);
                     }
+                    _ => panic!("expected Finnhub extras"),
                 }
             }
             _ => panic!(),
@@ -86,8 +87,12 @@ mod tests {
     }
 }
 
-use crate::markets::nasdaq::datafeeds::streaming::core::driver::{AttemptOutcome, ProviderDriver};
+use crate::markets::nasdaq::datafeeds::streaming::core::driver::{
+    AttemptOutcome, ProviderDriver, SubRequest,
+};
 use crate::markets::nasdaq::datafeeds::streaming::core::schema::{ProviderKind, ProviderStatus};
+use crate::markets::nasdaq::datafeeds::streaming::core::types::{CoreEvent, RawPricing};
+use crate::markets::nasdaq::datafeeds::streaming::finnhub::finnhub_streamer::market_event_to_finnhub_pricing;
 use futures::future::{BoxFuture, FutureExt};
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
@@ -112,8 +117,8 @@ impl ProviderDriver for FinnhubDriver {
     fn connect_once<'a>(
         &'a self,
         symbols: &'a [String],
-        tx: &'a mpsc::Sender<MarketEvent>,
-        sub_rx: &'a mut mpsc::Receiver<Vec<String>>,
+        tx: &'a mpsc::Sender<CoreEvent>,
+        sub_rx: &'a mut mpsc::Receiver<SubRequest>,
         stop_rx: &'a mut mpsc::Receiver<()>,
     ) -> BoxFuture<'a, AttemptOutcome> {
         async move {
@@ -123,7 +128,7 @@ impl ProviderDriver for FinnhubDriver {
                 Err(_) => return AttemptOutcome::NeverConnected,
             };
             // signal the supervisor to reset backoff
-            let _ = tx.send(MarketEvent::Status { source: self.name.clone(), status: ProviderStatus::Connected { provider: ProviderKind::Finnhub } }).await;
+            let _ = tx.send(CoreEvent::Status(ProviderStatus::Connected { provider: ProviderKind::Finnhub })).await;
             let mut current: Vec<String> = symbols.to_vec();
             for s in &current {
                 let m = serde_json::json!({ "type": "subscribe", "symbol": s }).to_string();
@@ -134,7 +139,8 @@ impl ProviderDriver for FinnhubDriver {
                     _ = stop_rx.recv() => return AttemptOutcome::Stopped,
                     upd = sub_rx.recv() => {
                         match upd {
-                            Some(syms) => {
+                            // Finnhub is single-channel: ignore `channel`, subscribe each new symbol.
+                            Some(SubRequest { symbols: syms, .. }) => {
                                 for s in &syms { if !current.contains(s) {
                                     let m = serde_json::json!({ "type": "subscribe", "symbol": s }).to_string();
                                     let _ = ws.send(Message::Text(m.into())).await; current.push(s.clone());
@@ -146,7 +152,14 @@ impl ProviderDriver for FinnhubDriver {
                         }
                     }
                     msg = ws.next() => match msg {
-                        Some(Ok(Message::Text(t))) => { for ev in parse_finnhub_frame(&t, &self.name) { let _ = tx.send(ev).await; } }
+                        Some(Ok(Message::Text(t))) => {
+                            // dual-mode: each trade carries the raw FinnhubPricingData + the unified MarketEvent.
+                            for ev in parse_finnhub_frame(&t, &self.name) {
+                                if let Some(raw) = market_event_to_finnhub_pricing(&ev) {
+                                    let _ = tx.send(CoreEvent::Pricing { raw: RawPricing::Finnhub(raw), uni: Some(ev) }).await;
+                                }
+                            }
+                        }
                         Some(Ok(Message::Ping(p))) => { let _ = ws.send(Message::Pong(p)).await; }
                         Some(Ok(_)) => {}
                         Some(Err(_)) | None => return AttemptOutcome::ConnectedThenDropped,

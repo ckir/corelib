@@ -4,3 +4,4 @@ pub mod host;
 pub mod reconnect;
 pub mod schema;
 pub mod supervisor;
+pub mod types;
