@@ -97,7 +97,9 @@ describe("AlpacaStreaming (Exhaustive)", () => {
 
 	it("should forward subscribe(array) as { quotes: array } to FFI", async () => {
 		await stream.subscribe(["AAPL", "TSLA"]);
-		expect(mockRust.subscribe).toHaveBeenCalledWith({ quotes: ["AAPL", "TSLA"] });
+		expect(mockRust.subscribe).toHaveBeenCalledWith({
+			quotes: ["AAPL", "TSLA"],
+		});
 	});
 
 	it("should forward subscribe(opts object) unchanged to FFI", async () => {

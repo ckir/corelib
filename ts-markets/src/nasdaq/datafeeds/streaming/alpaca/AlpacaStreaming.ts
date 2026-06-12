@@ -93,7 +93,9 @@ export class AlpacaStreaming extends EventEmitter {
 	 * Subscribes to real-time updates for the specified symbols.
 	 * @param {string[] | { trades?: string[]; quotes?: string[]; bars?: string[] }} input - Array of symbols (mapped to quotes) or subscription options object.
 	 */
-	subscribe(input: string[] | { trades?: string[]; quotes?: string[]; bars?: string[] }) {
+	subscribe(
+		input: string[] | { trades?: string[]; quotes?: string[]; bars?: string[] },
+	) {
 		const opts = Array.isArray(input) ? { quotes: input } : input;
 		this.rust.subscribe(opts);
 	}
@@ -102,7 +104,9 @@ export class AlpacaStreaming extends EventEmitter {
 	 * Unsubscribes from updates for the specified symbols.
 	 * @param {string[] | { trades?: string[]; quotes?: string[]; bars?: string[] }} input - Array of symbols (mapped to quotes) or subscription options object.
 	 */
-	unsubscribe(input: string[] | { trades?: string[]; quotes?: string[]; bars?: string[] }) {
+	unsubscribe(
+		input: string[] | { trades?: string[]; quotes?: string[]; bars?: string[] },
+	) {
 		const opts = Array.isArray(input) ? { quotes: input } : input;
 		this.rust.unsubscribe(opts);
 	}
