@@ -590,16 +590,28 @@ pub fn delete_subscriptions_table(&self) -> Result<(), String> {
 }
 ```
 
+- [ ] **Step 3b: Share the db handle so drivers can read persisted subs directly** (agy plan-pass 🔴 — the redb DB is the single source of truth for resume/reconnect; the driver reads it fresh on every connect). Change the host's `db` field from `Database` to `Arc<Database>`:
+  - Add `use std::sync::Arc;` to `host.rs`.
+  - Field: `pub(crate) db: Arc<Database>,` and in `new()`: `db: Arc::new(Database::create(&db_path).expect("Failed to open redb")),`. All existing `self.db.begin_read()/begin_write()` calls work unchanged (Arc derefs).
+  - Add accessors:
+
+```rust
+/// Cheap clone of the shared redb handle (drivers read persisted subscriptions directly).
+pub fn db_handle(&self) -> std::sync::Arc<Database> { std::sync::Arc::clone(&self.db) }
+/// The subscriptions table name (for driver-side reads).
+pub fn table_name(&self) -> &'static str { self.table }
+```
+
 - [ ] **Step 4: Run to verify pass**
 
 Run: `cd rust && cargo test host_persistence_tests && cargo test && cargo clippy`
-Expected: PASS; full suite green.
+Expected: PASS; full suite green (the `db → Arc<Database>` change is internal; Finnhub still uses the existing `get_persisted_subscriptions`).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add rust/src/markets/nasdaq/datafeeds/streaming/core/host.rs
-git commit -m "feat(streaming): channel-aware redb helpers + delete_subscriptions_table on host"
+git commit -m "feat(streaming): channel-aware redb helpers, shared Arc db handle, delete_subscriptions_table"
 ```
 
 ---
@@ -798,14 +810,45 @@ git commit -m "feat(streaming): AlpacaDriver frame parsers (q/t/b → raw + unif
 #[cfg(test)]
 mod driver_tests {
     use super::*;
+    use std::sync::Arc;
+
+    fn tmp_db() -> Arc<redb::Database> {
+        let path = std::env::temp_dir().join(format!("test_alpaca_drv_{}_{}.redb",
+            std::process::id(), std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        Arc::new(redb::Database::create(path).unwrap())
+    }
+
     #[test]
     fn validate_requires_credentials() {
+        let db = tmp_db();
         let d = AlpacaDriver { name: "alpaca_main".into(), base_url: None, key_id: String::new(),
-            secret_key: String::new(), silence_seconds: 60 };
+            secret_key: String::new(), silence_seconds: 60, db: Arc::clone(&db), table: "alpaca_subscriptions" };
         assert!(d.validate().is_err());
         let d2 = AlpacaDriver { name: "alpaca_main".into(), base_url: None, key_id: "k".into(),
-            secret_key: "s".into(), silence_seconds: 60 };
+            secret_key: "s".into(), silence_seconds: 60, db, table: "alpaca_subscriptions" };
         assert!(d2.validate().is_ok());
+    }
+
+    #[test]
+    fn load_subscriptions_groups_by_channel_with_legacy_default() {
+        let db = tmp_db();
+        // seed composite + legacy keys
+        {
+            let t: redb::TableDefinition<&str, bool> = redb::TableDefinition::new("alpaca_subscriptions");
+            let w = db.begin_write().unwrap();
+            { let mut tab = w.open_table(t).unwrap();
+              tab.insert("trades:MSFT", true).unwrap();
+              tab.insert("quotes:AAPL", true).unwrap();
+              tab.insert("TSLA", true).unwrap(); } // legacy bare → quotes
+            w.commit().unwrap();
+        }
+        let d = AlpacaDriver { name: "a".into(), base_url: None, key_id: "k".into(), secret_key: "s".into(),
+            silence_seconds: 60, db, table: "alpaca_subscriptions" };
+        let map = d.load_subscriptions();
+        let quotes = &map.iter().find(|(c, _)| c == "quotes").unwrap().1;
+        assert!(quotes.contains(&"AAPL".to_string()) && quotes.contains(&"TSLA".to_string()));
+        assert_eq!(map.iter().find(|(c, _)| c == "trades").unwrap().1, vec!["MSFT".to_string()]);
     }
 }
 ```
@@ -815,7 +858,7 @@ mod driver_tests {
 Run: `cd rust && cargo test driver_tests`
 Expected: FAIL — `AlpacaDriver` not defined.
 
-- [ ] **Step 3: Implement `AlpacaDriver` + `connect_once`** — append to `alpaca_driver.rs`. Port the handshake and `select!` from the existing `ws_loop` (`alpaca_streamer.rs` L355-657), adapting to emit `CoreEvent` and consume `SubRequest`:
+- [ ] **Step 3: Implement `AlpacaDriver` + `connect_once`** — append to `alpaca_driver.rs`. Port the handshake and `select!` from the existing `ws_loop` (`alpaca_streamer.rs` L355-657), adapting to emit `CoreEvent` and consume `SubRequest`. **The driver owns a clone of the host's redb handle and reads the persisted subscription set fresh on every connect/reconnect** — this is the single source of truth, so resume survives restarts AND reconnects (agy plan-pass 🔴 #4/#5):
 
 ```rust
 use crate::markets::nasdaq::datafeeds::streaming::core::driver::{AttemptOutcome, ProviderDriver, SubRequest};
@@ -823,6 +866,8 @@ use crate::markets::nasdaq::datafeeds::streaming::core::schema::{ProviderKind, P
 use crate::markets::nasdaq::datafeeds::streaming::core::types::{CoreEvent, RawPricing};
 use futures::future::{BoxFuture, FutureExt};
 use futures_util::{SinkExt, StreamExt};
+use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
@@ -836,10 +881,12 @@ pub struct AlpacaDriver {
     pub key_id: String,
     pub secret_key: String,
     pub silence_seconds: u32,
+    pub db: Arc<Database>,    // shared host redb handle (host.db_handle())
+    pub table: &'static str,  // host.table_name() — "alpaca_subscriptions"
 }
 
 impl AlpacaDriver {
-    /// Build the consolidated subscribe payload from the resumed redb channel map.
+    /// Build the consolidated subscribe payload from a channel map.
     fn initial_subscribe_json(&self, by_channel: &[(String, Vec<String>)]) -> Option<String> {
         let mut map = serde_json::Map::new();
         map.insert("action".into(), serde_json::json!("subscribe"));
@@ -848,6 +895,29 @@ impl AlpacaDriver {
             if !syms.is_empty() { map.insert(ch.clone(), serde_json::json!(syms)); any = true; }
         }
         any.then(|| serde_json::Value::Object(map).to_string())
+    }
+
+    /// Read the FULL persisted subscription set from redb, grouped by Alpaca channel.
+    /// A colon-less (legacy) key defaults to the "quotes" channel. Called on every (re)connect.
+    fn load_subscriptions(&self) -> Vec<(String, Vec<String>)> {
+        let mut by_channel: Vec<(String, Vec<String>)> =
+            ALPACA_CHANNELS.iter().map(|c| (c.to_string(), Vec::new())).collect();
+        let table: TableDefinition<&str, bool> = TableDefinition::new(self.table);
+        if let Ok(rtx) = self.db.begin_read() {
+            if let Ok(t) = rtx.open_table(table) {
+                if let Ok(iter) = t.iter() {
+                    for item in iter.flatten() {
+                        let key = item.0.value().to_string();
+                        let (ch, sym) = key.split_once(':').unwrap_or(("quotes", key.as_str()));
+                        if let Some(slot) = by_channel.iter_mut().find(|(c, _)| c == ch) {
+                            let sym = sym.to_string();
+                            if !slot.1.contains(&sym) { slot.1.push(sym); }
+                        }
+                    }
+                }
+            }
+        }
+        by_channel
     }
 }
 
@@ -860,13 +930,13 @@ impl ProviderDriver for AlpacaDriver {
 
     fn connect_once<'a>(
         &'a self,
-        symbols: &'a [String], // unused: Alpaca resumes per-channel via the host (see facade Task 8)
+        symbols: &'a [String], // unused: Alpaca resumes from redb (load_subscriptions), not this snapshot
         tx: &'a mpsc::Sender<CoreEvent>,
         sub_rx: &'a mut mpsc::Receiver<SubRequest>,
         stop_rx: &'a mut mpsc::Receiver<()>,
     ) -> BoxFuture<'a, AttemptOutcome> {
         async move {
-            let _ = symbols; // resume handled via initial SubRequests pushed by the facade
+            let _ = symbols; // resume is read fresh from redb each attempt (reconnect-safe)
             let url = self.base_url.clone().unwrap_or_else(|| DEFAULT_ALPACA_WS_URL.to_string());
             let (mut ws, _) = match connect_async(&url).await {
                 Ok(v) => v, Err(_) => return AttemptOutcome::NeverConnected,
@@ -899,14 +969,8 @@ impl ProviderDriver for AlpacaDriver {
 
             let _ = tx.send(CoreEvent::Status(ProviderStatus::Connected { provider: ProviderKind::Alpaca })).await;
 
-            // initial subscribe: drain any SubRequests the facade pre-queued (resume) + group by channel
-            let mut by_channel: Vec<(String, Vec<String>)> =
-                ALPACA_CHANNELS.iter().map(|c| (c.to_string(), Vec::new())).collect();
-            while let Ok(req) = sub_rx.try_recv() {
-                if let Some(slot) = by_channel.iter_mut().find(|(c, _)| *c == req.channel) {
-                    for s in req.symbols { if !slot.1.contains(&s) { slot.1.push(s); } }
-                }
-            }
+            // initial subscribe: read the FULL persisted set from redb (reconnect-safe single source of truth)
+            let by_channel = self.load_subscriptions();
             if let Some(payload) = self.initial_subscribe_json(&by_channel) {
                 if ws.send(Message::Text(payload.into())).await.is_err() { return AttemptOutcome::ConnectedThenDropped; }
             }
@@ -969,6 +1033,8 @@ git commit -m "feat(streaming): AlpacaDriver connect_once (auth→Fatal, ping, s
 
 **Files:**
 - Modify: `alpaca/alpaca_streamer.rs` (delete `AlpacaStreamingCore`/`AlpacaCallbacks`/`NapiCallbacks`/`Inner`/`WsLoopResult`; rewrite the `#[napi]` facade to delegate to the host; keep `AlpacaConfig` with masked `Debug`).
+- Modify: `core/host.rs` (add `subscribe_channel_live`).
+- Modify: `rust/src/lib.rs` (remove the `AlpacaStreamingCore` re-export — Step 4).
 
 > **Correctness-sensitive FFI rewrite — main thread or carefully verified Sonnet.** Mirror `FinnhubStreaming` (Phase 1) structurally; add the dual-mode pump + `AlpacaSubscribeOpts`.
 
@@ -1069,12 +1135,12 @@ impl AlpacaStreaming {
             key_id: g.config.key_id.clone().or_else(|| std::env::var("APCA_API_KEY_ID").ok()).unwrap_or_default(),
             secret_key: g.config.secret_key.clone().or_else(|| std::env::var("APCA_API_SECRET_KEY").ok()).unwrap_or_default(),
             silence_seconds: g.config.silence_seconds.unwrap_or(60),
+            db: g.host.db_handle(),       // driver reads persisted subs from redb on every (re)connect
+            table: g.host.table_name(),
         };
-        // resume persisted subscriptions per channel by pre-queuing SubRequests via the live sub_tx
-        for ch in ["trades", "quotes", "bars"] {
-            let syms = g.host.get_persisted_subscriptions_for_channel(ch, "quotes");
-            if !syms.is_empty() { g.host.subscribe_channel_live(ch, syms); }
-        }
+        // NOTE: do NOT pre-queue resume here — the driver reads the full persisted set from redb on each
+        // connect (reconnect-safe). The facade's subscribe() persists to redb (so resume works) and also
+        // sends a live SubRequest for immediate in-session effect.
         let on_pricing = Arc::clone(&self.on_pricing);
         let on_event = Arc::clone(&self.on_event);
         let on_market = self.on_market_event.clone();
@@ -1140,19 +1206,21 @@ impl AlpacaStreaming {
 }
 ```
 
-Add two host conveniences used above: a `subscribe_channel_live(&self, channel, symbols)` that sends a `SubRequest { channel, symbols }` on `sub_tx` if present (so a running stream gets it); and a `AlpacaConfig::default_empty()` associated fn (all `None`). Keep `AlpacaConfig`'s masked `Debug`. Document `db_path` as a legacy no-op in its doc comment.
+Add two host conveniences used above: a `subscribe_channel_live(&self, channel: &str, symbols: Vec<String>)` that sends a `SubRequest { channel: channel.into(), symbols }` on `sub_tx` **if present** (live in-session effect only — when `sub_tx` is `None`, i.e. before `start()`, it is a no-op and resume is still safe because `subscribe_channel` already persisted to redb); and a `AlpacaConfig::default_empty()` associated fn (all `None`). Keep `AlpacaConfig`'s masked `Debug`. Document `db_path` as a legacy no-op in its doc comment.
 
-> If `start` borrows `g.host` mutably for `.start()` while also reading persisted subs, split the borrows: read the resume lists first into locals, then call `g.host.start(...)`.
+- [ ] **Step 4: Remove the `AlpacaStreamingCore` re-export from `lib.rs`** (agy plan-pass 🔴 #7 — deleting the type without this is a crate-level compile error). Edit both sites:
+  - `rust/src/lib.rs` ~L77: `pub use alpaca_streamer::{ AlpacaConfig, AlpacaPricingData, AlpacaStreaming };` (drop `AlpacaStreamingCore`).
+  - `rust/src/lib.rs` ~L119-121: `pub use markets::nasdaq::datafeeds::streaming::alpaca::{ AlpacaConfig, AlpacaPricingData, AlpacaStreaming };` (drop `AlpacaStreamingCore`).
 
-- [ ] **Step 4: Run to verify pass**
+- [ ] **Step 5: Run to verify pass**
 
 Run: `cd rust && cargo test && cargo clippy`
 Expected: PASS; the old `test_db_initialization_and_clean`/`test_subscribe_unsubscribe`/`test_alpaca_pricing_data_deserialization` tests that referenced `AlpacaStreamingCore` are removed or rewritten against the host (rewrite them to use `WebsocketStreamerHost` + `subscribe_channel`, matching `facade_tests`).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add rust/src/markets/nasdaq/datafeeds/streaming/alpaca/alpaca_streamer.rs rust/src/markets/nasdaq/datafeeds/streaming/core/host.rs
+git add rust/src/markets/nasdaq/datafeeds/streaming/alpaca/alpaca_streamer.rs rust/src/markets/nasdaq/datafeeds/streaming/core/host.rs rust/src/lib.rs
 git commit -m "feat(streaming): rewrite AlpacaStreaming as dual-mode host delegate; delete bespoke core"
 ```
 
@@ -1272,4 +1340,10 @@ Expected: `build-all` + `test-all:run` green across ts-core/ts-markets/ts-cloud.
 
 - **Spec coverage:** §4.0 → Tasks 1–5; §4.1 → Task 2; §4.2 → Tasks 6–7; §4.3/§4.5 → Task 8; §4.4 → Task 4; §4.6 → Tasks 3–4; §4.7 → Tasks 3, 8, 9; §5 → Tasks 1, 6; §6 → Tasks 5, 10; §7 → Task 11; §8 → per-task tests. All covered.
 - **Type consistency:** `CoreEvent`/`RawPricing` (Task 2) used identically in Tasks 3/7/8/9; `SubRequest` (Task 3) used in 7/8; `parse_alpaca_obj` (Task 6) used in 7; `AlpacaSubscribeOpts` (Task 8) used in 10; host helpers (`subscribe_channel`/`get_persisted_subscriptions_for_channel`/`unsubscribe_channel`/`delete_subscriptions_table`/`subscribe_channel_live`) defined Tasks 4/8 and used in 8/9.
-- **Open implementation detail for the executor:** `subscribe_channel_live` (host) is introduced in Task 8 — if the engine migration (Task 3) is done first, add it there instead; either way it sends a `SubRequest` on `sub_tx`. Flagged so it is not missed.
+- **Open implementation detail for the executor:** `subscribe_channel_live` (host) is introduced in Task 8 (sends a `SubRequest` on `sub_tx` for live in-session effect; no-op before `start()`). Resume/reconnect does **not** depend on it — the `AlpacaDriver` reads the full persisted set from redb on every connect (`load_subscriptions`, Task 7), so it is reconnect-safe.
+
+## agy plan-phase pass (ITERATE → folded)
+
+Record in `ANTIGRAVITY-TO-CLAUDE.md` → "(d) Phase 2a — plan-phase pass". Two 🔴 verified defects fixed:
+- **#4/#5 — resume/reconnect subscription loss.** The original plan pre-queued resume via `subscribe_channel_live` before `sub_tx` existed (dropped) and drained `sub_rx` only on first connect (lost on reconnect). **Fix (folded):** the redb DB is the single source of truth — `AlpacaDriver` holds the host's `Arc<Database>` handle (Task 4 adds `db_handle()`/`table_name()` + `db: Arc<Database>`) and reads the full set fresh on every `connect_once` via `load_subscriptions()` (Task 7). The facade's `subscribe()` persists to redb (resume) + sends a live `SubRequest` (immediate). Task 8 no longer pre-queues.
+- **#7 — `lib.rs` re-export.** Deleting `AlpacaStreamingCore` without removing its two `lib.rs` re-exports is a compile error → Task 8 Step 4 removes both. agy verified the other 8 tasks green (Task-2 move compile-safety, napi single-registration, optional 4th callback, NLL borrows in `start`, Finnhub parity). **Known limitation (deferred, not a 2a regression):** Finnhub still resumes via the `symbols` snapshot and loses *in-session* dynamic subs on reconnect (pre-existing Phase 1 behavior); applying the same redb-read to `FinnhubDriver` is a ROADMAP follow-up.

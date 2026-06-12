@@ -24,6 +24,11 @@ sequencing of 4 subprojects"). Five subprojects, each its own spec → plan → 
    - **Phase 2 (migrate Alpaca / Yahoo)** — port existing Alpaca and Yahoo streamers onto the shared
      `WebsocketStreamerHost` engine; unify `subscribe`/`unsubscribe`/`stop` semantics.
    - **Phase 3 (gateway)** — unified streaming gateway / fan-out layer across all providers.
+   - *Deferred (Phase 2a plan-pass, agy):* **Finnhub reconnect-resume of in-session subscriptions.** Finnhub
+     resumes from the `symbols` snapshot passed at `start()`, so dynamic subscribes added mid-session are lost
+     on reconnect (pre-existing Phase 1 behavior — not a 2a regression). Apply the same redb-fresh-read pattern
+     `AlpacaDriver` uses (driver holds the host `Arc<Database>` handle, reads persisted subs each `connect_once`)
+     to `FinnhubDriver`. Revive when Finnhub reconnect-durability matters.
 3. **(c) Integration / e2e tests** — implement the spec'd tier
    (`docs/superpowers/specs/2026-06-12-integration-tests-design.md`) over the **final** provider set, so
    no contract rework. *(Sequencing d-before-c resolves that spec's "new providers" Deferred risk.)*
