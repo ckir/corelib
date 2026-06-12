@@ -252,3 +252,117 @@ This section presents a baseline safety, lifecycle, and resource-teardown audit 
 
 Our highest-conviction recommendation is to **implement custom Drop traits on the public napi wrappers and force a sticky-backoff reset parameter**. Ensuring clean task-aborting on GC prevent resource exhaustion under high instantiation, and resolving the backoff lock establishes self-healing connectivity.
 
+---
+
+## 2026-06-12 — (d) Provider port scope (divergent)
+
+### 1. Critical Review of Candidate Scopes & S2 Lean
+
+This review performs a rigorous design-level analysis of the three proposed scopes (S1, S2, S3) and pressure-tests Claude's S2 lean ("Adopt Trait + Schema") against `corelib`'s real-world constraints, FFI boundaries, and pre-existing hardening.
+
+#### (a) Does S2's "retire the bespoke streamers" THROW AWAY the b-1 hardening?
+*   **Verdict**: **Highly Dangerous Risk of Regression**. S2 runs a severe risk of silently discarding the critical reliability fixes recently committed in subproject (b-1):
+    *   **Backoff Durations**: The backoff reset behavior [alpaca_streamer.rs:293-300](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-e2d12c41/rust/src/markets/nasdaq/datafeeds/streaming/alpaca/alpaca_streamer.rs#L293-L300) distinguishes between a pure transport failure versus a successful connection that later drops. A native trait-based engine imported from `finstream` with its generic `ReconnectPolicy` must be explicitly verified to possess this distinguishing "reset-on-first-authenticated-frame" capability, or it will re-introduce sticky one-hour reconnect locks on subsequent minor interruptions.
+    *   **Crash Propagation**: The supervisor panic-catching monitor [alpaca_streamer.rs:263-280](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-e2d12c41/rust/src/markets/nasdaq/datafeeds/streaming/alpaca/alpaca_streamer.rs#L263-L280) hooks background panic states and converts them to clean N-API `on_event("error")` callbacks. Porting a unified mpsc scheduler must not skip this callback bridge; otherwise, background thread panics in the new dispatcher will leave JS silently hanging.
+    *   **Credential Leak Prevention**: The manual `Debug` masking logic on configs [alpaca_streamer.rs:51-62](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-e2d12c41/rust/src/markets/nasdaq/datafeeds/streaming/alpaca/alpaca_streamer.rs#L51-L62) must be ported to the trait configurations, avoiding standard derived debug decorators that expose plaintext keys in the rotating logs.
+    *   **Portability Solution**: To avoid losing these fixes, the b-1 hardening details must be codified as an explicit "Engine Hardening Checklist" that the generic `ProviderDriver` trait execution harness is audited against.
+
+#### (b) The FFI/JS Contract Break & Integration Compatibility
+*   **Verdict**: **High Disruption & Spec Invalidation**. S2's plan to replace the per-provider FFI surface (e.g. `coreFFI.AlpacaStreaming`, `coreFFI.YahooStreaming`) with a unified native stream completely invalidates the current JS consumer layer and the integration test design:
+    *   The newly approved integration spec [docs/2026-06-12-integration-tests-design.md:L50-L54](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-e2d12c41/docs/superpowers/specs/2026-06-12-integration-tests-design.md#L50-L54) specifies that `ts-markets` integration tests consume the individual native classes in raw node runtimes. Section [5.4](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-e2d12c41/docs/superpowers/specs/2026-06-12-integration-tests-design.md#L129-L135) directly names `coreFFI.AlpacaStreaming` and `coreFFI.YahooStreaming`.
+    *   If the FFI layer is flattened into a single unified stream, `ts-markets` streaming setup must be entirely rewritten. The integration tests would need a brand-new mocking harness and a redesigned contract matrix before the original layout is even run, violating the "zero-rework" sequencing goal.
+
+#### (c) redb Subscription Persistence Regression
+*   **Verdict**: **Feature Regression**. In `corelib`, a critical robustness feature is that the Rust streamers autonomously initialize an exclusive `redb` database [alpaca_streamer.rs:181-208](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-e2d12c41/rust/src/markets/nasdaq/datafeeds/streaming/alpaca/alpaca_streamer.rs#L181-L208). They load/store active subscriptions to this local DB so that if a process crashes and restarts, it automatically resumes streams for previously active tickers without needing downstream JS state tracking.
+    *   `finstream`'s trait client relies on in-memory channel orchestration and has no persistence. Dropping corelib's `redb` support is a severe regression. Any porting attempt must retain or re-engineer the subscription persistence layer.
+
+#### (d) Is S2 too big for ONE spec?
+*   **Verdict**: **Yes; Phasing is Mandatory**. S2 covers: defining the trait core, porting the schema, implementing three separate websocket adapters, adjusting the FFI, and rewriting JS wrappers. Attempting this in a single spec introduces too many concurrent variables. It should be partitioned into a multi-phased roadmap to maintain a working build at every commit.
+
+#### (e) Does the unified MarketEvent schema fit corelib's existing consumers & conventions?
+*   **Verdict**: **Uncomfortable Fit / Breakage**. S2's proposed unified `MarketEvent` (Trade/Quote/Status with polymorphic provider extras) forces standard flat JS consumers to receive deeply nested, variant-tagged objects. For example, [AlpacaStreaming.ts:L31-L39](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-e2d12c41/ts-markets/src/nasdaq/datafeeds/streaming/alpaca/AlpacaStreaming.ts#L31-L39) directly subscribes back to structural `AlpacaPricingData` [alpaca_streamer.rs:66-82](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-e2d12c41/rust/src/markets/nasdaq/datafeeds/streaming/alpaca/alpaca_streamer.rs#L66-L82).
+    *   Changing the callback payloads instantly breaks the pricing pipeline downstream in `ts-markets`' consumers.
+    *   Additionally, the §1 strict-logging convention requires that child loggers are structured. Injecting polymorphic, nested provider-extras into common logging fields is highly complex over N-API.
+
+---
+
+### 2. Creative Improvement: "S2.5 — Trait-Backed Engine with Back-Compat FFI / TS Facade"
+
+To reap all architectural benefits of **S2** (unified internal traits, normalized schema, shared reconnection/jitter scheduler, clean Finnhub integration) while guaranteeing **zero broken contracts and zero integration test rework**, we propose a decomposed scope: **S2.5**.
+
+```mermaid
+graph TD
+    %% Define styles
+    classDef ts fill:#2d79c7,stroke:#1a4d80,color:#fff;
+    classDef rust fill:#dea584,stroke:#8b4f30,color:#000;
+    classDef db fill:#415a77,stroke:#1b263b,color:#fff;
+
+    subgraph TS_Layer ["ts-markets / TS Consumers"]
+        Alpha["AlpacaStreaming (TS Wrapper)"]:::ts
+        Beta["YahooStreaming (TS Wrapper)"]:::ts
+        Gamma["FinnhubStreaming (TS Wrapper)"]:::ts
+    end
+
+    subgraph FFI_Boundary ["N-API FFI & Rust Core"]
+        A_FFI["AlpacaStreaming (N-API class)"]:::rust
+        Y_FFI["YahooStreaming (N-API class)"]:::rust
+        F_FFI["FinnhubStreaming (N-API class)"]:::rust
+
+        subgraph Core_Engine ["Unified Engine (Internal Rust)"]
+            TraitEngine["Shared Driver Core<br>ReconnectPolicy + Panic Monitor"]:::rust
+            A_Driver["AlpacaDriver<br>(implements ProviderDriver)"]:::rust
+            Y_Driver["YahooDriver<br>(implements ProviderDriver)"]:::rust
+            F_Driver["FinnhubDriver<br>(implements ProviderDriver)"]:::rust
+        end
+    end
+
+    subgraph Persistence_Layer ["Local Persistence"]
+        DB["redb Database Instance"]:::db
+    end
+
+    %% Wiring
+    Alpha --> A_FFI
+    Beta --> Y_FFI
+    Gamma --> F_FFI
+
+    A_FFI -->|Spawn / DB State| A_Driver
+    Y_FFI -->|Spawn / DB State| Y_Driver
+    F_FFI -->|Spawn| F_Driver
+
+    A_Driver & Y_Driver & F_Driver -.->|Register & Drive| TraitEngine
+    A_Driver -.->|Read/Write Tickers| DB
+    Y_Driver -.->|Read/Write Tickers| DB
+
+    %% Mapping Back to Back-Compat
+    TraitEngine -->|Normalized Event| A_FFI
+    TraitEngine -->|Normalized Event| Y_FFI
+    TraitEngine -->|Normalized Event| F_FFI
+
+    A_FFI -->|Flat AlpacaPricingData| Alpha
+    Y_FFI -->|Flat YahooPricingData| Beta
+    F_FFI -->|Flat FinnhubPricingData| Gamma
+```
+
+#### Core Architectural Mechanics of S2.5:
+1.  **Shared Internal Driver Trait**: Introduce the clean `ProviderDriver` trait internally inside the Rust core, alongside the unified `MarketEvent` enum in `rust/src/markets/nasdaq/datafeeds/streaming/core/`.
+2.  **Shared Reconnection Engine**: Pull in finstream's `ReconnectPolicy` as a modular scheduler, hardened with the b-1 backoff reset on successful auth and randomized jitter.
+3.  **Back-Compat N-API Interface**: Retain the exact existing N-API struct wrappers (`AlpacaStreaming`, `YahooStreaming`) and their matching public TS classes.
+4.  **Database-Aware Driver Wrapper**: Internally, the N-API `AlpacaStreaming` class manages the `redb` file isolation and is responsible for loading/storing subscriptions. It spawns the unified `AlpacaDriver` over the shared trait core, and maps the internal Rust `MarketEvent::Trade` / `MarketEvent::Quote` back into the flat, legacy `AlpacaPricingData` payload before sending it to the existing Threadsafe Functions (TSFNs).
+5.  **Clean Finnhub Addition**: Add `FinnhubDriver` natively under the trait, exposing it via a clean `FinnhubStreaming` FFI and JS class matching the design style of `AlpacaStreaming`.
+
+#### Missing Prerequisites Flagged:
+*   **FFI Translation Layer**: We must design the specific Rust-to-JS event mapper. If `MarketEvent` has varied payload shapes, Rust must cleanly deserialize/flatten them before crossing N-API boundaries to avoid heavy V8 parsing of complex structures.
+*   **Symbol Scope Discrepancy**: We must verify if `finstream`'s providers match corelib's symbology requirements (e.g. Nasdaq-specific tickers and security classes) before relying on its raw feeds.
+
+---
+
+### 3. Highest-Conviction Recommendation
+
+**We strongly recommend Scope S2.5 (Decomposed Trait-backed Engine with Back-Compat Facades), delivered across 3 phases.**
+
+*   **Reasoning**: It captures 100% of the architectural elegance and code de-duplication of Claude's **S2** while ensuring **zero contract breaks** for downstream TS consumers and **zero rework** for the approved integration-test spec. It explicitly preserves the hard-earned b-1 database isolation and backoff fixes by integrating them directly into the common driver scheduler.
+*   **Phasing**:
+    *   **Phase 1**: Port internally the `ProviderDriver` trait, unified `MarketEvent` schema, and generic reconnection scheduler. Implement and expose **Finnhub** as the pilot provider.
+    *   **Phase 2**: Reimplement Alpaca and Yahoo internally to implement `ProviderDriver`, wrapping them in the back-compat N-API/redb host layer to keep TS bindings fully stable.
+    *   **Phase 3**: Optional final unification. Once the integration tests are fully deployed and stable, deprecate the individual TS wrappers and introduce a multiplexed stream gateway if product requirements demand it.
+
