@@ -4,6 +4,30 @@ Durable backlog of deferred ideas and follow-ups. Per `AGENTS.md` → "Working w
 deferred Antigravity suggestions and YAGNI'd scope land here (or in a spec's "Deferred" section) rather
 than being lost. One bullet per item: what, why deferred, and the trigger that should revive it.
 
+## Active roadmap (sequenced)
+
+Decided 2026-06-12 (user + Claude + agy divergent pass — see `ANTIGRAVITY-TO-CLAUDE.md` "Roadmap
+sequencing of 4 subprojects"). Five subprojects, each its own spec → plan → implementation cycle:
+
+1. **(b-1) Baseline FFI audit** — focused agy review of the existing `corelib-rust` N-API/FFI boundary,
+   async runtime, and the shared integration-test harness, *before* heavy provider porting lands on it.
+   Cheap insurance against compounding tokio panics / leaks on an unaudited base.
+2. **(d) Port finstream providers** — bring Alpaca / Finnhub / Yahoo from `finstream`
+   (`C:/Users/user/Development/Rust/finstream`, Rust + napi) into corelib's Rust core + FFI under a
+   unified `Trade`/`Quote`/`Status` schema (adds **Finnhub**). New code self-instruments per AGENTS.md §12.
+3. **(c) Integration / e2e tests** — implement the spec'd tier
+   (`docs/superpowers/specs/2026-06-12-integration-tests-design.md`) over the **final** provider set, so
+   no contract rework. *(Sequencing d-before-c resolves that spec's "new providers" Deferred risk.)*
+4. **(a) Trace / flight-recording retro-instrumentation** — apply AGENTS.md §12 to legacy modules so
+   `LOG_LEVEL=trace` lets an AI agent debug from logs alone. Done *after* (c) so the integration suite is
+   the safety net for this large sweeping refactor (user-approved placement).
+5. **(b-2) Capstone global audit** — full correctness / architecture / edge-case review over the
+   complete, tested, instrumented monorepo.
+
+*Rationale for the order:* (d) before (c) avoids testing a soon-to-change provider surface; (a) after (c)
+gives the risky logging sweep a test net; (b) split into a thin baseline (b-1) + capstone (b-2) rather
+than one global audit.
+
 ## Testing
 
 - **Artifact / `dist` black-box smoke layer for integration tests** — build all packages and import each
