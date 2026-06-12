@@ -13,10 +13,12 @@ vi.mock("@ckir/corelib", () => {
 		on_log: any;
 		on_pricing: any;
 		on_event: any;
-		constructor(on_log: any, on_pricing: any, on_event: any) {
+		on_market: any;
+		constructor(on_log: any, on_pricing: any, on_event: any, on_market: any) {
 			this.on_log = on_log;
 			this.on_pricing = on_pricing;
 			this.on_event = on_event;
+			this.on_market = on_market;
 		}
 		init = vi.fn().mockResolvedValue(undefined);
 		start = vi.fn().mockImplementation(async () => {
@@ -93,12 +95,24 @@ describe("AlpacaStreaming (Exhaustive)", () => {
 		expect(connectedSpy).toHaveBeenCalled();
 	});
 
-	it("should forward subscribe and unsubscribe", async () => {
+	it("should forward subscribe(array) as { quotes: array } to FFI", async () => {
 		await stream.subscribe(["AAPL", "TSLA"]);
-		expect(mockRust.subscribe).toHaveBeenCalledWith(["AAPL", "TSLA"]);
+		expect(mockRust.subscribe).toHaveBeenCalledWith({ quotes: ["AAPL", "TSLA"] });
+	});
 
+	it("should forward subscribe(opts object) unchanged to FFI", async () => {
+		await stream.subscribe({ trades: ["MSFT"] });
+		expect(mockRust.subscribe).toHaveBeenCalledWith({ trades: ["MSFT"] });
+	});
+
+	it("should forward unsubscribe(array) as { quotes: array } to FFI", async () => {
 		await stream.unsubscribe(["TSLA"]);
-		expect(mockRust.unsubscribe).toHaveBeenCalledWith(["TSLA"]);
+		expect(mockRust.unsubscribe).toHaveBeenCalledWith({ quotes: ["TSLA"] });
+	});
+
+	it("should forward unsubscribe(opts object) unchanged to FFI", async () => {
+		await stream.unsubscribe({ bars: ["SPY"] });
+		expect(mockRust.unsubscribe).toHaveBeenCalledWith({ bars: ["SPY"] });
 	});
 
 	it("should forward clean and stop", async () => {
@@ -161,5 +175,20 @@ describe("AlpacaStreaming (Exhaustive)", () => {
 		await s.start();
 		expect((s as any).rust.init).toHaveBeenCalled();
 		expect((s as any).rust.start).toHaveBeenCalled();
+	});
+
+	it("emits 'market' when the unified 4th callback fires", () => {
+		const marketSpy = vi.fn();
+		stream.on("market", marketSpy);
+
+		const payload = { type: "trade", ticker: "AAPL" };
+		mockRust.on_market(null, JSON.stringify(payload));
+
+		expect(marketSpy).toHaveBeenCalledWith(payload);
+	});
+
+	it("should not throw when 'market' callback receives invalid JSON", () => {
+		// The implementation silently swallows parse errors
+		expect(() => mockRust.on_market(null, "not-valid-json")).not.toThrow();
 	});
 });
