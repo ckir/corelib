@@ -745,3 +745,100 @@ This section performs a rigorous, pre-implementation architectural review of the
 
 If I were executing this migration, I would extend [MarketEvent](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-ee4ba9ba/rust/src/markets/nasdaq/datafeeds/streaming/core/schema.rs#L74-L84) to natively support first-class `Quote`, `Bar`, and boxed `YahooSnapshot` variants. I would house pings and silence thresholds inside each driver's respective `connect_once` select! loops, returning `AttemptOutcome::ConnectedThenDropped` on silence timeouts is optimal for quick, self-healing backoff resets. I would split work into two pristine PRs—first migrating the JSON actions of Alpaca (2a) before addressing the binary Protobuf mapping of Yahoo (2b)—and delete all obsolete callback and core traits, transforming the native binaries to consume the flat `WebsocketStreamerHost` directly. Finally, I would append a public `.delete_subscriptions_table()` method to the host to facilitate backend-driven table cleanups cleanly.
 
+---
+
+## 2026-06-12 — (d) Phase 2 — DUAL-MODE emission: divergent design pass
+
+### 1. Architectural Review of Dual-Mode Mechanics & Verification
+
+This review analyzes the core mechanics of Phase 2's Dual-Mode emission. We evaluate the layout under strict architectural constraints to guarantee lossless transmission of provider-specific raw telemetry, seamless integration of the finstream unified schema, and zero-leak layering boundaries.
+
+#### 🔴 Blocker — Loss of Domain Telemetry in Yahoo Unified Extras (Lossless RAW constraint)
+* **Design Area**: [types.rs](file:///C:/Users/user/Development/Rust/finstream/crates/core/src/types.rs) & `JsPricingData`
+* **Verification**: [VERIFIED]
+* **Issue**: finstream's unified `YahooTradeExtras` and `YahooQuoteExtras` carry ~16 fields (e.g., timezone, exchange_name, market_state). However, the raw proto-decoded `JsPricingData` of Yahoo contains 33 separate fields, including highly specialized options and cryptocurrency data parameters (e.g., `strike_price`, `open_interest`, `option_type`, `mini_option`, `vol_24hr`, `vol_all_currencies`, `circulating_supply`). Since these options/crypto-specific fields are fully dropped when mapping to the unified `MarketEvent`, **it is mathematically impossible to reconstruct lossless RAW Yahoo data from a unified `MarketEvent`**. Carrying only `MarketEvent` across the core channel and attempting to lazily parse raw data on the JS/N-API boundary (as in 1b) is a hard blocker because the original Yahoo payload is a binary Protobuf structure, not JSON, meaning we cannot easily round-trip or re-extract fields.
+* **Concrete Fix**: Adopt **Fork 1 (1d) / CoreEvent Channel Payload**. Enforce that the shared engine's internal Rust communication channel carries a rich `CoreEvent` enum:
+  ```rust
+  pub enum CoreEvent {
+      Status(ProviderStatus),
+      Pricing {
+          raw: DecodedPayload,
+          uni: MarketEvent,
+      }
+  }
+  ```
+  Both the raw payload and the unified payload are constructed *once* within the driver's decoder task when the raw bytes are fresh and decoded. This eliminates reconstruction attempts on the N-API boundary and guarantees lossless RAW propagation while fulfilling the dual-mode objective.
+
+#### 🟡 Should-Fix — Macro Inversion of FFI/N-API Attributes into Shared Core
+* **Design Area**: `napi-rs` schema boundary and [schema.rs](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-69f0211b/rust/src/markets/nasdaq/datafeeds/streaming/core/schema.rs)
+* **Verification**: [VERIFIED]
+* **Issue**: If core-side structures (e.g., `AlpacaPricingData`, `JsPricingData`, or `MarketEvent`) import or utilize `#[napi(object)]` or direct `napi` procedural macros, it introduces a severe layering violation. The shared core Rust engine (`corelib-rust`) would become tightly coupled to the N-API JavaScript execution environment, breaking standard Rust compilation boundaries, blocking clean native-binary execution under standalone CLI tools (such as standard stdout streaming utilities), and preventing modular unit testing in pure Rust without V8 context.
+* **Concrete Fix**: Keep all core-side structures as pure Rust structures (wrapped under a clean `core::types` module) completely free of N-API macro pollution. Decorate and declare matching N-API-safe structs strictly inside the N-API boundary (e.g., `rust/src/lib.rs` / `napi` facade files). The N-API wrapper layer is solely responsible for receiving pure Rust structures from the channel and wrapping or mapping them to their corresponding JS objects.
+
+---
+
+### 2. Open Forks Resolution & Decisions
+
+#### Fork 1: Core Channel Payload Shape for Lossless RAW & Verbatim UNI
+* **Recommendation**: **(1d) Channel carries the hybrid enum `CoreEvent { Status(ProviderStatus), Pricing { raw: DecodedPayload, uni: MarketEvent } }`**.
+* **Reasoning**:
+  - **Lossless Telemetry**: It guarantees that raw, proto-decoded, and provider-specific fields are preserved directly from the parsing source without lossy serialization cycles (which resolves the Yahoo 33-field to 16-field drop constraint).
+  - **Single Parsing Pass Engine**: Since decoding and unified mapping happen inside the driver's Tokio task as soon as the message arrives on the websocket (e.g. from Alpaca or Yahoo), the payload is constructed exactly once.
+  - **Resolving Layering Inversion**: To prevent compiler pollution, the raw provider payload structs (e.g. `AlpacaPricingData`, `JsPricingData`, `FinnhubPricingData`) must live inside a neutral core-side submodule (e.g. `rust/src/markets/nasdaq/datafeeds/streaming/core/types.rs`), separate from any N-API attributes. The napi facade receives these types from the channel, maps/expresses them under its local `#[napi(object)]` wrappers, and delegates dual-mode emission cleanly.
+  - *Why not 1a?* (1a) places the mapping/unified logic inside the FFI facade or forces polymorphic containers (`serde_json::Value`), which are error-prone and introduce domain leakage outside the streaming engine.
+  - *Why not 1b?* Round-tripping binary Yahoo Protobuf fields through an `Option<String>` raw field is extremely slow and mathematically lossy.
+  - *Why not 1c?* Stuffing 33 fields into the unified `MarketEvent` extras breaks the "uni == finstream verbatim" mandate, bloats standard unified types with provider-specific crypto parameters, and breaks direct upstream alignment.
+
+#### Fork 2: FFI Surface for the Unified Stream
+* **Recommendation**: **(2a) Add an optional 4th callback `on_market_event(json: String)` to Alpaca/Yahoo/Finnhub constructors**.
+* **Reasoning**:
+  - **Perfect Backward Compatibility**: Adding an optional 4th parameter preserves the byte-identity of the existing three-callback constructor callbacks, preventing regressions in third-party and legacy market consumers.
+  - **Bypassing N-API Tagged Enum Limitations**: Exporting Rust enums with rich, varying variants (like `MarketEvent`'s `Trade` vs `Quote` vs `Status`) through napi-rs to TS/JS is highly complex and results in heavy runtime wrapper boilerplate. Passing a serialized JSON string bypasses this bottleneck.
+  - **TS Integration**: The TypeScript wrapper receives this JSON, parses it, and emits it on an EventEmitter instance. The TS emitter should register under the event name **`"market"`** (e.g., `this.emit("market", parsedModel)`), which remains isolated and highly intuitive.
+
+#### Fork 3: Retrofit Finnhub Stream with Unified Dual-Mode
+* **Recommendation**: **YES, Retrofit Finnhub with the unified event emission**.
+* **Reasoning**: Finnhub already constructs `MarketEvent::Trade` internally under the hood. Linking this to an active `on_market_event` callback is exceptionally simple, costing nearly zero line additions. Extending this guarantees absolute three-provider interface parity, preventing architectural divergence across our core streaming clients.
+
+#### Fork 4: Task Structuring & Finstream Schema Integration
+* **Recommendation**: **Deploy a dedicated Phase 2a-0 Shared Core Schema Foundation Task up front**.
+* **Reasoning**:
+  - Porting the full `finstream` schema (`Quote`, extras structs, Custom Serialize flattening) down to `core/schema.rs` prior to altering active driver loops separates raw type-system refactoring from physical networking and concurrency code.
+  - This prevents PR size explosion, simplifies review paths, and ensures both Alpaca (2a) and Yahoo (2b) can implement their logic on a stable, compile-checked type contract.
+  - To prevent compilation warnings of unused structs (like Yahoo extras during Alpaca implementation), utilize module-level `#[allow(dead_code)]` annotations, which are cleanly resolved once 2b goes live.
+
+---
+
+### 3. Ultimate Architect's Synthesis
+
+If I were implementing this dual-mode streaming client, I would establish the data flow as follows:
+
+```mermaid
+sequenceDiagram
+    participant WS as WebSocket Endpoint
+    participant DR as Provider Driver (Rust Tokio Task)
+    participant CH as Core Channel (mpsc::Sender)
+    participant FA as N-API Facade / Host (N-API Boundary)
+    participant TS as TS Wrapper / Consumers
+
+    WS->>DR: Receive packet bytes (JSON text or Proto binary)
+    rect rgb(240, 240, 250)
+        Note over DR: Decode raw payload (AlpacaPricingData / JsPricingData)<br/>Map decoded payload to unified verbatim MarketEvent
+    end
+    DR->>CH: Send CoreEvent::Pricing { raw, uni }
+    CH->>FA: Receive CoreEvent
+    rect rgb(250, 240, 240)
+        Note over FA: If raw pricing callback provided: convert core raw to napi struct<br/>If unified callback provided: serialize MarketEvent to JSON string
+    end
+    FA->>TS: Invoke on_pricing(napi_raw) [Raw Direct Emit]
+    FA->>TS: Invoke on_market_event(json_string) [Unified Dual-Mode Emission]
+    TS->>TS: Parse JSON & emit "market" event
+```
+
+**Streamlined Blueprint**:
+1. **Decode**: The background driver reads message bytes, decodes the complete raw payload (e.g., 33-field `JsPricingData`), and maps the targeted fields into the verbatim `finstream` `MarketEvent` (e.g., `MarketEvent::Quote` containing 16-field `YahooQuoteExtras`).
+2. **Dispatch**: The driver bundles both structs in a non-generic `CoreEvent::Pricing` wrapper and sends it down the core shared channel.
+3. **Pumping & Translation**: The N-API host layer loops over the channel messages. It pushes `raw` fields directly into the existing `on_pricing` thread-safe functions, maintaining perfect typed native bindings. If the optional `on_market_event` callback was registered, the host serializes `uni` using `serde_json::to_string` on-the-fly and fires it as a fast JSON string callback.
+4. **TS Layer**: The TS EventEmitter captures the JSON string, parses it back to a robust TypeScript typed object, and acts as the final multiplexing boundary (emitting `"pricing"` with raw data, and `"market"` with unified data).
+
+
