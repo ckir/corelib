@@ -20,6 +20,7 @@ use tokio::sync::{mpsc, Mutex};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 use crate::{EventRecord, LogRecord};
+pub use crate::markets::nasdaq::datafeeds::streaming::core::types::AlpacaPricingData;
 
 /// The default production WebSocket URL for the Alpaca IEX data stream.
 const DEFAULT_ALPACA_WS_URL: &str = "wss://stream.data.alpaca.markets/v2/iex";
@@ -62,26 +63,6 @@ impl std::fmt::Debug for AlpacaConfig {
             )
             .finish()
     }
-}
-
-/// A unified representation of Alpaca pricing data, consolidating Trades, Quotes, and Bars.
-#[napi(object)]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AlpacaPricingData {
-    /// The ticker symbol of the instrument (e.g., "AAPL").
-    pub symbol: String,
-    /// The type of data received ("quote", "trade", "bar").
-    pub message_type: String,
-    /// The primary price (last trade price, close price for bars, or bid price for quotes).
-    pub price: f64,
-    /// The current bid price (applicable for quotes).
-    pub bid_price: f64,
-    /// The current ask price (applicable for quotes).
-    pub ask_price: f64,
-    /// The volume associated with the event.
-    pub volume: f64,
-    /// The timestamp provided by the Alpaca exchange.
-    pub timestamp: String,
 }
 
 /// A generic trait for handling Alpaca streamer callbacks.

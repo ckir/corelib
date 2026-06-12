@@ -2,19 +2,7 @@
 use crate::markets::nasdaq::datafeeds::streaming::core::schema::{MarketEvent, Trade, TradeExtras};
 use napi_derive::napi;
 use serde::{Deserialize, Serialize};
-
-/// Flat per-provider pricing payload sent to JS `on_pricing` (mirrors AlpacaPricingData shape;
-/// Finnhub timestamps are numeric epoch ms, so `timestamp` is f64).
-#[napi(object)]
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-pub struct FinnhubPricingData {
-    pub symbol: String,
-    pub message_type: String,
-    pub price: f64,
-    pub volume: f64,
-    pub timestamp: f64,
-    pub conditions: Option<Vec<String>>,
-}
+pub use crate::markets::nasdaq::datafeeds::streaming::core::types::FinnhubPricingData;
 
 /// Map a MarketEvent::Trade to the flat FinnhubPricingData. Returns None for non-pricing events.
 pub fn market_event_to_finnhub_pricing(ev: &MarketEvent) -> Option<FinnhubPricingData> {
