@@ -89,6 +89,16 @@ pub mod markets {
                         YahooStreamingCore,
                     };
                 }
+                /// Shared trait-backed streaming engine (driver trait, schema, reconnect, supervisor, host).
+                pub mod core;
+                /// Finnhub streaming provider (pilot for the shared engine).
+                #[cfg(feature = "finnhub")]
+                pub mod finnhub {
+                    /// FinnhubDriver implementing the shared ProviderDriver contract.
+                    pub mod finnhub_driver;
+                    /// FinnhubStreaming N-API facade + flat payload + mapper.
+                    pub mod finnhub_streamer;
+                }
             }
         }
     }
@@ -114,3 +124,7 @@ pub use markets::nasdaq::datafeeds::streaming::alpaca::{
 pub use markets::nasdaq::datafeeds::streaming::yahoo::{
     EventRecord, LogRecord, RustCallbacks, YahooConfig, YahooStreaming, YahooStreamingCore,
 };
+
+// TODO(task 9): uncomment once finnhub_streamer defines these
+// #[cfg(feature = "finnhub")]
+// pub use markets::nasdaq::datafeeds::streaming::finnhub::finnhub_streamer::{FinnhubStreaming, FinnhubConfig, FinnhubPricingData};
