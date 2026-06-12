@@ -126,4 +126,6 @@ pub use markets::nasdaq::datafeeds::streaming::yahoo::{
 };
 
 #[cfg(feature = "finnhub")]
-pub use markets::nasdaq::datafeeds::streaming::finnhub::finnhub_streamer::{FinnhubStreaming, FinnhubConfig, FinnhubPricingData};
+pub use markets::nasdaq::datafeeds::streaming::finnhub::finnhub_streamer::{
+    FinnhubConfig, FinnhubPricingData, FinnhubStreaming,
+};

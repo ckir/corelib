@@ -103,14 +103,16 @@ mod tests {
 
 // ─── Task 9: FinnhubStreaming N-API facade ────────────────────────────────────
 
-use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use crate::{EventRecord, LogRecord};
-use crate::markets::nasdaq::datafeeds::streaming::core::host::{unique_db_path, WebsocketStreamerHost};
+use crate::markets::nasdaq::datafeeds::streaming::core::host::{
+    unique_db_path, WebsocketStreamerHost,
+};
 use crate::markets::nasdaq::datafeeds::streaming::core::reconnect::ReconnectPolicy;
 use crate::markets::nasdaq::datafeeds::streaming::core::schema::{ProviderKind, ProviderStatus};
 use crate::markets::nasdaq::datafeeds::streaming::finnhub::finnhub_driver::FinnhubDriver;
+use crate::{EventRecord, LogRecord};
+use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 /// Configuration for the Finnhub streaming facade. Token masked in Debug output.
 #[napi(object)]
@@ -215,7 +217,7 @@ impl FinnhubStreaming {
             name: g.name.clone(),
         };
         let symbols = g.host.get_persisted_subscriptions(); // resume-on-restart (redb)
-        // Arc-clone the TSFNs so the pump closure can hold them (TSFN is Send+Sync, not Clone).
+                                                            // Arc-clone the TSFNs so the pump closure can hold them (TSFN is Send+Sync, not Clone).
         let on_pricing = Arc::clone(&self.on_pricing);
         let on_event = Arc::clone(&self.on_event);
         g.host.start(
@@ -262,9 +264,11 @@ impl FinnhubStreaming {
         Ok(())
     }
 
-    /// Phase 1: live unsubscribe through the driver is deferred to Phase 2 (kept for API parity).
+    /// Removes `symbols` from the persisted set (so they don't resume on restart). Live
+    /// WS-unsubscribe through the driver is deferred to Phase 2.
     #[napi]
-    pub async fn unsubscribe(&self, _symbols: Vec<String>) -> napi::Result<()> {
+    pub async fn unsubscribe(&self, symbols: Vec<String>) -> napi::Result<()> {
+        self.inner.lock().await.host.unsubscribe(symbols).await;
         Ok(())
     }
 

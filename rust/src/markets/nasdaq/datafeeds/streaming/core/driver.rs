@@ -1,6 +1,6 @@
 //! The single-attempt provider driver contract. The supervisor owns the reconnect loop.
-use tokio::sync::mpsc;
 use crate::markets::nasdaq::datafeeds::streaming::core::schema::MarketEvent;
+use tokio::sync::mpsc;
 
 /// Outcome of one connection attempt, used by the supervisor to decide the next action.
 #[allow(dead_code)] // used by drivers/supervisor in later tasks
@@ -25,7 +25,9 @@ pub enum AttemptOutcome {
 #[allow(dead_code)] // used by drivers/supervisor in later tasks
 pub trait ProviderDriver: Send + Sync + 'static {
     /// Validate config (keys present, etc.) before the first attempt.
-    fn validate(&self) -> Result<(), String> { Ok(()) }
+    fn validate(&self) -> Result<(), String> {
+        Ok(())
+    }
 
     /// Perform ONE connection attempt: connect, (auth), subscribe `symbols`, apply live
     /// `sub_rx` updates, push `MarketEvent`s to `tx` (including `Status::Connected` on success),

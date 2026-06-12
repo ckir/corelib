@@ -587,6 +587,7 @@ if (!nativeBinding) {
 
 module.exports = nativeBinding
 module.exports.AlpacaStreaming = nativeBinding.AlpacaStreaming
+module.exports.FinnhubStreaming = nativeBinding.FinnhubStreaming
 module.exports.YahooStreaming = nativeBinding.YahooStreaming
 module.exports.getVersion = nativeBinding.getVersion
 module.exports.logAndDouble = nativeBinding.logAndDouble

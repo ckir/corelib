@@ -18,6 +18,34 @@ export declare class AlpacaStreaming {
   stop(): Promise<void>
 }
 
+/**
+ * N-API facade for Finnhub real-time trade streaming.
+ * Mirrors `AlpacaStreaming` exactly: 3-callback constructor, config via `async init`,
+ * `&self` methods with interior mutability (`Arc<Mutex<FinnhubInner>>`).
+ *
+ * `ThreadsafeFunction` does not implement `Clone`; we wrap each in `Arc` so the pump
+ * closure can hold a cheap reference counted copy (same underlying napi handle).
+ */
+export declare class FinnhubStreaming {
+  /**
+   * Constructs a new `FinnhubStreaming` with the three JS callback functions.
+   * Order matches `AlpacaStreaming`: (on_log, on_pricing, on_event).
+   */
+  constructor(onLog: ((err: Error | null, arg: LogRecord) => any), onPricing: ((err: Error | null, arg: FinnhubPricingData) => any), onEvent: ((err: Error | null, arg: EventRecord) => any))
+  /** Set token/name (token falls back to `FINNHUB_API_KEY` env var). */
+  init(config: FinnhubConfig): Promise<void>
+  /** Start streaming; resumes any persisted subscriptions (redb) as the initial symbol set. */
+  start(): Promise<void>
+  /** Subscribe to additional symbols (persisted to redb + sent live to the driver). */
+  subscribe(symbols: Array<string>): Promise<void>
+  /** Phase 1: live unsubscribe through the driver is deferred to Phase 2 (kept for API parity). */
+  unsubscribe(symbols: Array<string>): Promise<void>
+  /** Gracefully stops the streaming supervisor. */
+  stop(): Promise<void>
+  /** Dev-mode parity with `AlpacaStreaming.clean()` — Phase 1 no-op. */
+  clean(): Promise<void>
+}
+
 /** N-API wrapper for the price streamer, enabling its use in JavaScript environments. */
 export declare class YahooStreaming {
   /** Constructs a new `YahooStreaming` instance with the provided JavaScript callback functions. */
@@ -74,6 +102,25 @@ export interface EventRecord {
   type: string
   /** Optional metadata or error message associated with the event. */
   data?: string
+}
+
+/** Configuration for the Finnhub streaming facade. Token masked in Debug output. */
+export interface FinnhubConfig {
+  token?: string
+  name?: string
+}
+
+/**
+ * Flat per-provider pricing payload sent to JS `on_pricing` (mirrors AlpacaPricingData shape;
+ * Finnhub timestamps are numeric epoch ms, so `timestamp` is f64).
+ */
+export interface FinnhubPricingData {
+  symbol: string
+  messageType: string
+  price: number
+  volume: number
+  timestamp: number
+  conditions?: Array<string>
 }
 
 /**

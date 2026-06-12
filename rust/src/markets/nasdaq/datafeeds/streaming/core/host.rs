@@ -1,12 +1,14 @@
 //! Generic FFI coordination host shared by all provider facades.
-use std::sync::atomic::{AtomicU64, Ordering};
-use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
-use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
 use crate::markets::nasdaq::datafeeds::streaming::core::driver::ProviderDriver;
 use crate::markets::nasdaq::datafeeds::streaming::core::reconnect::ReconnectPolicy;
-use crate::markets::nasdaq::datafeeds::streaming::core::schema::{MarketEvent, ProviderKind, ProviderStatus};
+use crate::markets::nasdaq::datafeeds::streaming::core::schema::{
+    MarketEvent, ProviderKind, ProviderStatus,
+};
 use crate::markets::nasdaq::datafeeds::streaming::core::supervisor::run_supervisor;
+use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
+use std::sync::atomic::{AtomicU64, Ordering};
+use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 
 static INSTANCE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -136,6 +138,21 @@ impl WebsocketStreamerHost {
         }
         if let Some(tx) = &self.sub_tx {
             let _ = tx.send(symbols).await;
+        }
+    }
+
+    /// Remove `symbols` from the persisted subscription set so they do not resurrect on restart.
+    /// (Phase 1: live WS-unsubscribe through the driver is deferred to Phase 2; this keeps redb
+    /// consistent with developer intent — agy convergent 🟢.)
+    pub async fn unsubscribe(&self, symbols: Vec<String>) {
+        let table: TableDefinition<&str, bool> = TableDefinition::new(self.table);
+        if let Ok(wtx) = self.db.begin_write() {
+            if let Ok(mut t) = wtx.open_table(table) {
+                for s in &symbols {
+                    let _ = t.remove(s.as_str());
+                }
+            }
+            let _ = wtx.commit();
         }
     }
 }

@@ -48,7 +48,12 @@ mod tests {
     use super::*;
     #[test]
     fn grows_exponentially_and_caps() {
-        let p = ReconnectPolicy { initial_delay: Duration::from_secs(5), max_delay: Duration::from_secs(60), jitter: false, ..Default::default() };
+        let p = ReconnectPolicy {
+            initial_delay: Duration::from_secs(5),
+            max_delay: Duration::from_secs(60),
+            jitter: false,
+            ..Default::default()
+        };
         assert_eq!(p.next_delay(0), Duration::from_secs(5));
         assert_eq!(p.next_delay(1), Duration::from_secs(10));
         assert_eq!(p.next_delay(2), Duration::from_secs(20));
@@ -56,13 +61,26 @@ mod tests {
     }
     #[test]
     fn jitter_stays_in_half_to_full_range() {
-        let p = ReconnectPolicy { initial_delay: Duration::from_secs(10), max_delay: Duration::from_secs(60), jitter: true, ..Default::default() };
+        let p = ReconnectPolicy {
+            initial_delay: Duration::from_secs(10),
+            max_delay: Duration::from_secs(60),
+            jitter: true,
+            ..Default::default()
+        };
         let d = p.next_delay(0).as_secs_f64();
-        assert!(d >= 5.0 && d <= 10.0, "jittered delay {d} out of 0.5..1.0x range");
+        assert!(
+            d >= 5.0 && d <= 10.0,
+            "jittered delay {d} out of 0.5..1.0x range"
+        );
     }
     #[test]
     fn floors_at_100ms() {
-        let p = ReconnectPolicy { initial_delay: Duration::from_millis(1), max_delay: Duration::from_secs(60), jitter: false, ..Default::default() };
+        let p = ReconnectPolicy {
+            initial_delay: Duration::from_millis(1),
+            max_delay: Duration::from_secs(60),
+            jitter: false,
+            ..Default::default()
+        };
         assert!(p.next_delay(0) >= Duration::from_millis(100));
     }
 }

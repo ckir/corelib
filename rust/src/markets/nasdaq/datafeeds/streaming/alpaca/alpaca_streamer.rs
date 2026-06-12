@@ -56,7 +56,10 @@ impl std::fmt::Debug for AlpacaConfig {
             .field("silence_seconds", &self.silence_seconds)
             .field("base_url", &self.base_url)
             .field("key_id", &self.key_id.as_ref().map(|_| "<redacted>"))
-            .field("secret_key", &self.secret_key.as_ref().map(|_| "<redacted>"))
+            .field(
+                "secret_key",
+                &self.secret_key.as_ref().map(|_| "<redacted>"),
+            )
             .finish()
     }
 }
