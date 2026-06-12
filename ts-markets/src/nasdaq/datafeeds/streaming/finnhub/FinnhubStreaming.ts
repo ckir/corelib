@@ -40,6 +40,11 @@ export class FinnhubStreaming extends EventEmitter {
 			(_err: any, event: any) => {
 				if (event) this.emit(event.type, event.data ?? null);
 			},
+			(_err: any, json: string) => {
+				try {
+					this.emit("market", JSON.parse(json));
+				} catch {}
+			},
 		);
 	}
 
