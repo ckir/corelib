@@ -1,16 +1,19 @@
 //! Generic FFI coordination host shared by all provider facades.
-use crate::markets::nasdaq::datafeeds::streaming::core::driver::ProviderDriver;
+use crate::markets::nasdaq::datafeeds::streaming::core::driver::{ProviderDriver, SubRequest};
 use crate::markets::nasdaq::datafeeds::streaming::core::reconnect::ReconnectPolicy;
-use crate::markets::nasdaq::datafeeds::streaming::core::schema::{
-    MarketEvent, ProviderKind, ProviderStatus,
-};
+use crate::markets::nasdaq::datafeeds::streaming::core::schema::{ProviderKind, ProviderStatus};
 use crate::markets::nasdaq::datafeeds::streaming::core::supervisor::run_supervisor;
+use crate::markets::nasdaq::datafeeds::streaming::core::types::CoreEvent;
 use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
 use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 static INSTANCE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Channel tag used by the single-channel `subscribe()` path. Single-channel drivers (Finnhub)
+/// ignore it; it exists only so the live `SubRequest` is well-formed.
+const DEFAULT_SUB_CHANNEL: &str = "default";
 
 /// Build a unique per-instance redb path under temp_dir (b-1: no shared-file lock).
 pub fn unique_db_path(prefix: &str, env_override: &str) -> std::path::PathBuf {
@@ -32,9 +35,10 @@ pub fn unique_db_path(prefix: &str, env_override: &str) -> std::path::PathBuf {
 pub struct WebsocketStreamerHost {
     pub(crate) db: Database,
     pub(crate) table: &'static str,
+    #[allow(dead_code)] // retained for instance identification / future logging; events tag via ProviderKind
     pub(crate) source: String,
     pub(crate) provider: ProviderKind, // generic: NOT hardcoded (agy plan-pass 🔴) — used in panic events
-    pub(crate) sub_tx: Option<mpsc::Sender<Vec<String>>>,
+    pub(crate) sub_tx: Option<mpsc::Sender<SubRequest>>,
     pub(crate) stop_tx: Option<mpsc::Sender<()>>,
     pub(crate) monitor_task: Option<JoinHandle<()>>,
     pub(crate) pump_task: Option<JoinHandle<()>>,
@@ -87,17 +91,17 @@ impl WebsocketStreamerHost {
         mut on_event_pump: P,
     ) where
         D: ProviderDriver,
-        P: FnMut(MarketEvent) + Send + 'static,
+        P: FnMut(CoreEvent) + Send + 'static,
     {
-        let (tx, mut rx) = mpsc::channel::<MarketEvent>(1024);
-        let (sub_tx, sub_rx) = mpsc::channel::<Vec<String>>(64);
+        let (tx, mut rx) = mpsc::channel::<CoreEvent>(1024);
+        let (sub_tx, sub_rx) = mpsc::channel::<SubRequest>(64);
         let (stop_tx, stop_rx) = mpsc::channel::<()>(1);
         self.sub_tx = Some(sub_tx);
         self.stop_tx = Some(stop_tx);
 
         // b-1 §3.4: monitor awaits the supervisor; on panic emit a synthetic Error event via a tx clone.
+        // CoreEvent::Status carries the provider tag (not source), so the monitor only needs `provider`.
         let monitor_tx = tx.clone();
-        let source = self.source.clone();
         let provider = self.provider; // ProviderKind is Copy — generic, not hardcoded
 
         let sup = tokio::spawn(run_supervisor(driver, symbols, tx, sub_rx, stop_rx, policy));
@@ -106,13 +110,10 @@ impl WebsocketStreamerHost {
             if let Err(e) = sup.await {
                 if e.is_panic() {
                     let _ = monitor_tx
-                        .send(MarketEvent::Status {
-                            source,
-                            status: ProviderStatus::Error {
-                                provider,
-                                message: "supervisor task panicked; stream is dead".into(),
-                            },
-                        })
+                        .send(CoreEvent::Status(ProviderStatus::Error {
+                            provider,
+                            message: "supervisor task panicked; stream is dead".into(),
+                        }))
                         .await;
                 }
             }
@@ -137,7 +138,14 @@ impl WebsocketStreamerHost {
             let _ = wtx.commit();
         }
         if let Some(tx) = &self.sub_tx {
-            let _ = tx.send(symbols).await;
+            // Single-channel callers (Finnhub) persist bare keys and ignore the channel tag;
+            // multi-channel providers (Alpaca, Task 4+) use `subscribe_channel` instead.
+            let _ = tx
+                .send(SubRequest {
+                    channel: DEFAULT_SUB_CHANNEL.to_string(),
+                    symbols,
+                })
+                .await;
         }
     }
 

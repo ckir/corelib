@@ -1,6 +1,16 @@
 //! The single-attempt provider driver contract. The supervisor owns the reconnect loop.
-use crate::markets::nasdaq::datafeeds::streaming::core::schema::MarketEvent;
+use crate::markets::nasdaq::datafeeds::streaming::core::types::CoreEvent;
 use tokio::sync::mpsc;
+
+/// A live subscription update routed to a driver: a channel name + the symbols.
+/// Single-channel providers (Finnhub) use a fixed channel and ignore the tag; multi-channel
+/// providers (Alpaca: trades/quotes/bars) route by `channel`.
+#[allow(dead_code)] // consumed by drivers in later tasks
+#[derive(Debug, Clone)]
+pub struct SubRequest {
+    pub channel: String,
+    pub symbols: Vec<String>,
+}
 
 /// Outcome of one connection attempt, used by the supervisor to decide the next action.
 #[allow(dead_code)] // used by drivers/supervisor in later tasks
@@ -30,13 +40,13 @@ pub trait ProviderDriver: Send + Sync + 'static {
     }
 
     /// Perform ONE connection attempt: connect, (auth), subscribe `symbols`, apply live
-    /// `sub_rx` updates, push `MarketEvent`s to `tx` (including `Status::Connected` on success),
+    /// `sub_rx` updates, push `CoreEvent`s to `tx` (including `Status::Connected` on success),
     /// and resolve when the socket drops, a fatal error occurs, or `stop_rx` fires.
     fn connect_once<'a>(
         &'a self,
         symbols: &'a [String],
-        tx: &'a mpsc::Sender<MarketEvent>,
-        sub_rx: &'a mut mpsc::Receiver<Vec<String>>,
+        tx: &'a mpsc::Sender<CoreEvent>,
+        sub_rx: &'a mut mpsc::Receiver<SubRequest>,
         stop_rx: &'a mut mpsc::Receiver<()>,
     ) -> futures::future::BoxFuture<'a, AttemptOutcome>;
 }

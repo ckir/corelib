@@ -49,7 +49,10 @@ pub enum RawPricing {
 #[allow(clippy::large_enum_variant)] // ProviderStatus carries string fields; boxing deferred to Phase 2b
 pub enum CoreEvent {
     Status(ProviderStatus),
-    Pricing { raw: RawPricing, uni: Option<MarketEvent> },
+    Pricing {
+        raw: RawPricing,
+        uni: Option<MarketEvent>,
+    },
 }
 
 #[cfg(test)]
@@ -58,13 +61,28 @@ mod tests {
     #[test]
     fn core_event_constructs_and_raw_payload_serializes_identically() {
         let raw = AlpacaPricingData {
-            symbol: "AAPL".into(), message_type: "quote".into(), price: 1.0,
-            bid_price: 1.0, ask_price: 2.0, volume: 3.0, timestamp: "t".into(),
+            symbol: "AAPL".into(),
+            message_type: "quote".into(),
+            price: 1.0,
+            bid_price: 1.0,
+            ask_price: 2.0,
+            volume: 3.0,
+            timestamp: "t".into(),
         };
-        let ev = CoreEvent::Pricing { raw: RawPricing::Alpaca(raw.clone()), uni: None };
-        match ev { CoreEvent::Pricing { raw: RawPricing::Alpaca(p), uni } => {
-            assert_eq!(p.symbol, "AAPL"); assert!(uni.is_none());
-        }, _ => panic!() }
+        let ev = CoreEvent::Pricing {
+            raw: RawPricing::Alpaca(raw.clone()),
+            uni: None,
+        };
+        match ev {
+            CoreEvent::Pricing {
+                raw: RawPricing::Alpaca(p),
+                uni,
+            } => {
+                assert_eq!(p.symbol, "AAPL");
+                assert!(uni.is_none());
+            }
+            _ => panic!(),
+        }
         // byte-identity of the moved payload shape:
         let v = serde_json::to_value(&raw).unwrap();
         assert_eq!(v["symbol"], "AAPL");

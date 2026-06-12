@@ -1,7 +1,9 @@
 //! Owns the reconnect loop for a ProviderDriver. Single place for backoff/state.
-use crate::markets::nasdaq::datafeeds::streaming::core::driver::{AttemptOutcome, ProviderDriver};
+use crate::markets::nasdaq::datafeeds::streaming::core::driver::{
+    AttemptOutcome, ProviderDriver, SubRequest,
+};
 use crate::markets::nasdaq::datafeeds::streaming::core::reconnect::ReconnectPolicy;
-use crate::markets::nasdaq::datafeeds::streaming::core::schema::MarketEvent;
+use crate::markets::nasdaq::datafeeds::streaming::core::types::CoreEvent;
 use tokio::sync::mpsc;
 
 /// Drive `driver` across reconnects until Fatal/Stopped. Sends events to `tx`.
@@ -9,8 +11,8 @@ use tokio::sync::mpsc;
 pub async fn run_supervisor<D: ProviderDriver>(
     driver: D,
     symbols: Vec<String>,
-    tx: mpsc::Sender<MarketEvent>,
-    mut sub_rx: mpsc::Receiver<Vec<String>>,
+    tx: mpsc::Sender<CoreEvent>,
+    mut sub_rx: mpsc::Receiver<SubRequest>,
     mut stop_rx: mpsc::Receiver<()>,
     policy: ReconnectPolicy,
 ) {
