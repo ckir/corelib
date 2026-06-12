@@ -946,3 +946,102 @@ If I were implementing the Phase 2a Alpaca subscription mirror, I would resolve 
 
 
 
+## 2026-06-12 — (d) Phase 2a — spec-phase pass
+
+### 1. Critical Review
+
+This section presents a rigorous design-level and compile-safety pressure test on the written spec for **Phase 2a (Alpaca subscription-mirror/migration)**, identifying architectural gaps, type-mismatch landmines, and FFI-boundary risks to preempt implementation rework.
+
+#### 🔴 Blocker — Incomplete CoreEvent Channel Migration Causes Host Monitor Compilation Failure
+* **Design Area**: [supervisor.rs](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-fb63e144/rust/src/markets/nasdaq/datafeeds/streaming/core/supervisor.rs), [host.rs](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-fb63e144/rust/src/markets/nasdaq/datafeeds/streaming/core/host.rs#L105-L119)
+* **Verification**: [VERIFIED]
+* **Issue**: The spec proposes changing the shared engine channel type from `mpsc::Sender<MarketEvent>` to `mpsc::Sender<CoreEvent>`. However, it focuses pricing updates onto `CoreEvent` and fails to fully map/integrate the supervisor's panic-monitoring channel mechanism. Inside `host.rs:L105-L119`, the panic monitor spawns a task that clones `tx` and attempts to send a `MarketEvent::Status` to signaling that the supervisor loop has crashed. Under the new channel scheme, `monitor_tx` will be of type `mpsc::Sender<CoreEvent>`, meaning calling `monitor_tx.send(MarketEvent::Status { ... })` directly will trigger a compilation type-mismatch failure.
+* **Concrete Fix**: Formally declare `CoreEvent` as a top-level union wrapping both pricing and supervisor status events:
+  ```rust
+  pub enum CoreEvent {
+      Pricing { raw: String, uni: MarketEvent },
+      Status(MarketEvent), // wraps and preserves original supervisor/driver lifecycle events
+  }
+  ```
+  Then rewrite `host.rs`'s monitor task to wrap the compiled crash status:
+  ```rust
+  let _ = monitor_tx.send(CoreEvent::Status(MarketEvent::Status { source, status: ProviderStatus::Error { ... } })).await;
+  ```
+  The host's internal event-pumping thread will loop over `CoreEvent`, directly propagating `CoreEvent::Status` variants to `on_event` TSFNs while dispatching `CoreEvent::Pricing` based on the dual-mode routing logic.
+
+#### 🔴 Blocker — Subscription Persistence Table Collision & Dynamic Schema Break under Composite Keys
+* **Design Area**: [host.rs](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-fb63e144/rust/src/markets/nasdaq/datafeeds/streaming/core/host.rs#L66-L80), [finnhub_streamer.rs](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-fb63e144/rust/src/markets/nasdaq/datafeeds/streaming/finnhub/finnhub_streamer.rs)
+* **Verification**: [VERIFIED]
+* **Issue**: Changing `get_persisted_subscriptions` on the non-generic `WebsocketStreamerHost` to parse composite keys (e.g. `channel:symbol`) and returning a channel-tagged map (such as `HashMap<String, Vec<String>>` or `AlpacaSubscribeOpts`) breaks compilation for all existing single-channel providers. Today, `FinnhubStreaming` relies on `host.get_persisted_subscriptions()` returning `Vec<String>` (representing simple bare symbols). If the host signature shifts to returning tagged maps, the pilot Finnhub streamer (and any future single-channel driver like Yahoo) will crash at compile time.
+* **Concrete Fix**: 
+  1. Implement a clean, generic key-expansion helper on the `WebsocketStreamerHost` that accepts a `default_channel` parameter:
+     ```rust
+     pub fn get_persisted_subscriptions_for_channel(&self, target_channel: &str) -> Vec<String> {
+         let mut symbols = Vec::new();
+         for raw_key in self.get_raw_persisted_keys() {
+             let (channel, symbol) = raw_key.split_once(':').unwrap_or((self.default_channel, &raw_key));
+             if channel == target_channel {
+                 symbols.push(symbol.to_string());
+             }
+         }
+         symbols
+     }
+     ```
+  2. Map single-channel providers to a dedicated primary channel explicitly matching their data type. Recommend this exact default scheme:
+     - **Alpaca Default**: `"quotes"` (for backwards compatibility with colon-less records).
+     - **Yahoo Default**: `"quotes"` (single-stream quote feed).
+     - **Finnhub Default**: `"trades"` (Finnhub streams raw trade frames).
+
+#### 🟡 Should-Fix — TS Overload Signature Discrimination Ambiguity
+* **Design Area**: [AlpacaStreaming.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-fb63e144/ts-markets/src/nasdaq/datafeeds/streaming/alpaca/AlpacaStreaming.ts)
+* **Verification**: [THEORETICAL]
+* **Issue**: Resolving `napi::Either<Vec<String>, AlpacaSubscribeOpts>` checks inputs from left to right. Because JS `typeof [] === "object"`, an array can theoretically match an object signature in naive JS type checkers. While napi-rs uses explicit `is_array()` checks which prevent true runtime coercion, passing nested parameters or empty structures in TypeScript might cause type-inference pollution when overloaded at the TS interface level.
+* **Concrete Fix**: Force an explicit TypeScript discriminator or guard. Define the overload explicitly in the TS wrapper, converting any standard list mapping directly into a clean, well-formed configuration object before it crosses the N-API boundary:
+  ```typescript
+  public async subscribe(symbolsOrOpts: string[] | AlpacaSubscribeOpts): Promise<void> {
+    if (Array.isArray(symbolsOrOpts)) {
+      // Coerce safely to the backward-compatible shape under-the-hood
+      await this.ffi.subscribe({ quotes: symbolsOrOpts });
+    } else {
+      await this.ffi.subscribe(symbolsOrOpts);
+    }
+  }
+  ```
+  This eliminates duplicate signature parsing on the Rust side completely. The Rust `subscribe` FFI method can then accept a single, robust `AlpacaSubscribeOpts` struct, bypassing the need for `napi::Either` and greatly simplifying type coordination.
+
+#### 🟡 Should-Fix — Missing Option Callback Ergonomics in TS/N-API Constructors
+* **Design Area**: `alpaca_streamer.rs:L767-L779` [alpaca_streamer.rs:L767-L779](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-fb63e144/rust/src/markets/nasdaq/datafeeds/streaming/alpaca/alpaca_streamer.rs#L767-L779)
+* **Verification**: [VERIFIED]
+* **Issue**: The spec introduces dual-mode emissions where consumers can optionally capture unified events via an `on_market_event` callback. However, forcing `on_market_event` as a mandatory argument in the `AlpacaStreaming` constructor breaks backwards compatibility with existing TS consumers who initialize the streamer using three positional callbacks today: `new(on_log, on_pricing, on_event)`.
+* **Concrete Fix**: Define `on_market_event` as an optional fourth constructor argument in both TS and Rust. In `AlpacaStreaming` (N-API wrapper):
+  ```rust
+  #[napi(constructor)]
+  pub fn new(
+      on_log: ThreadsafeFunction<LogRecord>,
+      on_pricing: ThreadsafeFunction<AlpacaPricingData>,
+      on_event: ThreadsafeFunction<EventRecord>,
+      on_market_event: Option<ThreadsafeFunction<String>>, // Optional stringified JSON
+  )
+  ```
+  Inside the event-pump task, only invoke `on_market_event` if `Some` was supplied, maintaining perfect compatibility for legacy clients.
+
+#### 🟢 Nit — Uni-Portable Capability Expansion for Trades
+* **Design Area**: [schema.rs:L32-L37](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-fb63e144/rust/src/markets/nasdaq/datafeeds/streaming/core/schema.rs#L32-L37), §5.3 spec consequence
+* **Verification**: [VERIFIED]
+* **Issue**: The spec states that Alpaca trades and bars are raw-only because `finstream`'s shared schema lack an Alpaca-specific trade extras enum variant, concluding that "only quotes is uni-portable". This artificially limits the usability of multi-provider streams. 
+* **Concrete Fix**: Add an empty or generic trade extras variant to the core schema `TradeExtras` enum (e.g. `TradeExtras::None` or `TradeExtras::Alpaca`), allowing standard Alpaca trades to compile and dual-emit as a portable `MarketEvent::Trade` variant. Only raw Bars remain strictly raw-only due to lack of a global schema wrapper, which is correct and safe.
+
+---
+
+### 2. Creative Improvements
+
+* **Self-Healing Table Migration for Legacy redb Files**: When switching key persistence strategies to the composite `channel:symbol` scheme, legacy databases will contain raw strings without a colon (e.g. `"AAPL"`). While the fallback default prevents startup failures, executing a dynamic write/cleanup or a silent migration pass during `init` (loading all keys, deleting them, and re-inserting them with the correct prefix, such as `"quotes:AAPL"`) permanently sanitizes the table schema on the client's host.
+* **Consolidated Subscriptions State Tracking**: Since multiple async methods (`subscribe`, `unsubscribe`) and reconnection routines concurrently interact with subscriptions, encapsulate subscription state modifications into a thread-safe atomic tracker on the driver, ensuring consistent channel counts.
+
+---
+
+### 3. "Ship / Iterate" Verdict
+
+**Verdict: [ITERATE]**
+
+The Phase 2a design is highly mature, but we must **iterate once** to finalize the `CoreEvent` monitor compilation bridge inside `host.rs` and cleanly parameterize the subscription persistence mappings to ensure the pilot Finnhub driver keeps compiling seamlessly. Once these type-safety gaps are resolved, the spec will be fully ready for implementation planning.
