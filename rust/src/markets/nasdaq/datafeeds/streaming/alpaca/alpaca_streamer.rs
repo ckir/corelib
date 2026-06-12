@@ -1,45 +1,38 @@
 // =============================================
 // FILE: rust/src/markets/nasdaq/datafeeds/streaming/alpaca/alpaca_streamer.rs
-// PURPOSE: Long-running Alpaca Finance data stream handler.
-// DESCRIPTION: This module provides a robust, supervised price streamer using
-// Alpaca's Data V2 WebSocket API. It decodes JSON pricing messages,
-// persists subscriptions in a local `redb` database (under ALPACA_SUBSCRIPTIONS),
-// and handles network instability with silence detection and exponential backoff reconnection.
-// Authentication failures are treated as fatal and will halt the streamer.
+// PURPOSE: Thin N-API facade for the Alpaca real-time data stream.
+// DESCRIPTION: Delegates all websocket/reconnect/persistence work to the shared
+// `WebsocketStreamerHost` + `AlpacaDriver`. Dual-mode: emits the byte-identical raw
+// `AlpacaPricingData` via `on_pricing` AND the unified (finstream-superset) `MarketEvent`
+// as JSON via the optional `on_market_event` callback. Subscriptions are per-channel
+// (trades/quotes/bars) and persisted in redb (the single source of truth for resume).
 // =============================================
 
-use futures_util::{SinkExt, StreamExt};
+use crate::markets::nasdaq::datafeeds::streaming::alpaca::alpaca_driver::AlpacaDriver;
+use crate::markets::nasdaq::datafeeds::streaming::core::host::{
+    unique_db_path, WebsocketStreamerHost,
+};
+use crate::markets::nasdaq::datafeeds::streaming::core::reconnect::ReconnectPolicy;
+use crate::markets::nasdaq::datafeeds::streaming::core::schema::{ProviderKind, ProviderStatus};
+use crate::markets::nasdaq::datafeeds::streaming::core::types::{CoreEvent, RawPricing};
+use crate::{EventRecord, LogRecord};
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
-use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio::sync::Mutex;
 
-use crate::{EventRecord, LogRecord};
 pub use crate::markets::nasdaq::datafeeds::streaming::core::types::AlpacaPricingData;
-
-/// The default production WebSocket URL for the Alpaca IEX data stream.
-const DEFAULT_ALPACA_WS_URL: &str = "wss://stream.data.alpaca.markets/v2/iex";
-
-/// Interval in seconds for sending WebSocket ping frames to keep the connection alive.
-/// Alpaca disconnects silent clients, so we ping periodically.
-const PING_INTERVAL: u64 = 30;
-
-/// The `redb` table definition used to persist Alpaca symbol subscriptions.
-const ALPACA_SUBSCRIPTIONS_TABLE: TableDefinition<&str, bool> =
-    TableDefinition::new("alpaca_subscriptions");
 
 /// Configuration parameters for the Alpaca price streamer.
 #[napi(object)]
 #[derive(Clone, Serialize, Deserialize)]
 pub struct AlpacaConfig {
-    /// Optional path to the `redb` database file. Defaults to a temporary directory.
+    /// Legacy no-op: the redb path is now derived per-instance by the host (or via the
+    /// `ALPACA_DB` env override). Retained for API/back-compat; ignored.
     pub db_path: Option<String>,
-    /// Threshold in seconds for silence detection before triggering a reconnect.
+    /// Threshold in seconds for silence detection before triggering a reconnect (default 60).
     pub silence_seconds: Option<u32>,
     /// Optional override for the WebSocket URL (defaults to IEX stream or `APCA_API_BASE_URL`).
     pub base_url: Option<String>,
@@ -49,7 +42,20 @@ pub struct AlpacaConfig {
     pub secret_key: Option<String>,
 }
 
-/// Fix 4: Hand-written Debug impl that masks credential fields to prevent log leaks.
+impl AlpacaConfig {
+    /// An all-`None` config (used before `init` is called).
+    fn default_empty() -> Self {
+        Self {
+            db_path: None,
+            silence_seconds: None,
+            base_url: None,
+            key_id: None,
+            secret_key: None,
+        }
+    }
+}
+
+/// Hand-written Debug impl that masks credential fields to prevent log leaks (b-1 §3.x).
 impl std::fmt::Debug for AlpacaConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AlpacaConfig")
@@ -57,912 +63,267 @@ impl std::fmt::Debug for AlpacaConfig {
             .field("silence_seconds", &self.silence_seconds)
             .field("base_url", &self.base_url)
             .field("key_id", &self.key_id.as_ref().map(|_| "<redacted>"))
-            .field(
-                "secret_key",
-                &self.secret_key.as_ref().map(|_| "<redacted>"),
-            )
+            .field("secret_key", &self.secret_key.as_ref().map(|_| "<redacted>"))
             .finish()
     }
 }
 
-/// A generic trait for handling Alpaca streamer callbacks.
-pub trait AlpacaCallbacks: Send + Sync + 'static {
-    /// Called when the streamer emits a log message.
-    fn on_log(&self, record: LogRecord);
-    /// Called when a new price update is successfully decoded.
-    fn on_pricing(&self, data: AlpacaPricingData);
-    /// Called when a lifecycle event occurs (connection state changes).
-    fn on_event(&self, event: EventRecord);
+/// Per-channel subscription options. `subscribe`/`unsubscribe` accept any subset of channels.
+#[napi(object)]
+#[derive(Clone, Serialize, Deserialize, Default)]
+pub struct AlpacaSubscribeOpts {
+    pub trades: Option<Vec<String>>,
+    pub quotes: Option<Vec<String>>,
+    pub bars: Option<Vec<String>>,
 }
 
-/// An N-API compatible implementation of `AlpacaCallbacks` for Node.js integration.
-pub struct NapiCallbacks {
-    /// JavaScript callback for logging.
-    pub on_log: ThreadsafeFunction<LogRecord>,
-    /// JavaScript callback for price updates.
-    pub on_pricing: ThreadsafeFunction<AlpacaPricingData>,
-    /// JavaScript callback for lifecycle events.
-    pub on_event: ThreadsafeFunction<EventRecord>,
-}
-
-impl AlpacaCallbacks for NapiCallbacks {
-    fn on_log(&self, record: LogRecord) {
-        let _ = self
-            .on_log
-            .call(Ok(record), ThreadsafeFunctionCallMode::NonBlocking);
-    }
-    fn on_pricing(&self, data: AlpacaPricingData) {
-        let _ = self
-            .on_pricing
-            .call(Ok(data), ThreadsafeFunctionCallMode::NonBlocking);
-    }
-    fn on_event(&self, event: EventRecord) {
-        let _ = self
-            .on_event
-            .call(Ok(event), ThreadsafeFunctionCallMode::NonBlocking);
-    }
-}
-
-/// Internal state holder for the Alpaca streamer logic.
-struct Inner<C: AlpacaCallbacks> {
-    /// The persistent local database instance.
-    db: Option<Database>,
-    /// List of current symbol subscriptions.
-    subscriptions: Vec<String>,
-    /// Configured silence threshold for reconnections.
-    silence_seconds: u32,
-    /// Configuration mapping for the active instance.
+/// Interior mutable state for `AlpacaStreaming`.
+struct AlpacaInner {
+    host: WebsocketStreamerHost,
     config: AlpacaConfig,
-    /// The callback implementation.
-    callbacks: C,
-    /// Channel for sending a stop signal to the background task.
-    stop_tx: Option<mpsc::Sender<()>>,
-    /// Channel for sending new symbol subscriptions to the active stream.
-    sub_tx: Option<mpsc::Sender<Vec<String>>>,
-    /// Join handle for the active WebSocket task.
-    ws_task: Option<tokio::task::JoinHandle<()>>,
+    started: bool,
 }
 
-/// Represents the possible outcomes of the internal websocket loop.
-enum WsLoopResult {
-    /// The loop exited gracefully (e.g., manual stop).
-    GracefulStop,
-    /// The loop encountered a network or protocol error and should retry.
-    /// `connected` is true if the socket had successfully authenticated before the
-    /// drop (a healthy connection that was lost → reset backoff), false if it never
-    /// connected/authenticated (a pure failure → grow backoff).
-    Reconnect { connected: bool },
-    /// The loop encountered a fatal error (like Auth Failure) and should halt entirely.
-    FatalError(String),
-}
-
-/// The core Alpaca price streamer implementation, generic over its callback mechanism.
-pub struct AlpacaStreamingCore<C: AlpacaCallbacks> {
-    /// Shared, thread-safe access to the internal state.
-    inner: Arc<Mutex<Inner<C>>>,
-}
-
-impl<C: AlpacaCallbacks> AlpacaStreamingCore<C> {
-    /// Creates a new `AlpacaStreamingCore` and optionally initializes the local database.
-    pub fn new(callbacks: C) -> Self {
-        // Fix 3: per-instance unique counter so concurrent instances never collide on the DB file.
-        static INSTANCE_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-        // Determine the database path from environment or use a temporary file
-        let db_env = std::env::var("ALPACA_DB").unwrap_or_else(|_| {
-            let temp = std::env::temp_dir();
-            let pid = std::process::id();
-            let seq = INSTANCE_COUNTER.fetch_add(1, Ordering::Relaxed);
-            let nanos = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .subsec_nanos();
-            temp.join(format!("corelib_streaming_{pid}_{seq}_{nanos}.redb"))
-                .to_string_lossy()
-                .to_string()
-        });
-
-        let (db, subscriptions) = if db_env == "NOT_SET" {
-            (None, Vec::new())
-        } else {
-            // Open or create the redb database
-            let db = Database::create(&db_env).expect("Failed to open redb");
-
-            // Ensure the alpaca_subscriptions table exists in the database
-            {
-                let write_txn = db.begin_write().unwrap();
-                {
-                    let _ = write_txn.open_table(ALPACA_SUBSCRIPTIONS_TABLE).unwrap();
-                }
-                write_txn.commit().unwrap();
-            }
-
-            // Load existing subscriptions from the database into memory
-            let read_txn = db.begin_read().unwrap();
-            let table = read_txn.open_table(ALPACA_SUBSCRIPTIONS_TABLE).unwrap();
-            let loaded_subscriptions = table
-                .iter()
-                .unwrap()
-                .map(|item| {
-                    let (k, _) = item.unwrap();
-                    k.value().to_string()
-                })
-                .collect();
-            (Some(db), loaded_subscriptions)
-        };
-
-        Self {
-            inner: Arc::new(Mutex::new(Inner {
-                db,
-                subscriptions,
-                silence_seconds: 60, // Default to 60s silence check
-                config: AlpacaConfig {
-                    db_path: None,
-                    silence_seconds: None,
-                    base_url: None,
-                    key_id: None,
-                    secret_key: None,
-                },
-                callbacks,
-                stop_tx: None,
-                sub_tx: None,
-                ws_task: None,
-            })),
-        }
-    }
-
-    /// Initializes the streamer with the provided configuration.
-    pub async fn init(&self, config: AlpacaConfig) {
-        let mut inner = self.inner.lock().await;
-
-        // Override the silence threshold if provided
-        if let Some(s) = config.silence_seconds {
-            inner.silence_seconds = s;
-        }
-
-        // Store the config for authentication use in the loop
-        inner.config = config;
-    }
-
-    /// Spawns the supervisor loop and starts the price stream.
-    pub async fn start(&self) {
-        let inner = Arc::clone(&self.inner);
-        let mut guard = inner.lock().await;
-
-        // Prevent multiple concurrent tasks from running
-        if guard.ws_task.is_some() {
-            return;
-        }
-
-        // Initialize communication channels
-        let (stop_tx, stop_rx) = mpsc::channel(1);
-        let (sub_tx, sub_rx) = mpsc::channel(10);
-
-        guard.stop_tx = Some(stop_tx);
-        guard.sub_tx = Some(sub_tx);
-
-        // Spawn the main supervisor task
-        let task = tokio::spawn(Self::run_loop(Arc::clone(&inner), stop_rx, sub_rx));
-
-        // Fix 5: Spawn a lightweight monitor that awaits the supervisor task.
-        // If the supervisor panics, tokio catches it as a JoinError::is_panic() and we
-        // surface that to JS via the existing on_event("error") callback.
-        let monitor_inner = Arc::clone(&inner);
-        let monitor_task = tokio::spawn(async move {
-            match task.await {
-                Ok(()) => { /* normal completion */ }
-                Err(join_err) if join_err.is_panic() => {
-                    // The supervisor panicked — emit an error event so JS is notified.
-                    monitor_inner.lock().await.callbacks.on_event(EventRecord {
-                        r#type: "error".to_string(),
-                        data: Some("Streamer supervisor panicked; stream is dead".to_string()),
-                    });
-                }
-                Err(_) => { /* task was cancelled/aborted, nothing to do */ }
-            }
-        });
-        guard.ws_task = Some(monitor_task);
-    }
-
-    /// Background loop that handles reconnections with exponential backoff.
-    async fn run_loop(
-        inner: Arc<Mutex<Inner<C>>>,
-        mut stop_rx: mpsc::Receiver<()>,
-        mut sub_rx: mpsc::Receiver<Vec<String>>,
-    ) {
-        // Initial backoff duration in seconds
-        const BASE_BACKOFF: u64 = 5;
-        let mut backoff = BASE_BACKOFF;
-
-        loop {
-            let inner_clone = Arc::clone(&inner);
-
-            // Execute the actual WebSocket logic
-            let res = Self::ws_loop(inner_clone, &mut sub_rx, &mut stop_rx).await;
-
-            // Fix 2: A reconnect is a "pure failure" (grow backoff) only if the socket never
-            // authenticated. A healthy connection that was later dropped (connected: true)
-            // resets the backoff so the stream self-heals fast instead of inheriting a long
-            // sticky backoff from an earlier outage. GracefulStop/FatalError break below.
-            let was_failure = matches!(res, WsLoopResult::Reconnect { connected: false });
-
-            match res {
-                WsLoopResult::GracefulStop => {
-                    // Stream stopped gracefully via stop() call
-                    break;
-                }
-                WsLoopResult::FatalError(err_msg) => {
-                    // A fatal error (like Auth Failure) occurred. Halt the supervisor.
-                    let guard = inner.lock().await;
-                    guard.callbacks.on_log(LogRecord {
-                        level: "fatal".to_string(),
-                        msg: "Streamer halted due to fatal error".to_string(),
-                        extras: Some(err_msg),
-                    });
-                    break;
-                }
-                WsLoopResult::Reconnect { .. } => {
-                    // Connection lost or non-fatal error occurred, trigger a reconnect event
-                    inner.lock().await.callbacks.on_event(EventRecord {
-                        r#type: "reconnecting".to_string(),
-                        data: None,
-                    });
-                }
-            }
-
-            // Fix 2: Reset backoff to base when connection succeeded; only grow on pure failures.
-            if was_failure {
-                backoff = (backoff * 2).min(3600);
-            } else {
-                backoff = BASE_BACKOFF;
-            }
-
-            // Fix 6: Add jitter derived from SystemTime nanos (no extra crate needed).
-            // Jitter range: 0 .. backoff*500 ms (i.e., up to half the backoff in milliseconds).
-            let nanos = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .subsec_nanos() as u64;
-            let jitter_ms = nanos % (backoff * 500).max(1);
-            let sleep_dur = tokio::time::Duration::from_secs(backoff)
-                + tokio::time::Duration::from_millis(jitter_ms);
-
-            // Sleep for the backoff + jitter duration before the next reconnect attempt
-            tokio::time::sleep(sleep_dur).await;
-        }
-    }
-
-    /// Handles the active WebSocket connection, authentication, and message dispatching.
-    async fn ws_loop(
-        inner: Arc<Mutex<Inner<C>>>,
-        sub_rx: &mut mpsc::Receiver<Vec<String>>,
-        stop_rx: &mut mpsc::Receiver<()>,
-    ) -> WsLoopResult {
-        // Fix 2: tracks whether this connection authenticated before any drop, so the
-        // supervisor can distinguish a healthy-but-dropped connection (reset backoff)
-        // from a never-connected failure (grow backoff). Set true after auth success.
-        let mut connected = false;
-
-        // 1. Resolve URL and Credentials
-        let (url, key_id, secret_key) = {
-            let guard = inner.lock().await;
-
-            let url = guard
-                .config
-                .base_url
-                .clone()
-                .or_else(|| std::env::var("APCA_API_BASE_URL").ok())
-                .unwrap_or_else(|| DEFAULT_ALPACA_WS_URL.to_string());
-
-            let key_id = guard
-                .config
-                .key_id
-                .clone()
-                .or_else(|| std::env::var("APCA_API_KEY_ID").ok())
-                .unwrap_or_default();
-
-            let secret_key = guard
-                .config
-                .secret_key
-                .clone()
-                .or_else(|| std::env::var("APCA_API_SECRET_KEY").ok())
-                .unwrap_or_default();
-
-            (url, key_id, secret_key)
-        };
-
-        // 2. Attempt Connection
-        let (mut ws_stream, _) = match connect_async(&url).await {
-            Ok(v) => v,
-            Err(e) => {
-                inner.lock().await.callbacks.on_log(LogRecord {
-                    level: "error".to_string(),
-                    msg: "Alpaca WS connect failed".to_string(),
-                    extras: Some(e.to_string()),
-                });
-                return WsLoopResult::Reconnect { connected };
-            }
-        };
-
-        // 3. Handle Initial Connection Message
-        if let Some(Ok(Message::Text(msg))) = ws_stream.next().await {
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&msg) {
-                if let Some(arr) = parsed.as_array() {
-                    if let Some(first) = arr.first() {
-                        if first.get("T").and_then(|t| t.as_str()) != Some("success")
-                            || first.get("msg").and_then(|m| m.as_str()) != Some("connected")
-                        {
-                            return WsLoopResult::Reconnect { connected };
-                        }
-                    }
-                }
-            }
-        }
-
-        // 4. Send Authentication Payload
-        let auth_payload = serde_json::json!({
-            "action": "auth",
-            "key": key_id,
-            "secret": secret_key
-        });
-
-        if let Err(e) = ws_stream
-            .send(Message::Text(auth_payload.to_string().into()))
-            .await
-        {
-            inner.lock().await.callbacks.on_log(LogRecord {
-                level: "error".to_string(),
-                msg: "Failed to send auth payload".to_string(),
-                extras: Some(e.to_string()),
-            });
-            return WsLoopResult::Reconnect { connected };
-        }
-
-        // 5. Await Authentication Response
-        if let Some(Ok(Message::Text(msg))) = ws_stream.next().await {
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&msg) {
-                if let Some(arr) = parsed.as_array() {
-                    if let Some(first) = arr.first() {
-                        // Check for Auth Failure (Fatal)
-                        if first.get("T").and_then(|t| t.as_str()) == Some("error") {
-                            let err_msg = first
-                                .get("msg")
-                                .and_then(|m| m.as_str())
-                                .unwrap_or("Unknown Auth Error")
-                                .to_string();
-                            let code = first.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
-
-                            inner.lock().await.callbacks.on_event(EventRecord {
-                                r#type: "error".to_string(),
-                                data: Some(format!("Auth Failed: {} (Code {})", err_msg, code)),
-                            });
-
-                            return WsLoopResult::FatalError(format!(
-                                "Auth Failed: {} (Code {})",
-                                err_msg, code
-                            ));
-                        }
-
-                        // Check for Auth Success
-                        if first.get("T").and_then(|t| t.as_str()) != Some("success")
-                            || first.get("msg").and_then(|m| m.as_str()) != Some("authenticated")
-                        {
-                            return WsLoopResult::Reconnect { connected };
-                        }
-                    }
-                }
-            }
-        } else {
-            return WsLoopResult::Reconnect { connected };
-        }
-
-        // Notify that the connection has been successfully established and authenticated
-        inner.lock().await.callbacks.on_event(EventRecord {
-            r#type: "connected".to_string(),
-            data: None,
-        });
-
-        // Fix 2: from here on, any reconnect is a healthy-connection drop (reset backoff).
-        connected = true;
-
-        // Split the stream into a writer and a reader for concurrent operation
-        let (mut write, mut read) = ws_stream.split();
-
-        // Send the initial subscription payload for all currently tracked symbols
-        {
-            let guard = inner.lock().await;
-            if !guard.subscriptions.is_empty() {
-                // By default, we subscribe to 'quotes' for provided symbols.
-                // The struct can be extended to support trades/bars dynamically.
-                let payload = serde_json::json!({
-                    "action": "subscribe",
-                    "quotes": guard.subscriptions
-                })
-                .to_string();
-
-                let _ = write.send(Message::Text(payload.into())).await;
-            }
-        }
-
-        // Initialize timers for silence detection and WebSocket pings
-        let mut silence_timer = tokio::time::interval(tokio::time::Duration::from_secs(60));
-        let mut ping_timer = tokio::time::interval(tokio::time::Duration::from_secs(PING_INTERVAL));
-
-        // Consume the immediate first ticks of the intervals
-        let _ = silence_timer.tick().await;
-        let _ = ping_timer.tick().await;
-
-        loop {
-            // Select over various input sources concurrently
-            tokio::select! {
-                // Handle graceful stop signal
-                _ = stop_rx.recv() => {
-                    inner.lock().await.callbacks.on_event(EventRecord { r#type: "disconnected".to_string(), data: None });
-                    return WsLoopResult::GracefulStop;
-                }
-
-                // Handle incoming WebSocket messages
-                msg = read.next() => {
-                    match msg {
-                        Some(Ok(Message::Text(text))) => {
-                            // Reset silence timer as we received data
-                            silence_timer.reset();
-
-                            // Parse the message array from Alpaca
-                            let items: Vec<serde_json::Value> = match serde_json::from_str(&text) {
-                                Ok(v) => v,
-                                Err(_) => continue,
-                            };
-
-                            for obj in items {
-                                let t_type = obj.get("T").and_then(|t| t.as_str()).unwrap_or("");
-
-                                match t_type {
-                                    // Process Quotes
-                                    "q" => {
-                                        let data = AlpacaPricingData {
-                                            symbol: obj.get("S").and_then(|s| s.as_str()).unwrap_or("").to_string(),
-                                            message_type: "quote".to_string(),
-                                            price: obj.get("bp").and_then(|v| v.as_f64()).unwrap_or(0.0), // Fallback to bid as primary price
-                                            bid_price: obj.get("bp").and_then(|v| v.as_f64()).unwrap_or(0.0),
-                                            ask_price: obj.get("ap").and_then(|v| v.as_f64()).unwrap_or(0.0),
-                                            volume: obj.get("bs").and_then(|v| v.as_f64()).unwrap_or(0.0), // Bid size as volume proxy
-                                            timestamp: obj.get("t").and_then(|t| t.as_str()).unwrap_or("").to_string(),
-                                        };
-                                        inner.lock().await.callbacks.on_pricing(data);
-                                    }
-                                    // Process Trades
-                                    "t" => {
-                                        let data = AlpacaPricingData {
-                                            symbol: obj.get("S").and_then(|s| s.as_str()).unwrap_or("").to_string(),
-                                            message_type: "trade".to_string(),
-                                            price: obj.get("p").and_then(|v| v.as_f64()).unwrap_or(0.0),
-                                            bid_price: 0.0,
-                                            ask_price: 0.0,
-                                            volume: obj.get("s").and_then(|v| v.as_f64()).unwrap_or(0.0),
-                                            timestamp: obj.get("t").and_then(|t| t.as_str()).unwrap_or("").to_string(),
-                                        };
-                                        inner.lock().await.callbacks.on_pricing(data);
-                                    }
-                                    // Process Bars
-                                    "b" => {
-                                        let data = AlpacaPricingData {
-                                            symbol: obj.get("S").and_then(|s| s.as_str()).unwrap_or("").to_string(),
-                                            message_type: "bar".to_string(),
-                                            price: obj.get("c").and_then(|v| v.as_f64()).unwrap_or(0.0), // Close price
-                                            bid_price: 0.0,
-                                            ask_price: 0.0,
-                                            volume: obj.get("v").and_then(|v| v.as_f64()).unwrap_or(0.0),
-                                            timestamp: obj.get("t").and_then(|t| t.as_str()).unwrap_or("").to_string(),
-                                        };
-                                        inner.lock().await.callbacks.on_pricing(data);
-                                    }
-                                    // Handle subscription success messages
-                                    "subscription" => {
-                                        inner.lock().await.callbacks.on_log(LogRecord {
-                                            level: "info".to_string(),
-                                            msg: "Alpaca subscription updated".to_string(),
-                                            extras: Some(text.to_string()),
-                                        });
-                                    }
-                                    // Handle server errors
-                                    "error" => {
-                                        inner.lock().await.callbacks.on_log(LogRecord {
-                                            level: "error".to_string(),
-                                            msg: "Alpaca API Error".to_string(),
-                                            extras: Some(text.to_string()),
-                                        });
-                                    }
-                                    _ => {
-                                        // Unhandled message types are traced
-                                        inner.lock().await.callbacks.on_log(LogRecord {
-                                            level: "trace".to_string(),
-                                            msg: "Unhandled Alpaca Message".to_string(),
-                                            extras: Some(text.to_string()),
-                                        });
-                                    }
-                                }
-                            }
-                        }
-
-                        // Handle WebSocket close frames
-                        Some(Ok(Message::Close(c))) => {
-                            let data = c.map(|frame| frame.reason.to_string());
-                            inner.lock().await.callbacks.on_event(EventRecord { r#type: "disconnected".to_string(), data });
-                            return WsLoopResult::Reconnect { connected };
-                        }
-
-                        // Handle unexpected end of stream
-                        None => {
-                            inner.lock().await.callbacks.on_event(EventRecord { r#type: "disconnected".to_string(), data: Some("Stream ended".to_string()) });
-                            return WsLoopResult::Reconnect { connected };
-                        }
-
-                        // Handle WebSocket errors
-                        Some(Err(e)) => {
-                            let err_msg = e.to_string();
-                            inner.lock().await.callbacks.on_log(LogRecord { level: "error".to_string(), msg: "WS read error".to_string(), extras: Some(err_msg.clone()) });
-                            inner.lock().await.callbacks.on_event(EventRecord { r#type: "error".to_string(), data: Some(err_msg) });
-                            return WsLoopResult::Reconnect { connected };
-                        }
-                        _ => continue,
-                    }
-                }
-
-                // Handle new symbol subscriptions added while the stream is active
-                new_subs = sub_rx.recv() => {
-                    if let Some(subs) = new_subs {
-                        if !subs.is_empty() {
-                            // Construct and send the subscription message
-                            let payload = serde_json::json!({
-                                "action": "subscribe",
-                                "quotes": subs
-                            }).to_string();
-                            let _ = write.send(Message::Text(payload.into())).await;
-                        }
-                    }
-                }
-
-                // Send periodic ping frames to the server
-                _ = ping_timer.tick() => {
-                    let _ = write.send(Message::Ping(vec![].into())).await;
-                }
-
-                // Reconnect if no data has been received for the silence threshold
-                _ = silence_timer.tick() => {
-                    inner.lock().await.callbacks.on_event(EventRecord { r#type: "silence-reconnect".to_string(), data: None });
-                    return WsLoopResult::Reconnect { connected };
-                }
-            }
-        }
-    }
-
-    /// Subscribes to a list of symbols and persists them in the database.
-    pub async fn subscribe(&self, symbols: Vec<String>) {
-        let mut guard = self.inner.lock().await;
-        let mut to_send = Vec::new();
-
-        for s in &symbols {
-            // Only add and persist if not already subscribed
-            if !guard.subscriptions.contains(s) {
-                guard.subscriptions.push(s.clone());
-                to_send.push(s.clone());
-
-                // Persist the new subscription in redb if database is active
-                if let Some(ref db) = guard.db {
-                    let write_txn = db.begin_write().unwrap();
-                    {
-                        let mut table = write_txn.open_table(ALPACA_SUBSCRIPTIONS_TABLE).unwrap();
-                        table.insert(s.as_str(), true).unwrap();
-                    }
-                    write_txn.commit().unwrap();
-                }
-            }
-        }
-
-        // If the background task is running, send the new symbols via the channel
-        if let Some(tx) = &guard.sub_tx {
-            let _ = tx.send(to_send).await;
-        }
-    }
-
-    /// Unsubscribes from a list of symbols and removes them from the database.
-    pub async fn unsubscribe(&self, symbols: Vec<String>) {
-        let mut guard = self.inner.lock().await;
-
-        // Remove symbols from memory
-        guard.subscriptions.retain(|s| !symbols.contains(s));
-
-        // Remove symbols from the persistent database if active
-        if let Some(ref db) = guard.db {
-            let write_txn = db.begin_write().unwrap();
-            {
-                let mut table = write_txn.open_table(ALPACA_SUBSCRIPTIONS_TABLE).unwrap();
-                for s in &symbols {
-                    table.remove(s.as_str()).unwrap();
-                }
-            }
-            write_txn.commit().unwrap();
-        }
-
-        // Send the explicit unsubscribe message if the loop is active
-        if let Some(_tx) = &guard.ws_task {
-            // We bypass standard channels here and use the fact that the next reconnect
-            // will drop them, or we could add an unsub channel in the future.
-            // For now, we log the removal.
-            guard.callbacks.on_log(LogRecord {
-                level: "info".to_string(),
-                msg: format!("Unsubscribed from {} symbols", symbols.len()),
-                extras: None,
-            });
-        }
-    }
-
-    /// Clears all subscriptions and stops the streamer.
-    pub async fn clean(&self) {
-        let mut guard = self.inner.lock().await;
-
-        // Delete the entire subscriptions table if database is active
-        if let Some(ref db) = guard.db {
-            let write_txn = db.begin_write().unwrap();
-            let _ = write_txn.delete_table(ALPACA_SUBSCRIPTIONS_TABLE);
-            write_txn.commit().unwrap();
-        }
-
-        // Reset in-memory state
-        guard.subscriptions.clear();
-
-        // Stop the active task
-        if let Some(tx) = guard.stop_tx.take() {
-            let _ = tx.send(()).await;
-        }
-    }
-
-    /// Stops the background task without clearing persistent subscriptions.
-    pub async fn stop(&self) {
-        let mut guard = self.inner.lock().await;
-
-        // Signal the task to stop
-        if let Some(tx) = guard.stop_tx.take() {
-            let _ = tx.send(()).await;
-        }
-
-        // Force abort the task if it doesn't respond to the signal
-        if let Some(task) = guard.ws_task.take() {
-            task.abort();
-        }
-    }
-}
-
-/// N-API wrapper for the Alpaca price streamer, enabling its use in JavaScript environments.
+/// N-API facade for Alpaca real-time streaming (dual-mode: raw + unified).
+///
+/// `ThreadsafeFunction` is not `Clone`; each is wrapped in `Arc` so the pump closure can hold a
+/// cheap reference-counted copy. `on_market_event` is optional (absent ⇒ raw-only consumers).
 #[napi]
 pub struct AlpacaStreaming {
-    /// The core implementation using N-API callbacks.
-    core: AlpacaStreamingCore<NapiCallbacks>,
+    inner: Arc<Mutex<AlpacaInner>>,
+    on_log: Arc<ThreadsafeFunction<LogRecord>>,
+    on_pricing: Arc<ThreadsafeFunction<AlpacaPricingData>>,
+    on_event: Arc<ThreadsafeFunction<EventRecord>>,
+    on_market_event: Option<Arc<ThreadsafeFunction<String>>>,
 }
 
 #[napi]
 impl AlpacaStreaming {
-    /// Constructs a new `AlpacaStreaming` instance with the provided JavaScript callback functions.
+    /// Constructs a new `AlpacaStreaming` with the JS callback functions.
+    /// Order: (on_log, on_pricing, on_event, [on_market_event]). `on_market_event` is optional —
+    /// pass it to also receive the unified `"market"` stream.
     #[napi(constructor)]
     pub fn new(
         on_log: ThreadsafeFunction<LogRecord>,
         on_pricing: ThreadsafeFunction<AlpacaPricingData>,
         on_event: ThreadsafeFunction<EventRecord>,
+        on_market_event: Option<ThreadsafeFunction<String>>,
     ) -> Self {
+        let host = WebsocketStreamerHost::new(
+            unique_db_path("alpaca_streaming", "ALPACA_DB"),
+            "alpaca_subscriptions",
+            "alpaca".into(),
+            ProviderKind::Alpaca,
+        );
         Self {
-            core: AlpacaStreamingCore::new(NapiCallbacks {
-                on_log,
-                on_pricing,
-                on_event,
-            }),
+            inner: Arc::new(Mutex::new(AlpacaInner {
+                host,
+                config: AlpacaConfig::default_empty(),
+                started: false,
+            })),
+            on_log: Arc::new(on_log),
+            on_pricing: Arc::new(on_pricing),
+            on_event: Arc::new(on_event),
+            on_market_event: on_market_event.map(Arc::new),
         }
     }
 
-    /// Initializes the streamer with configuration parameters.
+    /// Set config (keys fall back to `APCA_API_KEY_ID` / `APCA_API_SECRET_KEY` env at `start`).
     #[napi]
     pub async fn init(&self, config: AlpacaConfig) -> Result<()> {
-        self.core.init(config).await;
+        self.inner.lock().await.config = config;
         Ok(())
     }
 
-    /// Starts the long-running streaming task.
+    /// Start streaming; the driver resumes persisted subscriptions (redb) on every (re)connect.
     #[napi]
     pub async fn start(&self) -> Result<()> {
-        self.core.start().await;
+        let mut g = self.inner.lock().await;
+        if g.started {
+            return Ok(());
+        }
+        let driver = AlpacaDriver {
+            name: "alpaca".into(),
+            base_url: g
+                .config
+                .base_url
+                .clone()
+                .or_else(|| std::env::var("APCA_API_BASE_URL").ok()),
+            key_id: g
+                .config
+                .key_id
+                .clone()
+                .or_else(|| std::env::var("APCA_API_KEY_ID").ok())
+                .unwrap_or_default(),
+            secret_key: g
+                .config
+                .secret_key
+                .clone()
+                .or_else(|| std::env::var("APCA_API_SECRET_KEY").ok())
+                .unwrap_or_default(),
+            silence_seconds: g.config.silence_seconds.unwrap_or(60),
+            db: g.host.db_handle(), // driver reads persisted subs from redb on every (re)connect
+            table: g.host.table_name(),
+        };
+        // NOTE: do NOT pre-queue resume here — the driver reads the full persisted set from redb on
+        // each connect (reconnect-safe). The facade's subscribe() persists to redb (so resume works)
+        // and also sends a live SubRequest for immediate in-session effect.
+        let on_pricing = Arc::clone(&self.on_pricing);
+        let on_event = Arc::clone(&self.on_event);
+        let on_market = self.on_market_event.clone();
+        g.host.start(
+            driver,
+            Vec::new(),
+            ReconnectPolicy {
+                jitter: true,
+                ..Default::default()
+            },
+            move |ev: CoreEvent| match ev {
+                CoreEvent::Pricing {
+                    raw: RawPricing::Alpaca(p),
+                    uni,
+                } => {
+                    let _ = on_pricing.call(Ok(p), ThreadsafeFunctionCallMode::NonBlocking);
+                    if let (Some(cb), Some(u)) = (on_market.as_ref(), uni) {
+                        if let Ok(j) = serde_json::to_string(&u) {
+                            let _ = cb.call(Ok(j), ThreadsafeFunctionCallMode::NonBlocking);
+                        }
+                    }
+                }
+                CoreEvent::Status(status) => {
+                    let (t, d) = match status {
+                        ProviderStatus::Connected { .. } => ("connected".to_string(), None),
+                        ProviderStatus::Disconnected { reason, .. } => {
+                            ("disconnected".to_string(), Some(reason))
+                        }
+                        ProviderStatus::Reconnecting {
+                            attempt, delay_ms, ..
+                        } => (
+                            "reconnecting".to_string(),
+                            Some(format!("attempt {attempt}, {delay_ms}ms")),
+                        ),
+                        ProviderStatus::Error { message, .. } => ("error".to_string(), Some(message)),
+                    };
+                    let _ = on_event.call(
+                        Ok(EventRecord { r#type: t, data: d }),
+                        ThreadsafeFunctionCallMode::NonBlocking,
+                    );
+                }
+                // RawPricing::Finnhub never reaches the Alpaca pump.
+                _ => {}
+            },
+        );
+        let _ = self.on_log.call(
+            Ok(LogRecord {
+                level: "debug".into(),
+                msg: "alpaca start".into(),
+                extras: None,
+            }),
+            ThreadsafeFunctionCallMode::NonBlocking,
+        );
+        g.started = true;
         Ok(())
     }
 
-    /// Adds a list of symbols to the active stream.
+    /// Subscribe per channel. Each channel's symbols are persisted to redb (resume) AND sent live
+    /// to the driver (immediate in-session effect).
     #[napi]
-    pub async fn subscribe(&self, symbols: Vec<String>) -> Result<()> {
-        self.core.subscribe(symbols).await;
-        Ok(())
-    }
-
-    /// Removes a list of symbols from the active stream.
-    #[napi]
-    pub async fn unsubscribe(&self, symbols: Vec<String>) -> Result<()> {
-        self.core.unsubscribe(symbols).await;
-        Ok(())
-    }
-
-    /// Clears all subscriptions and stops the stream.
-    #[napi]
-    pub async fn clean(&self) -> Result<()> {
-        self.core.clean().await;
-        Ok(())
-    }
-
-    /// Gracefully stops the streaming task.
-    #[napi]
-    pub async fn stop(&self) -> Result<()> {
-        self.core.stop().await;
-        Ok(())
-    }
-}
-
-/// Fix 1: Drop impl for AlpacaStreaming so GC-driven cleanup stops the supervisor loop.
-/// Sends on the stop channel (same path as .stop()), then aborts the task.
-/// Idempotent: stop_tx is taken so a second trigger is a no-op.
-impl Drop for AlpacaStreaming {
-    fn drop(&mut self) {
-        // We are in a sync context; use try_lock to avoid blocking.
-        // If the lock is held, the stream is still active — signal via try_send.
-        if let Ok(mut guard) = self.core.inner.try_lock() {
-            if let Some(tx) = guard.stop_tx.take() {
-                let _ = tx.try_send(());
-            }
-            if let Some(task) = guard.ws_task.take() {
-                task.abort();
+    pub async fn subscribe(&self, opts: AlpacaSubscribeOpts) -> Result<()> {
+        let g = self.inner.lock().await;
+        for (ch, syms) in [
+            ("trades", opts.trades),
+            ("quotes", opts.quotes),
+            ("bars", opts.bars),
+        ] {
+            if let Some(s) = syms {
+                if !s.is_empty() {
+                    g.host.subscribe_channel(ch, s.clone());
+                    g.host.subscribe_channel_live(ch, s);
+                }
             }
         }
-        // If try_lock fails, the task will naturally notice the sender side is gone
-        // when the Arc<Mutex<Inner>> drops (stop_tx Sender drop closes the channel).
+        Ok(())
+    }
+
+    /// Unsubscribe per channel (removes the persisted `channel:symbol` keys so they don't resume).
+    #[napi]
+    pub async fn unsubscribe(&self, opts: AlpacaSubscribeOpts) -> Result<()> {
+        let g = self.inner.lock().await;
+        for (ch, syms) in [
+            ("trades", opts.trades),
+            ("quotes", opts.quotes),
+            ("bars", opts.bars),
+        ] {
+            if let Some(s) = syms {
+                g.host.unsubscribe_channel(ch, s);
+            }
+        }
+        Ok(())
+    }
+
+    /// Clears all persisted subscriptions and stops the stream.
+    #[napi]
+    pub async fn clean(&self) -> Result<()> {
+        let mut g = self.inner.lock().await;
+        let _ = g.host.delete_subscriptions_table();
+        if let Some(tx) = g.host.stop_tx.take() {
+            let _ = tx.try_send(());
+        }
+        g.started = false;
+        Ok(())
+    }
+
+    /// Gracefully stops the streaming supervisor (keeps persisted subscriptions for resume).
+    #[napi]
+    pub async fn stop(&self) -> Result<()> {
+        let mut g = self.inner.lock().await;
+        if let Some(tx) = g.host.stop_tx.take() {
+            let _ = tx.try_send(());
+        }
+        g.started = false;
+        Ok(())
     }
 }
 
 // =============================================
-// EXHAUSTIVE TESTS
+// TESTS
 // =============================================
 
 #[cfg(test)]
-mod tests {
+mod facade_tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::LazyLock;
-    use tokio::sync::Mutex;
+    use crate::markets::nasdaq::datafeeds::streaming::core::host::{
+        unique_db_path, WebsocketStreamerHost,
+    };
+    use crate::markets::nasdaq::datafeeds::streaming::core::schema::ProviderKind;
 
-    // Mutex to ensure tests using the same environment variable/files run serially.
-    static TEST_MUTEX: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
-
-    struct TestCallbacks {
-        pricing_calls: Arc<AtomicUsize>,
-        log_calls: Arc<AtomicUsize>,
-        event_calls: Arc<AtomicUsize>,
-    }
-
-    impl AlpacaCallbacks for TestCallbacks {
-        fn on_log(&self, _record: LogRecord) {
-            self.log_calls.fetch_add(1, Ordering::SeqCst);
-        }
-        fn on_pricing(&self, _data: AlpacaPricingData) {
-            self.pricing_calls.fetch_add(1, Ordering::SeqCst);
-        }
-        fn on_event(&self, _event: EventRecord) {
-            self.event_calls.fetch_add(1, Ordering::SeqCst);
-        }
-    }
-
-    fn create_test_callbacks() -> (
-        TestCallbacks,
-        Arc<AtomicUsize>,
-        Arc<AtomicUsize>,
-        Arc<AtomicUsize>,
-    ) {
-        let p_calls = Arc::new(AtomicUsize::new(0));
-        let l_calls = Arc::new(AtomicUsize::new(0));
-        let e_calls = Arc::new(AtomicUsize::new(0));
-
-        (
-            TestCallbacks {
-                pricing_calls: Arc::clone(&p_calls),
-                log_calls: Arc::clone(&l_calls),
-                event_calls: Arc::clone(&e_calls),
-            },
-            p_calls,
-            l_calls,
-            e_calls,
+    fn fresh_host() -> WebsocketStreamerHost {
+        WebsocketStreamerHost::new(
+            unique_db_path("alpaca_streaming", "ALPACA_DB_TEST_UNSET"),
+            "alpaca_subscriptions",
+            "alpaca".into(),
+            ProviderKind::Alpaca,
         )
     }
 
     #[tokio::test]
-    async fn test_db_initialization_and_clean() {
-        let _lock = TEST_MUTEX.lock().await;
-        let (cb, _, _, _) = create_test_callbacks();
-
-        // Use a distinct, process-unique database file for the test
-        let db_path = std::env::temp_dir().join(format!(
-            "test_alpaca_{}_{}.redb",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let db_path_str = db_path.to_string_lossy().to_string();
-        std::env::set_var("ALPACA_DB", &db_path_str);
-
-        let streamer = AlpacaStreamingCore::new(cb);
-
-        // Clean existing state
-        streamer.clean().await;
-
-        // Assert empty
-        {
-            let guard = streamer.inner.lock().await;
-            assert!(guard.subscriptions.is_empty());
-        }
-
-        // Subscribe to items
-        streamer
-            .subscribe(vec!["AAPL".to_string(), "MSFT".to_string()])
-            .await;
-
-        // Assert items exist in memory
-        {
-            let guard = streamer.inner.lock().await;
-            assert_eq!(guard.subscriptions.len(), 2);
-            assert!(guard.subscriptions.contains(&"AAPL".to_string()));
-        }
-
-        // Clean up
-        streamer.clean().await;
-
-        // Unset to prevent interference with other tests
-        std::env::remove_var("ALPACA_DB");
-    }
-
-    #[tokio::test]
-    async fn test_subscribe_unsubscribe() {
-        let _lock = TEST_MUTEX.lock().await;
-        let (cb, _, _, _) = create_test_callbacks();
-
-        let db_path = std::env::temp_dir().join(format!(
-            "test_alpaca_sub_{}_{}.redb",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let db_path_str = db_path.to_string_lossy().to_string();
-        std::env::set_var("ALPACA_DB", &db_path_str);
-
-        let streamer = AlpacaStreamingCore::new(cb);
-        streamer.clean().await;
-
-        streamer.subscribe(vec!["TSLA".to_string()]).await;
-
-        {
-            let guard = streamer.inner.lock().await;
-            assert_eq!(guard.subscriptions.len(), 1);
-            assert_eq!(guard.subscriptions[0], "TSLA");
-        }
-
-        streamer.unsubscribe(vec!["TSLA".to_string()]).await;
-
-        {
-            let guard = streamer.inner.lock().await;
-            assert!(guard.subscriptions.is_empty());
-        }
-
-        std::env::remove_var("ALPACA_DB");
+    async fn subscribe_persists_per_channel_and_resumes() {
+        // Build the host the same way the facade does and assert channel persistence/resume.
+        let host = fresh_host();
+        host.subscribe_channel("trades", vec!["AAPL".into()]);
+        assert_eq!(
+            host.get_persisted_subscriptions_for_channel("trades", "quotes"),
+            vec!["AAPL".to_string()]
+        );
+        // A different channel is isolated.
+        assert!(host
+            .get_persisted_subscriptions_for_channel("quotes", "quotes")
+            .is_empty());
     }
 
     #[test]
-    fn test_alpaca_pricing_data_deserialization() {
-        // Simulating the data we would map from an Alpaca Quote message
+    fn alpaca_pricing_data_deserialization() {
+        // The raw payload (re-exported from core::types) still round-trips from JSON.
         let raw_json = r#"{
             "symbol": "BRK-A",
             "message_type": "quote",
@@ -972,11 +333,25 @@ mod tests {
             "volume": 100.0,
             "timestamp": "2026-03-15T15:00:00Z"
         }"#;
-
         let data: AlpacaPricingData =
             serde_json::from_str(raw_json).expect("Failed to parse AlpacaPricingData");
         assert_eq!(data.symbol, "BRK-A");
         assert_eq!(data.message_type, "quote");
         assert_eq!(data.price, 600000.5);
+    }
+
+    #[test]
+    fn config_debug_masks_credentials() {
+        let cfg = AlpacaConfig {
+            db_path: None,
+            silence_seconds: Some(60),
+            base_url: None,
+            key_id: Some("super-secret-key".into()),
+            secret_key: Some("super-secret-secret".into()),
+        };
+        let dbg = format!("{cfg:?}");
+        assert!(!dbg.contains("super-secret-key"));
+        assert!(!dbg.contains("super-secret-secret"));
+        assert!(dbg.contains("<redacted>"));
     }
 }

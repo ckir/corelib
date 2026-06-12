@@ -172,9 +172,24 @@ impl WebsocketStreamerHost {
         let table: TableDefinition<&str, bool> = TableDefinition::new(self.table);
         if let Ok(wtx) = self.db.begin_write() {
             if let Ok(mut t) = wtx.open_table(table) {
-                for s in &symbols { let _ = t.insert(format!("{channel}:{s}").as_str(), true); }
+                for s in &symbols {
+                    let _ = t.insert(format!("{channel}:{s}").as_str(), true);
+                }
             }
             let _ = wtx.commit();
+        }
+    }
+
+    /// Send a live per-channel `SubRequest` to the running driver (immediate in-session effect).
+    /// No-op before `start()` (when `sub_tx` is `None`): resume is still safe because the caller
+    /// also persisted via `subscribe_channel`, and the driver reads redb fresh on every connect.
+    #[allow(dead_code)] // consumed by Alpaca in Task 8
+    pub fn subscribe_channel_live(&self, channel: &str, symbols: Vec<String>) {
+        if let Some(tx) = &self.sub_tx {
+            let _ = tx.try_send(SubRequest {
+                channel: channel.to_string(),
+                symbols,
+            });
         }
     }
 
@@ -184,7 +199,9 @@ impl WebsocketStreamerHost {
         let table: TableDefinition<&str, bool> = TableDefinition::new(self.table);
         if let Ok(wtx) = self.db.begin_write() {
             if let Ok(mut t) = wtx.open_table(table) {
-                for s in &symbols { let _ = t.remove(format!("{channel}:{s}").as_str()); }
+                for s in &symbols {
+                    let _ = t.remove(format!("{channel}:{s}").as_str());
+                }
             }
             let _ = wtx.commit();
         }
@@ -192,7 +209,11 @@ impl WebsocketStreamerHost {
 
     /// Read symbols for `target_channel`; a colon-less (legacy bare) key is treated as `default_channel`.
     #[allow(dead_code)] // consumed by Alpaca in Tasks 7/8
-    pub fn get_persisted_subscriptions_for_channel(&self, target_channel: &str, default_channel: &str) -> Vec<String> {
+    pub fn get_persisted_subscriptions_for_channel(
+        &self,
+        target_channel: &str,
+        default_channel: &str,
+    ) -> Vec<String> {
         let table: TableDefinition<&str, bool> = TableDefinition::new(self.table);
         let mut out = Vec::new();
         if let Ok(rtx) = self.db.begin_read() {
@@ -201,8 +222,12 @@ impl WebsocketStreamerHost {
                 for item in iter {
                     let Ok(entry) = item else { continue };
                     let key = entry.0.value().to_string();
-                    let (ch, sym) = key.split_once(':').unwrap_or((default_channel, key.as_str()));
-                    if ch == target_channel { out.push(sym.to_string()); }
+                    let (ch, sym) = key
+                        .split_once(':')
+                        .unwrap_or((default_channel, key.as_str()));
+                    if ch == target_channel {
+                        out.push(sym.to_string());
+                    }
                 }
             }
         }
@@ -220,11 +245,15 @@ impl WebsocketStreamerHost {
 
     /// Cheap clone of the shared redb handle (drivers read persisted subscriptions directly).
     #[allow(dead_code)] // consumed by Alpaca in Tasks 7/8
-    pub fn db_handle(&self) -> Arc<Database> { Arc::clone(&self.db) }
+    pub fn db_handle(&self) -> Arc<Database> {
+        Arc::clone(&self.db)
+    }
 
     /// The subscriptions table name (for driver-side reads).
     #[allow(dead_code)] // consumed by Alpaca in Tasks 7/8
-    pub fn table_name(&self) -> &'static str { self.table }
+    pub fn table_name(&self) -> &'static str {
+        self.table
+    }
 }
 
 impl Drop for WebsocketStreamerHost {
@@ -246,8 +275,12 @@ impl Drop for WebsocketStreamerHost {
 mod host_persistence_tests {
     use super::*;
     fn fresh() -> WebsocketStreamerHost {
-        WebsocketStreamerHost::new(unique_db_path("test_host", "TEST_HOST_DB_UNSET"),
-            "test_subscriptions", "test".into(), ProviderKind::Alpaca)
+        WebsocketStreamerHost::new(
+            unique_db_path("test_host", "TEST_HOST_DB_UNSET"),
+            "test_subscriptions",
+            "test".into(),
+            ProviderKind::Alpaca,
+        )
     }
     #[tokio::test]
     async fn channel_keys_roundtrip_and_unsubscribe_is_precise() {
@@ -257,11 +290,20 @@ mod host_persistence_tests {
         let mut q = h.get_persisted_subscriptions_for_channel("quotes", "quotes");
         q.sort();
         assert_eq!(q, vec!["AAPL".to_string(), "MSFT".to_string()]);
-        assert_eq!(h.get_persisted_subscriptions_for_channel("trades", "quotes"), vec!["AAPL".to_string()]);
+        assert_eq!(
+            h.get_persisted_subscriptions_for_channel("trades", "quotes"),
+            vec!["AAPL".to_string()]
+        );
         h.unsubscribe_channel("quotes", vec!["AAPL".into()]);
-        assert_eq!(h.get_persisted_subscriptions_for_channel("quotes", "quotes"), vec!["MSFT".to_string()]);
+        assert_eq!(
+            h.get_persisted_subscriptions_for_channel("quotes", "quotes"),
+            vec!["MSFT".to_string()]
+        );
         // trades:AAPL untouched
-        assert_eq!(h.get_persisted_subscriptions_for_channel("trades", "quotes"), vec!["AAPL".to_string()]);
+        assert_eq!(
+            h.get_persisted_subscriptions_for_channel("trades", "quotes"),
+            vec!["AAPL".to_string()]
+        );
     }
     #[tokio::test]
     async fn colonless_legacy_key_defaults_to_channel() {
@@ -276,6 +318,8 @@ mod host_persistence_tests {
         let h = fresh();
         h.subscribe_channel("quotes", vec!["AAPL".into()]);
         h.delete_subscriptions_table().unwrap();
-        assert!(h.get_persisted_subscriptions_for_channel("quotes", "quotes").is_empty());
+        assert!(h
+            .get_persisted_subscriptions_for_channel("quotes", "quotes")
+            .is_empty());
     }
 }

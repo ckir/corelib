@@ -70,13 +70,13 @@ pub mod markets {
             pub mod streaming {
                 /// Alpaca-specific streaming implementation.
                 pub mod alpaca {
-                    /// Main Alpaca price streamer logic.
-                    pub mod alpaca_streamer;
                     /// Pure Alpaca frame-decode functions (q/t/b → raw + unified).
                     pub mod alpaca_driver;
+                    /// Main Alpaca price streamer logic.
+                    pub mod alpaca_streamer;
                     /// Re-export Alpaca streaming components for convenience.
                     pub use alpaca_streamer::{
-                        AlpacaConfig, AlpacaPricingData, AlpacaStreaming, AlpacaStreamingCore,
+                        AlpacaConfig, AlpacaPricingData, AlpacaStreaming, AlpacaSubscribeOpts,
                     };
                 }
                 /// Yahoo-specific streaming implementation.
@@ -119,7 +119,7 @@ pub use markets::nasdaq::api_nasdaq_unlimited::{
 
 /// Re-export Alpaca streaming components.
 pub use markets::nasdaq::datafeeds::streaming::alpaca::{
-    AlpacaConfig, AlpacaPricingData, AlpacaStreaming, AlpacaStreamingCore,
+    AlpacaConfig, AlpacaPricingData, AlpacaStreaming, AlpacaSubscribeOpts,
 };
 
 /// Re-export Yahoo streaming components.
