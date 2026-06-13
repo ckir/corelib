@@ -24,7 +24,7 @@ Current state:
 | D3 | Escalation policy | **Bounded retries (N=3) → then escalate** with a summary; never an unbounded loop. | user |
 | D4 | Local gate weight | **biome format+lint only** locally; typecheck + build + test → CI (see D5). | agy + Claude concur |
 | D5 | CI shape | **Split CI into a fast `validate` pre-flight** (single Linux runner, ~1 min: format+lint+typecheck+offline tests) that **gates** the 9-cell matrix (matrix skipped on pre-flight failure). The auto-fixer binds to **pre-flight** failures. | agy (Claude strongly endorses) |
-| D6 | Auto-fix tool home | **Claude Code skill** (`/watch-ci`) — the skill-running Claude IS the fixer (no headless `claude -p` spawn). | user |
+| D6 | Auto-fix tool home | **Standalone autonomous `watch-ci` script** (the worker) + a thin **`/watch-ci` Claude Code skill that launches it** after a push. The script orchestrates + enforces all rails; a headless `claude -p` does the code fix only. | user |
 
 > **Claude's caveat on D4 (recorded):** dropping local typecheck means **cross-package** type breaks (a `ts-core` change breaking `ts-markets`) surface only after push — the editor LSP doesn't reliably catch those. Accepted because the cheap ~1-min pre-flight lane (D5) + the auto-fixer absorb them cheaply.
 
@@ -42,23 +42,29 @@ Make the heavy jobs depend on it: `test` (the 9-cell matrix), `integration`, `do
 - **pre-push:** **removed** (no local build/test). CI owns build/test/the matrix.
 - Net: the machine does ~150ms of work per commit; everything heavy is in CI.
 
-## 4. Architecture — Part B: `/watch-ci` Claude Code skill
+## 4. Architecture — Part B: the `watch-ci` script + `/watch-ci` launcher skill
 
-A skill the developer invokes in a **dedicated** Claude Code terminal right after pushing (e.g., `git push` then `/watch-ci` in a separate session). It babysits the run and exits when done; the developer works on other projects meanwhile. **The skill-running Claude is the fixer** — it has full repo context and edits directly.
+Two artifacts:
+- **`watch-ci` (the autonomous worker):** a standalone, cross-platform Node/`tsx` script that runs **detached** (its own background process). It owns the deterministic orchestration — watch CI, harvest+scrub logs, drive the bounded fix loop, enforce the safety rails, push, escalate. It costs **nothing while CI is green** and spawns the model only on an actual failure.
+- **`/watch-ci` (the launcher skill):** a thin Claude Code skill the developer invokes right after pushing; it starts the `watch-ci` script as a detached background process and returns immediately, freeing the developer (and the Claude session) to move to another project.
 
-### 4.1 The loop
-1. **Identify the run:** `gh run list --branch main --limit 1 --json databaseId,status,workflowName` → the run for the just-pushed HEAD.
-2. **Wait efficiently:** `gh run watch <id> --exit-status` (blocks until the run concludes; exit 0 = pass, non-zero = fail) — no busy-poll, near-zero local cost while waiting.
-3. **Green** → success **toast + terminal bell** → exit. The developer never had to look.
-4. **Red** → **harvest + compress** the failing logs: `gh run view <id> --log-failed` → strip ANSI/setup noise → regex the real error blocks (`error TS\d+`, biome diagnostics, vitest failures) down to <80 focused lines.
-5. **Secret-scrub** the compressed logs (reuse the integration tier's scrubber denylist) before reasoning over them.
-6. **Fix** (the skill-Claude, constrained to the files named in the logs; path-denylist enforced — §5): edit → run the **light** local check only (`biome format` + lint; never `verify:full` — re-validation is CI's job per D2).
-7. **Concurrency guard:** confirm remote `main` HEAD still equals the SHA that failed. If a newer commit landed (the developer pushed again), **abort** — don't stack a fix on stale state.
-8. **Commit + push** the fix → return to step 1 for the new run. Decrement the retry budget.
-9. **Budget exhausted (N=3 or `max_total_minutes`)** → **escalate** (§5).
+### 4.1 The loop (run by the script)
+1. **Identify the run** for the just-pushed HEAD: `gh run list --branch main --limit 1 --json databaseId,headSha,status`.
+2. **Wait efficiently:** `gh run watch <id> --exit-status` (blocks until the run concludes; exit 0 = pass) — near-zero local cost while waiting.
+3. **Green** → success **toast + terminal bell** → exit.
+4. **Red** → **harvest + compress** the failing logs: `gh run view <id> --log-failed` → strip ANSI/setup noise → regex the real error blocks (`error TS\d+`, biome diagnostics, vitest failures) → <80 focused lines.
+5. **Secret-scrub** the compressed logs (reuse the integration tier's scrubber denylist) before they reach the model.
+6. **Spawn the fixer (headless):** `claude -p "<focused prompt + compressed scrubbed logs>"`, constrained to the files named in the logs, working in an **isolated worktree** (§4.2). The fixer edits → runs the **light** check only (`biome format` + lint; never `verify:full` — re-validation is CI's job per D2) → **commits locally**. It does NOT push.
+7. **Script validates the fix BEFORE pushing** (rails live in deterministic code, not LLM self-policing — §4.3): non-empty diff; no denied paths touched (§5.4); not a repeat fingerprint (§5.3); **concurrency guard** — remote `main` HEAD still equals the failing `headSha`, else abort (§5.2).
+8. **Push** (script; never force — §5.5) → return to step 1 for the new run; decrement the budget.
+9. **Budget exhausted (N=3 / `max_total_minutes`) or a rail trips** → **escalate** (§6).
 
-### 4.2 Optional worktree isolation
-If the developer will also hand-edit corelib while `/watch-ci` runs, the skill fixes inside an isolated `git worktree add` (temp worktree at the failing SHA) so its edits never touch the active editor's files; it pushes from the worktree and tears it down. For a dedicated watch session that owns the checkout, this is optional. Default: **on** when the working tree has uncommitted changes or an env flag requests it; otherwise fix in place.
+### 4.2 Isolated worktree (default on)
+The fixer runs inside a temp `git worktree add` at the failing SHA, so its edits/checks never touch files the developer is actively editing (in corelib or another project). The script pushes the worktree commit and tears the worktree down each attempt. This is what makes "fix in the background while I work elsewhere" safe. (An env flag can disable it for a dedicated checkout, but on is the default.)
+
+### 4.3 Division of labor (why this split)
+- **Script = deterministic orchestration + ALL safety rails** (watch, log harvest/scrub, retry/budget, concurrency/SHA guard, path-denylist check on the produced diff, no-force push, escalation). Rails are **code**, not LLM self-policing.
+- **`claude -p` = the fix reasoning only** (read scrubbed logs + repo, edit the flagged files, format+lint, commit). It cannot push, cannot escape the worktree, and cannot touch denied paths — the script gates all of that.
 
 ## 5. Safety rails (all in the MVP — these prevent harm, not polish)
 
@@ -83,14 +89,14 @@ When the budget is exhausted (or a rail trips), reach a developer who's off on a
 **Phase 1 — MVP (the whole loop, lean; ships together):**
 - `pipeline.yml`: add the `validate` pre-flight lane gating the matrix (§3.1).
 - `lefthook.yml`: lighten to biome format+lint; drop pre-push (§3.2).
-- `/watch-ci` skill: `gh run watch` → compress+scrub logs → fix (skill-Claude, optional worktree) → format+lint → concurrency-guarded push → N=3 → escalate. **All damage-prevention rails (§5) ship in the MVP.**
+- `watch-ci` script + thin `/watch-ci` launcher skill: `gh run watch` → compress+scrub → headless `claude -p` fix in an isolated worktree → format+lint → script-side concurrency-guarded push → N=3 → escalate. **All damage-prevention rails (§5) ship in the MVP.**
 
 **Phase 2 — ergonomics + reach:**
 - Content-fingerprint loop-detection refinement; richer log-compression patterns; per-repo config (`.watch-ci.json`: `workflow`, `branch`, `max_retries`, `max_total_minutes`, `preflight_job`, `paths_denylist`) with zero-config defaults; cross-project rollout; optional `rtk watch-ci` front-end (if rtk is extensible); a status line; CI-minute accounting.
 
 ## 8. Reusability
 
-The skill is global (`~/.claude/skills/`), so it works in any repo with `gh` + a GitHub Actions workflow. Per-repo behavior comes from the optional `.watch-ci.json` (Phase 2); with no config it assumes `main` + the repo's default workflow + N=3. corelib is the proving ground; nothing in the skill is corelib-specific except the defaults it falls back to.
+The `watch-ci` script + `/watch-ci` launcher skill are global/cross-project (script in a shared bin; skill in `~/.claude/skills/`), working in any repo with `gh` + a GitHub Actions workflow. Per-repo behavior comes from the optional `.watch-ci.json` (Phase 2); with no config it assumes `main` + the repo's default workflow + N=3. corelib is the proving ground; nothing is corelib-specific except the fallback defaults.
 
 ## 9. Risks & deferred
 
