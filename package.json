@@ -4,10 +4,12 @@
     "packageManager": "pnpm@11.5.2",
     "devDependencies": {
         "@biomejs/biome": "^2.4.15",
+        "cross-env": "^10.1.0",
         "del-cli": "^7.0.0",
         "dependency-cruiser": "^17.4.0",
         "nx": "^22.7.2",
         "tsup": "^8.5.1",
+        "tsx": "^4.22.4",
         "typescript": "^6.0.3"
     },
     "scripts": {
@@ -22,6 +24,10 @@
         "verify:full": "pnpm build-all && pnpm test-all:run",
         "docs": "pnpm run docs-all",
         "docs-all": "pnpm -r run docs",
-        "clean-all": "pnpm exec npx del-cli --force node_modules dist rust\\target .nx"
+        "clean-all": "pnpm exec npx del-cli --force node_modules dist rust\\target .nx",
+        "test:integration": "pnpm -r --workspace-concurrency=1 run test:integration",
+        "test:integration:record": "cross-env INTEGRATION_RECORD=1 pnpm -r --workspace-concurrency=1 run test:integration",
+        "test:integration:live": "cross-env INTEGRATION_LIVE=1 pnpm -r --workspace-concurrency=1 run test:integration",
+        "test:integration:validate": "tsx tests/integration/coverage-validator.ts"
     }
 }

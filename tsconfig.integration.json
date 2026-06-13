@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "paths": {
+      "@ckir/corelib": ["./ts-core/src/index.ts"],
+      "@ckir/corelib-markets": ["./ts-markets/src/index.ts"],
+      "@ckir/corelib-cloud": ["./ts-cloud/src/index.ts"],
+      "@itest/*": ["./tests/integration/*"]
+    }
+  },
+  "include": [
+    "tests/integration",
+    "ts-core/tests/integration/**/*.ts",
+    "ts-markets/tests/integration/**/*.ts",
+    "ts-cloud/tests/integration/**/*.ts"
+  ]
+}
