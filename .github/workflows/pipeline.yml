@@ -19,7 +19,7 @@ jobs:
   # STAGE 1: VALIDATION (Linting & Formatting)
   # ---------------------------------------------------------
   validate:
-    name: Validate (Lint & Format)
+    name: Validate (pre-flight)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -30,12 +30,18 @@ jobs:
         with:
           node-version: 24
           cache: 'pnpm'
-      
+
       - name: Install dependencies
         run: pnpm install
-      
-      - name: Check Formatting & Lint
+
+      - name: Lint + format check
         run: pnpm lint-all # pnpm lint-all runs 'biome check' which includes formatting
+
+      - name: Typecheck
+        run: pnpm typecheck-all
+
+      - name: Integration (replay, offline)
+        run: pnpm test:integration && pnpm test:integration:validate
 
   # ---------------------------------------------------------
   # STAGE 2: MULTI-OS TESTING
