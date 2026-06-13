@@ -34,4 +34,6 @@ export const COVERAGE_MATRIX: SeamCell[] = [
   { seam: "external", id: "cnn.fearGreed.success", fixturePath: "cnn/fear-greed-success.json" },
   { seam: "external", id: "cnn.fearGreed.500", fixturePath: "cnn/fear-greed-500.json" },
   // TODO(itest): yahoo.historical.success — URL contains timestamps, intractable offline; record live
+  // ts-cloud node project (Task 13)
+  { seam: "cross-package", id: "cloud.health" },
 ];
