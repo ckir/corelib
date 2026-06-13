@@ -2566,3 +2566,169 @@ An essential compilation constraint missed in candidate outlines is the **Rust/N
 *   To validate the top TSFN GC residual (`ffi-reentrancy-reconnect-gc-deadlock-01`), we must implement a production code addition (a test-only diagnostic flood hook).
 *   If we ran this validation as a separate, deep-dive research task (Claude's Step 3), we would compile `corelib-rust` twice under different native scopes, splitting our focus.
 *   **Constraint Rule**: Bundling the TSFN GC validation flood-hook implementation with the `redb` Rust-side and `finnhub-no-endpoint-override` modifications under **Epic 2** ensures that all native Rust changes are designed, coded, and compiled in a single concentrated session. This maximizes developer feedback loops, isolates Cargo/Target folder invalidations, and avoids fragmented Rust-to-JS bridge iterations.
+
+---
+
+## 2026-06-13 — Epic 1 Boot-Hardening: design divergent review
+
+We have completed a comprehensive divergent design review on Epic 1 (ConfigManager & Boot-Hardening fix cycle), focusing purely on reading, reasoning, and analyzing the 7 entangled findings. Below is our rigorous assessment of the design forks, including concrete failure-mode vectors, structural tradeoffs, and precise architectural correctness blueprints.
+
+### 1. Read Contract for the Partial-Init Window (-02)
+
+We agree with **Option (A)**: seeding `builtinDefaults` synchronously inside the constructor, keeping `get()` synchronous and non-throwing, and adding `whenReady(): Promise<void>` / `isInitialized(): boolean` APIs. This avoids breaking existing pervasively synchronous `?? default` call sites across `ts-markets`. 
+
+*However, Option (A) introduces distinct architectural hazards that we must proactively mitigate in the final implementation:*
+
+#### 1.1 Premature Read Silent Masking Hazard
+*   **The Vector**: If a key is required by a subsystem (e.g., active database host/credentials), and that key is missing or blank in standard defaults but overridden in an external config or env, a synchronous call to `get()` during the boot-window will return the stale/empty default. It avoids throwing, but the caller proceeds to execute with incorrect local/placeholder credentials, masking a critical configuration absence.
+*   **Remediation**:
+    1.  Expose `_isInitialized` as a private property, surfaced via `public get isInitialized(): boolean`.
+    2.  If `get()` is invoked while `isInitialized` is `false`, **emit a single non-blocking warning to the console** (only in non-production environments like development/test) listing the queried path:
+        ```typescript
+        if (!this._isInitialized && process.env.NODE_ENV !== "production") {
+            ConfigManager._logger.warn(`Premature synchronous read for path "${path}" before initialization completed.`);
+        }
+        ```
+    3.  All orchestrators and long-lived background drivers (e.g., database connections, stream wrappers) MUST await `ConfigManager.getInstance().whenReady()` before beginning lifecycle execution.
+
+#### 1.2 Nested Map Reference Severance
+*   **The Vector**: If a consumer accesses a nested configuration path early (e.g., `const dbObj = ConfigManager.get("db")` at module-level scope), they capture a reference to a sub-object. When `initialize()` runs, if we reassign keys or the entire config, they hold a severed, dead reference.
+*   **Remediation**: 
+    1.  Enforce **Safe Mutate-In-Place** (Section 3) so nested map identities are preserved.
+    2.  Document clearly in `README.md` that caching sub-sections of the config object at module load time is a strict anti-pattern; callers should rely on `ConfigManager.get("path")` at the hot execution point.
+
+---
+
+### 2. CLI Parsing Platform: Keep Commander (a) vs. Drop to Hand-Parsing (b)
+
+We strongly recommend **Option (b)**: **Drop Commander entirely and transition to clean, zero-dependency hand-parsing in ConfigManager.**
+
+| Evaluation Metric | Option (a): Keep Commander + `program.exitOverride()` | Option (b): Hand-parse -C and hand-parse CLI Overrides (Recommended) |
+| :--- | :--- | :--- |
+| **Dependency Surface** | Retains dependency on `commander@15`. Subject to future major breaks. | **Zero dependencies**. Future-proof against compiler, runtime, or package shifts. |
+| **Process Crash Risk** | Medium. Commander defaults to calling `process.exit(1)` on errors. Resiliently tuning it requires multi-option workarounds. | **Zero**. Standard custom loops cannot invoke hard exits on execution. |
+| **Vitest CLI Conflict** | High. Commander seeks to parse global `process.argv` and clashes with Vitest's local options. | **None**. We only process arguments matching explicit patterns or a clean custom slice. |
+| **Implementation Complexity** | Low (uses library API), but demands deep version-specific testing. | **Minimum**. Fully encapsulated inside a single, highly readable utility method. |
+
+#### 2.1 Low-Risk Hand-Parsing Schema
+Because the CLI override parser is already hand-written (iterating `program.args` at lines 391-418), keeping Commander just to extract `-C` or `--config` is a severe architectural over-complication. We can replace Commander completely with:
+
+```typescript
+const argv = args ?? (typeof process !== "undefined" && process.argv ? process.argv.slice(2) : []);
+
+// Extract the base config path if present
+let configPath: string | undefined;
+const cIdx = argv.findIndex(arg => arg === "-C" || arg === "--config");
+if (cIdx !== -1 && cIdx + 1 < argv.length) {
+    configPath = argv[cIdx + 1];
+} else {
+    const eqMatch = argv.find(arg => arg.startsWith("--config="));
+    if (eqMatch) configPath = eqMatch.split("=")[1];
+}
+
+// Extract arbitrary overrides (excluding the -C block)
+const overrides: Record<string, string> = {};
+for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "-C" || arg === "--config") {
+        i++; // skip value
+        continue;
+    }
+    if (arg.startsWith("--config=")) continue;
+
+    if (arg.startsWith("--")) {
+        let key = arg.slice(2);
+        let value: string | boolean = true;
+        const eqIdx = key.indexOf("=");
+        if (eqIdx !== -1) {
+            value = key.slice(eqIdx + 1);
+            key = key.slice(0, eqIdx);
+        } else if (i + 1 < argv.length && !argv[i + 1].startsWith("-")) {
+            value = argv[i + 1];
+            i++;
+        }
+        overrides[key] = value as string;
+    }
+}
+```
+This is self-contained, completely immune to `process.exit` conditions, and bypasses Commander's parsing paradigms entirely.
+
+---
+
+### 3. Mutate-In-Place Correctness & Safe Merge Discipline
+
+Reassigning `this._config` inside asynchronous boundaries (such as `processHierarchy` or `loadDefaults` or `applyCliOverrides` during await yields) invites severe race conditions and memory leaks. However, performing raw key mutation directly on `this._config` *mid-resolution* runs the risk of leaving the config in a half-merged, poisoned state if a network fetch or YAML decryption fails midway.
+
+#### 3.1 The Staged-Calculation-&-Atomic-Swap Discipline
+To ensure absolute integrity, we must decouple configuration *construction* from configuration *assignment*:
+1.  **Stage 1: Collect & Build (Isolated Clone)**: Throughout the initialization pipeline, compile all config layers onto a fresh, decoupled temporary object `tempConfig = {}`.
+    *   Initialize `tempConfig` with synchronous defaults.
+    *   Load external configurations, process the hierarchical resolution (commonAll -> App platform -> mode), and merge them onto `tempConfig` using `leafMerger` as an isolated pure operation.
+    *   Apply env overrides to `tempConfig`.
+    *   Apply CLI overrides to `tempConfig`.
+2.  **Stage 2: Atomic Sync Mutate**: Once `tempConfig` is fully compiled and validated with zero errors, execute a single, synchronous, non-throwing deep-copy override into the live `this._config` reference.
+
+#### 3.2 Deep In-Place Mutator (`clearAndFill`)
+To keep array replacement semantics intact while maintaining object reference identities for downstream consumers, implement a resilient deep-assign-in-place function:
+
+```typescript
+function clearAndFill(target: Record<string, any>, source: Record<string, any>): void {
+    // 1. Prune target keys missing from source
+    for (const key of Object.keys(target)) {
+        if (!(key in source)) {
+            delete target[key];
+        }
+    }
+    // 2. Deep update source values in-place
+    for (const key of Object.keys(source)) {
+        const val = source[key];
+        // If it is a nested plain object (not an array/primitive), merge recursively
+        if (val && typeof val === "object" && !Array.isArray(val)) {
+            if (!target[key] || typeof target[key] !== "object" || Array.isArray(target[key])) {
+                target[key] = {};
+            }
+            clearAndFill(target[key] as Record<string, any>, val);
+        } else {
+            // Arrays are replaced completely (mergeArrays: false), matching leafMerger
+            target[key] = val;
+        }
+    }
+}
+```
+This completely guarantees:
+-   `globalThis.sysconfig === this._config` stays True forever.
+-   Nested configurations (e.g., `sysconfig.db`) keep their identity object-structure where possible, ensuring existing consumers do not see severed values.
+-   If any external loading error occurs, the transition collapses and `this._config` remains perfectly unpolluted (atomic validation).
+
+---
+
+### 4. Critical 8th Boot-Layer Hazard: The Failed-Initialization Lock-Out
+
+In reviewing the 7-finding set integrated into Epic 1, we must address a high-concurrency vulnerability:
+
+*   **The Hazard**: While the single-flight `_initPromise` prevents concurrent initialization calls from clobbering each other, it presents a fatal lockout condition if initialization **fails**.
+*   **The Vector**: If the first caller invokes `initialize()` and it encounters a network timeout fetching the external URL config, the stored `_initPromise` rejects. However, if we do not clear `_initPromise` on failure, subsequent attempts across retry systems will immediately witness the cached rejected Promise forever. The application is permanently stuck in a failed state and cannot self-heal.
+*   **Remediation**: The `initialize()` wrapper must handle failure by evicting its own lock cache:
+    ```typescript
+    public initialize(args?: string[]): Promise<void> {
+        if (this._initPromise) {
+            return this._initPromise;
+        }
+        
+        this._initPromise = (async () => {
+            try {
+                await this.executeInitSequence(args);
+                this._isInitialized = true;
+            } catch (error) {
+                this._initPromise = null; // Evict failed promise to enable self-clearing retry
+                throw error;
+            }
+        })();
+        
+        return this._initPromise;
+    }
+    ```
+
+### 5. Final Verdict and Correctness Guardrails
+Our divergent design review fully validates Epic 1's goal: consolidating the boot-hardening vectors into a unified, bulletproof module. By pairing **Defaults Seed-At-Constructor** (Option A) with **Zero-Dependency hand-parsing** (Option B) and **Staged-Assignment Atomic In-Place deep writes**, we eliminate all races, exit codes, and reference-loss defects in a single structural fix cycle.
+
