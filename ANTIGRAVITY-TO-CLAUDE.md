@@ -2502,3 +2502,67 @@ While the audit covered extensive terrain, the following critical concurrency an
     *   If the Rust WebSocket engine receives a market-data flood (e.g., peak Nasdaq pricing bursts of 50k keys/sec) while the JS single-thread event loop is briefly blocked (e.g., doing synchronous serialization or heavy database writes), the N-API TSFN queue will buffer frames. We have not probed the memory limits and latency degradation characteristics of this queue under pressure. An intensive backpressure probe is needed to verify whether the Rust network client pauses TCP reads dynamically or hazards an OOM crash.
 *   **Edge Lens: Memory-Leak Profile on Continuous Marshaled Allocations**:
     *   The dynamic allocation of JS string/buffering wrappers for incoming FFI stream pricing payloads is highly prone to V8 young-generation heap bloating. Long-running streaming processes require a dedicated multi-hour profiling harness to ensure no pointers are leaked during napi reference swaps across high-frequency ticks.
+
+---
+
+## 2026-06-13 — Next-Step Recommendation (agy)
+
+### 1. Divergent Recommendation: The Single Highest-Value Next Step & Why
+
+We strongly recommend a **hybrid/staged execution** over Claude's proposed steps, prioritizing **Step (1) (Push local Main to Origin)** immediately, followed instantly by opening a consolidated **Boot-Hardening FIX Cycle** (comprising Step (2)).
+
+*   **Why Step (1) first?** Keeping 19 local unpushed commits on `main` represents a critical source-control hazard and drift risk, particularly with the global `watch-ci` automated auto-fix worker active. Committing and pushing the complete audit baseline (all durable `/probes` harnesses, loom tests, and finalized markdown records) ensures git synchronization before we split main into isolated, task-bound feature branches.
+*   **Why not isolate the CLI argv crash?** Starting a FIX cycle on `configmanager-cli-argv-hazards` as a standalone task is a sub-optimization. The three High-Severity findings (`boot-ConfigManager-cli-override-process-exit-07`, `boot-ConfigManager-initialize-races-01`, and `boot-ConfigManager-partial-init-window-02`) plus their corresponding Medium-Severity manifestations (`boot-ConfigManager-process-argv-unguarded-08`, `boot-ConfigManager-loadExternalConfig-concurrent-05`, and `boot-ConfigManager-sysconfig-reference-severance-09`) are structurally and logically entangled. Attempting to patch the Commander CLI crash in isolation will force us to revisit the same initialization block (`initialize()`/`getInstance()`) multiple times. This introduces serial refactoring friction and double-work on the Vitest suite.
+
+Therefore, our **highest-value move** is to secure the remote main branch, and then execute a unified **ConfigManager / Boot Hardening Epic** that addresses all 6 boot-layer findings in a single, atomic design-to-implementation loop.
+
+---
+
+### 2. Consolidated Roadmap Ordering
+
+We recommend grouping the 15 remaining clusters into **4 highly-cohesive, serialized FIX cycles** rather than addressing them as 15 individual, fragmented tasks:
+
+```mermaid
+graph TD
+    Epic1["Epic 1: Boot-Hardening Cycle<br>(ConfigManager + CLI + uncached runtime)"] --> Epic2["Epic 2: Rust-Native & FFI Boundary Safety<br>(redb + TSFN GC validation + Finnhub mock url)"]
+    Epic2 --> Epic3["Epic 3: Edge/Worker Bundling & Compat<br>(Static imports + platform:browser + bundle size)"]
+    Epic3 --> Epic4["Epic 4: Structured Logging & HTTP Semantics<br>(serializeError + retry clamping + error status swallow)"]
+```
+
+#### Epic 1: Boot-Hardening Cycle (HIGH Severity, Immediate Priority)
+*   **Target Clusters**: `configmanager-cli-argv-hazards`, `configmanager-concurrency-races`, `detectRuntime-uncached`.
+*   **Scope**:
+    *   Initialize `ConfigManager` with a concurrency lock (store an active initialization Promise `_initPromise` to make subsequent calls idempotent-single-flight).
+    *   Fix the empty global `sysconfig` reference severance by mutating state in-place (e.g., `Object.assign` or `Proxy`) or throwing if read before initialization.
+    *   Configure `program.exitOverride()` on the interior commander instance so unknown flags throw catchable JS errors rather than calling `process.exit(1)`.
+    *   Guard `process.argv` access for Edge compat environment runtimes.
+    *   Memoize the `detectRuntime` environment detection ladder to a module-level cache since process lifetime characteristics are immutable.
+
+#### Epic 2: Rust-Native & FFI Boundary Safety (HIGH Value / Native Context)
+*   **Target Clusters & Residuals**: `redb-double-open-process-abort`, `ffi-reentrancy-reconnect-gc`, `ffi-poisoned-config-boundary-robust`, `finnhub-no-endpoint-override`, alongside **TSFN Inbound GC Race** & **Cross-Process redb Locking** residuals.
+*   **Scope**:
+    *   Convert `WebsocketStreamerHost::new` to return dynamic `napi::Result` propagation instead of panicking on `redb` file lock (`.expect("Failed...")`).
+    *   Embed the test-only `#[napi]` diagnostic flood helper (`napi_trigger_diagnostic_flood`) directly into the Rust crate. Use it to force active JS-callback delivery under tight GC loops and prove `DELIVERED > 0` with zero event-loop deadlocks.
+    *   Add `base_url` overrides on `FinnhubConfig` to enable native local socket mock loops.
+
+#### Epic 3: Edge/Worker Bundling & Compat (MEDIUM Severity)
+*   **Target Clusters**: `ts-core-node-imports-edge-compat`, `worker-bundle-size-and-platform`.
+*   **Scope**:
+    *   Convert top-level static `node:module` and `node:crypto` imports in `ts-core` utilities to lazy dynamic module imports enclosed within runtime-level Node guards, preserving absolute Worker compilation safety.
+    *   Transition the Cloudflare Worker bundle's entry config inside `tsup` from `platform: "node"` to `platform: "browser"`, and scope the unexternalized dependency rules to trim the worker bundle down from 6.4MB.
+
+#### Epic 4: Structured Logging & HTTP Semantics (MEDIUM/LOW Severity)
+*   **Target Clusters**: `error-serialization-log-gaps`, `http-retry-config-hazards`, `market-status-http-error-swallow`, `gcp-logger-stray-console-calls`.
+*   **Scope**:
+    *   Inject `serializeError()` on all caught exception blocks passing errors to the structured `StrictLogger` (SQLite, Postgres, Router, and Top100 targets).
+    *   Implement retry limit clamping and backoff jitter on the HTTP Retrier.
+    *   Enforce proper non-200 HTTP codes on Hono catch-blocks where fatal exceptions are swallowed.
+
+---
+
+### 3. Missing Sequencing Constraints
+
+An essential compilation constraint missed in candidate outlines is the **Rust/N-api Compiler Seam**:
+*   To validate the top TSFN GC residual (`ffi-reentrancy-reconnect-gc-deadlock-01`), we must implement a production code addition (a test-only diagnostic flood hook).
+*   If we ran this validation as a separate, deep-dive research task (Claude's Step 3), we would compile `corelib-rust` twice under different native scopes, splitting our focus.
+*   **Constraint Rule**: Bundling the TSFN GC validation flood-hook implementation with the `redb` Rust-side and `finnhub-no-endpoint-override` modifications under **Epic 2** ensures that all native Rust changes are designed, coded, and compiled in a single concentrated session. This maximizes developer feedback loops, isolates Cargo/Target folder invalidations, and avoids fragmented Rust-to-JS bridge iterations.
