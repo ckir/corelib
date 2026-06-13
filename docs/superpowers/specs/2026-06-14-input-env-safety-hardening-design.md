@@ -91,6 +91,12 @@ A library calling `.expect()` on env/caller-derived input aborts the host proces
        Ok(Self { db, table, source, provider, sub_tx: None, stop_tx: None, monitor_task: None, pump_task: None })
    }
    ```
+   *(agy spec-review confirmations:* `Database::create` is correct — it creates-or-opens, whereas
+   `Database::open` errors on first boot. redb 4.1.0 `redb::DatabaseError` is exactly the return type of
+   `create()` and covers both the in-process `DatabaseAlreadyOpen` variant and `Io(std::io::Error)`
+   (Windows mandatory-lock conflicts), so `HostError::DbOpen(redb::DatabaseError)` + `map_err` typechecks
+   and captures every collision shape. **Reconnect does NOT re-open the db** — `ReconnectPolicy` reuses
+   the in-memory host, so Task 1 doesn't change reconnect error semantics.)*
 
 3. **Update every call site** (8 found via `rg "WebsocketStreamerHost::new"`):
    - **CLI bins** `rust/src/bin/{alpaca,yahoo}_streamer.rs` — `main` returns `Result<…>`; propagate with `?`
@@ -99,7 +105,14 @@ A library calling `.expect()` on env/caller-derived input aborts the host proces
      exception: `WebsocketStreamerHost::new(...).map_err(|e| napi::Error::from_reason(e.to_string()))?`.
      The napi constructor/factory must itself return `napi::Result<…>` so the throw is synchronous at JS
      construction.
-   - **internal `host.rs:278`** caller — propagate the `Result` to its caller (no `.unwrap()`/`.expect()`).
+   - **test helpers** (`host.rs:278`, `alpaca_streamer.rs:308`, `yahoo_streamer.rs:252` — confirmed
+     test-only by agy) — `.expect("test")`/`.unwrap()` on the `Result` is acceptable inside `#[cfg(test)]`.
+
+**Gate fix (agy Fix 1 — REQUIRED, folded into this epic):** normal pushes/PRs **do not compile the
+standalone CLI bins** today — `rust/src/bin/{alpaca,yahoo}_streamer.rs` build only in the tag-gated
+`build-rust` job (`.github/workflows/pipeline.yml`). So this signature change could break the bins and
+pass PR CI undetected, surfacing only on a tag release. Add **`cargo check --bins`** (manifest-pathed at
+`rust/`) to the normal pre-flight/test gate so Task 1's CLI-bin updates are verified every push.
 
 **Oracle (flip the existing probe):** `probes/rust/tests/redb_concurrent.rs::q3_shared_path_double_open_panics`
 currently asserts the panic/abort. Flip it to assert the fixed contract: the second
@@ -136,6 +149,7 @@ process B observes a **graceful, non-aborting failure** (the Task-1 catchable er
 never a crash cascade. Must account for **Windows mandatory vs Linux advisory** lock behavior (the
 assertion is "no process abort + a surfaced error", tolerant of the per-OS error shape). **No production
 change** — this validates Task 1 under the real multi-process race the in-process probe couldn't reach.
+The probe MUST **clean up its temp redb files on teardown** (agy review §7).
 
 ---
 
@@ -146,6 +160,9 @@ Trivial additive, mirroring Alpaca/Yahoo:
 - `FinnhubConfig` (rust) gains `base_url: Option<String>`.
 - `FinnhubDriver` formats the websocket URL from `base_url` when present, else the existing hardcoded
   default endpoint (extract the default to a named const). Preserve scheme handling (`wss://…?token=`).
+- **TS side (agy Fix 2 — REQUIRED):** the `FinnhubConfig` TS type in
+  `ts-markets/src/nasdaq/datafeeds/streaming/finnhub/FinnhubStreaming.ts` gains `baseUrl?: string`, and
+  `init()` maps it down into the FFI payload — otherwise the Rust field is unreachable from TS.
 - Unblocks pointing Finnhub at a `localhost:<port>` loopback for deterministic streaming tests on the
   shared engine.
 
@@ -191,15 +208,20 @@ under active GC was never proven, leaving a suspected V8/N-API native-thread dea
 **Design:**
 
 1. **A test-only `#[napi]` flood hook** (e.g. `napi_trigger_diagnostic_flood(count, on_event)` in a
-   streaming `diagnostics` module). It spawns a **native background thread** that pushes `count` synthetic
-   `MarketEvent`s through a ThreadsafeFunction to the JS callback (no network/protocol).
+   streaming `diagnostics` module). `WebsocketStreamerHost` exposes no TSFN, so the hook stands up its
+   **own ThreadsafeFunction** + JS callback registration, and spawns a **native background thread**
+   (`std::thread::spawn`) that pushes `count` synthetic `MarketEvent`s through the TSFN (no
+   network/protocol). The thread MUST handle non-`Ok` TSFN call statuses (`Status::Closing` /
+   `InvalidArg`, if JS tears down mid-flood) **gracefully — no `unwrap`/panic** (agy review §5).
 2. **Env-gated no-op (fork D2):** at the top of the hook,
    `if std::env::var("CORELIB_DIAG_FLOOD").unwrap_or_default() != "1" { return Ok(()) }` — always
    compiled (symbol stays in `index.d.ts`), zero-overhead inert in production.
 3. **Validation test** (integration tier): set `CORELIB_DIAG_FLOOD=1`, register a JS callback that counts
    `DELIVERED`, run the flood while `global.gc()` churns in a tight loop, and assert **`DELIVERED ===
-   count`** (or at minimum `> 0`) with **no deadlock/timeout**. The vitest config for this suite MUST set
-   **`execArgv: ["--expose-gc"]`** (else `global.gc` is undefined and throws in CI).
+   count`** with **no deadlock/timeout**. The suite's vitest config (e.g. `ts-markets/vitest.integration.config.ts`)
+   MUST set **`execArgv: ["--expose-gc"]`** (else `global.gc` is undefined and throws). **agy Fix 3:** the
+   test guards `if (!globalThis.gc) { /* skip + warn */ }` so a local run without the flag skips
+   gracefully instead of crashing.
 
 **Oracle:** the test itself — green proves deadlock-free, GC-safe TSFN delivery (`DELIVERED > 0`),
 retiring the residual.
@@ -230,6 +252,8 @@ Task 3 (validates 1/2) → Task 6 (TSFN GC).
   `ts-markets/src/nasdaq/datafeeds/streaming/{alpaca,yahoo,finnhub}/*Streaming.ts` (Task 2 catch point) + tests.
 - **Probes/tests:** flip `probes/rust/tests/redb_concurrent.rs::q3_…`; new cross-process probe (Task 3);
   TSFN GC validation suite + its `--expose-gc` vitest config.
+- **CI:** `.github/workflows/pipeline.yml` — add `cargo check --bins` (manifest `rust/`) to the normal
+  pre-flight/test gate so the CLI-bin signature changes are verified per push (agy Fix 1).
 - **Docs:** ROADMAP.md (mark the cluster resolved on completion); this spec.
 
 No public TS API removed. The `ignoreDeprecations "6.0"` + lefthook gate respected as-is. Verify with the
