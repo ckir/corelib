@@ -31,14 +31,31 @@ sequencing of 4 subprojects"). Five subprojects, each its own spec → plan → 
        trades/quotes/bars with channel-aware redb persistence (the single source of truth for
        resume — `AlpacaDriver.load_subscriptions()` reads it fresh on every connect, reconnect-safe);
        bars are raw-only. b-1 hardening inherited via the shared host. agy convergent review PASS.
-     - **Phase 2b (Yahoo)** — port the Yahoo (proto-decoded) streamer onto the same dual-mode engine.
+     - **Phase 2b (Yahoo) — COMPLETE** (2026-06-13, merged to `main` commit `cecbfb0`, branch
+       `feat/yahoo-provider-phase2b`): Yahoo (proto-decoded) streamer migrated onto the shared
+       dual-mode engine — emits the byte-identical raw `JsPricingData` (all 33 proto fields) AND a
+       unified finstream-superset `MarketEvent` via the optional 4th `on_market_event` callback.
+       Carrier generalized to `CoreEvent::Pricing.uni: Vec<MarketEvent>` (Yahoo emits 0/1/2 uni
+       events per raw message; Alpaca/Finnhub migrated in lockstep). Pure `parse_yahoo_message`
+       mapper + no-auth single-channel `YahooDriver` (bare-key redb resume, read fresh each connect);
+       facade + CLI bin rewritten as thin host delegates; `YahooTradeExtras`/`YahooQuoteExtras`
+       widened + `YahooOptionExtras` + `quote_type_label()`. Heartbeats (`quote_type==7`) → raw +
+       empty uni. agy plan-phase PROCEED + convergent final SHIP-WITH-NITS. **All three providers
+       (Alpaca/Finnhub/Yahoo) are now dual-mode on the shared engine.**
 
-   - **Phase 3 (gateway)** — unified streaming gateway / fan-out layer across all providers.
+   - **Phase 3 (gateway) — UNBLOCKED** (2026-06-13): all provider migrations complete, so the
+     unified streaming gateway / fan-out layer across all providers can begin (next spec → plan →
+     implementation cycle).
    - *Deferred (Phase 2a plan-pass, agy):* **Finnhub reconnect-resume of in-session subscriptions.** Finnhub
      resumes from the `symbols` snapshot passed at `start()`, so dynamic subscribes added mid-session are lost
      on reconnect (pre-existing Phase 1 behavior — not a 2a regression). Apply the same redb-fresh-read pattern
      `AlpacaDriver` uses (driver holds the host `Arc<Database>` handle, reads persisted subs each `connect_once`)
      to `FinnhubDriver`. Revive when Finnhub reconnect-durability matters.
+   - *Deferred (Phase 2b convergent review, agy 🟢):* **Debug-log undecodable Yahoo frames.** The new
+     `YahooDriver` silently skips frames `parse_yahoo_message` can't decode (consistent with how
+     Alpaca/Finnhub behave on the shared engine; the old bespoke Yahoo streamer trace-logged them).
+     Add a debug-level fallback log in the driver pump when the mapper returns `None` for plain text.
+     Revive when diagnosing a Yahoo wire-protocol change.
 3. **(c) Integration / e2e tests** — implement the spec'd tier
    (`docs/superpowers/specs/2026-06-12-integration-tests-design.md`) over the **final** provider set, so
    no contract rework. *(Sequencing d-before-c resolves that spec's "new providers" Deferred risk.)*
