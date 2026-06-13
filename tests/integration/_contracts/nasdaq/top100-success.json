@@ -1,0 +1,37 @@
+{
+  "request": { "method": "GET", "url": "https://api.nasdaq.com/api/quote/list-type/nasdaq100", "headers": {} },
+  "response": {
+    "status": 200,
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "status": { "rCode": 200, "bCodeMessage": null, "developerMessage": null },
+      "data": {
+        "totalrecords": 3,
+        "limit": 10,
+        "offset": 0,
+        "date": "2026-06-13",
+        "data": {
+          "asOf": null,
+          "headers": {
+            "symbol": "Symbol",
+            "companyName": "Company Name",
+            "marketCap": "Market Cap",
+            "lastSalePrice": "Last Sale Price",
+            "netChange": "Net Change",
+            "percentageChange": "% Change",
+            "deltaIndicator": "Delta Indicator",
+            "sector": "Sector"
+          },
+          "rows": [
+            { "symbol": "AAPL", "companyName": "Apple Inc.", "marketCap": "$3.2T", "lastSalePrice": "$212.50", "netChange": "+1.23", "percentageChange": "+0.58%", "deltaIndicator": "up", "sector": "Technology" },
+            { "symbol": "MSFT", "companyName": "Microsoft Corporation", "marketCap": "$3.1T", "lastSalePrice": "$421.00", "netChange": "+2.10", "percentageChange": "+0.50%", "deltaIndicator": "up", "sector": "Technology" },
+            { "symbol": "NVDA", "companyName": "NVIDIA Corporation", "marketCap": "$2.8T", "lastSalePrice": "$115.00", "netChange": "-0.50", "percentageChange": "-0.43%", "deltaIndicator": "down", "sector": "Technology" }
+          ]
+        },
+        "filters": null,
+        "title": null
+      }
+    }
+  },
+  "recordedAt": "2026-06-13T00:00:00.000Z"
+}

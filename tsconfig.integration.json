@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "typeRoots": ["./ts-core/node_modules/@types"],
+    "types": ["node"],
+    "paths": {
+      "@ckir/corelib": ["./ts-core/src/index.ts"],
+      "@ckir/corelib-markets": ["./ts-markets/src/index.ts"],
+      "@ckir/corelib-cloud": ["./ts-cloud/src/index.ts"],
+      "@itest/*": ["./tests/integration/*"],
+      "vitest": ["./ts-core/node_modules/vitest/dist/index.d.ts"],
+      "vitest/*": ["./ts-core/node_modules/vitest/*"]
+    }
+  },
+  "include": [
+    "tests/integration",
+    "ts-core/tests/integration/**/*.ts",
+    "ts-markets/tests/integration/**/*.ts",
+    "ts-cloud/tests/integration/**/*.ts"
+  ]
+}

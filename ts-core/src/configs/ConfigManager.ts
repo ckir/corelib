@@ -157,19 +157,19 @@ export class ConfigManager extends EventEmitter {
 	 * 4. Apply Env Overrides
 	 * 5. Apply CLI Overrides
 	 */
-	public async initialize(): Promise<void> {
+	public async initialize(args?: string[]): Promise<void> {
 		// 1. Hardcoded Defaults
 		this.loadDefaults();
 
 		// Manual extraction of arguments
-		const args = process.argv.slice(2);
+		const argv = args ?? process.argv.slice(2);
 
 		// 2. Parse with commander for -C and dynamic overrides
 		const program = new Command();
 		program.option("-C, --config <path>", "external config file or URL");
 		program.allowUnknownOption(true);
 		program.helpOption(false); // Suppress auto-help to match original; adjust if needed
-		await program.parseAsync(args, { from: "user" });
+		await program.parseAsync(argv, { from: "user" });
 
 		const configPath = program.opts().config;
 

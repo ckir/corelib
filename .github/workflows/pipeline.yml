@@ -89,6 +89,47 @@ jobs:
           esac
 
   # ---------------------------------------------------------
+  # STAGE 2b: INTEGRATION TESTS (replay + coverage validator)
+  # ---------------------------------------------------------
+  integration:
+    name: Integration (${{ matrix.os }})
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 11.5.2
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: 'pnpm'
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build Rust FFI
+        shell: bash
+        run: |
+          cd rust
+          pnpm exec napi build --release
+          cp corelib-rust.node ../ts-core/corelib-rust.node
+
+      - name: Build TypeScript Packages
+        run: pnpm build-all
+
+      - name: Integration tests (replay)
+        run: pnpm test:integration
+
+      - name: Coverage validator
+        run: pnpm test:integration:validate
+
+  # ---------------------------------------------------------
   # STAGE 3: DOCUMENTATION (Only on main branch)
   # ---------------------------------------------------------
   docs:

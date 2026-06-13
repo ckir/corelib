@@ -14,6 +14,7 @@
         "watch": "tsup --watch",
         "test": "vitest",
         "test:run": "vitest run",
+        "test:integration": "vitest run --config vitest.integration.config.ts && vitest run --config vitest.integration.worker.config.ts",
         "test:worker": "vitest --config vitest.config.ts",
         "typecheck": "tsc --noEmit",
         "lint": "biome check . --write --unsafe --max-diagnostics=100",
