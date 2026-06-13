@@ -103,6 +103,27 @@ than one global audit.
 
 ## Tooling / dev-workflow
 
+- **CI-offload + AI auto-fix workflow — SHIPPED** (2026-06-13, merged to `main` `303dcfa`, CI-fix `bcf6b86`;
+  spec `docs/superpowers/specs/2026-06-13-ci-offload-autofix-design.md`, plan
+  `docs/superpowers/plans/2026-06-13-ci-offload-autofix.md`, agy plan-phase EXECUTE-WITH-FIXES folded).
+  **Part A (corelib):** a ~1-min `validate` pre-flight (lint + typecheck-all + `pnpm build-all` + offline
+  replay integration) now gates the 9-cell matrix via `needs:`; `lefthook.yml` lightened to biome
+  format+lint (pre-push dropped). First push (`303dcfa`, 117 commits to origin) went red on the ts-cloud
+  workers-pool integration test (`@ckir/corelib` unresolvable with no `dist/`) — fixed by adding
+  `pnpm build-all` to the pre-flight (`bcf6b86`); full pipeline then green (pre-flight + 9 matrix cells +
+  3-OS integration + docs deploy). **Part B (global, NOT in this repo):** `~/.claude/skills/watch-ci/`
+  (`watch-ci.mjs` worker + `/watch-ci` launcher skill + `toast.ps1`) — zero-dep Node worker that watches
+  `gh` runs and drives a bounded N=3 `claude -p` auto-fix loop in an isolated worktree with deterministic
+  rails (concurrency/SHA guard, path denylist, no force-push, secret-scrub, escalate→toast +
+  `CI-FAILURE-REPORT.md`); helper unit tests 5/5, dry-run clean. A planner bug in `scrubLog` (regex order
+  leaked `Bearer` tokens) was caught via the SHAPE_DIVERGENCE rule and fixed.
+  - *Deferred (Task 7 Steps 2–4):* the worker's destructive auto-fix/escalation **e2e** (inject a red,
+    watch fix+push / N=3 escalate). Deferred per user — the happy path is green and the worker logic is
+    unit-tested; **validate the loop supervised on the first genuine `main` CI failure** rather than
+    deliberately reddening the now-green public `main`.
+  - *Port in flight:* the same Part A is being ported to **MarketMonitor** (its 4-cell matrix with the
+    ~18-min Linux corelib-Rust compile + Playwright e2e is a bigger pre-flight win); agy divergent brief
+    queued in `MarketMonitor/CLAUDE-TO-ANTIGRAVITY.md` (2026-06-13). Part B is already global — no port.
 - **Tighten the rust lint gate** — `lint-all` currently runs `cargo clippy` (warn-only via the rust
   package's `lint` script). *Revive when:* the crate is warning-clean and ready for
   `cargo clippy -- -D warnings` in the fast loop.

@@ -10,6 +10,14 @@
 
 **Spec:** `docs/superpowers/specs/2026-06-13-ci-offload-autofix-design.md` (Approved).
 
+**Outcome (2026-06-13):** Part A (Tasks 1–2) merged to `main` (`303dcfa`) + a follow-up pre-flight fix
+(`bcf6b86`, add `pnpm build-all` so the workers-pool integration test resolves `@ckir/corelib`); full
+corelib pipeline green (pre-flight + 9 matrix cells + 3-OS integration + docs). Part B (Tasks 3–6) built +
+verified under `~/.claude/skills/watch-ci/` (helper tests 5/5; dry-run clean; `scrubLog` regex-order bug
+caught via SHAPE_DIVERGENCE and fixed; `claude -p … --dangerously-skip-permissions` oracle confirmed on
+Claude Code 2.1.175). **Task 7 Steps 2–4 (destructive worker e2e) DEFERRED** — validate the auto-fix loop
+supervised on the first genuine `main` CI failure (user decision) rather than reddening the green main.
+
 **Revised 2026-06-13 (agy plan-phase review folded — verdict EXECUTE-WITH-FIXES → fixed):** (1) `claude` only edits (UNCOMMITTED); the **script** runs rails on the pending diff then commits (the old prompt-commits-then-check-unstaged path always aborted `empty-diff`). (2) headless flag → `--dangerously-skip-permissions` (not `--permission-mode acceptEdits`, which hangs on bash prompts). (3) worktree → `os.tmpdir()` (git rejects worktrees inside `.git/`). (4) post-push **race**: `waitForRun` polls until a run's `headSha` matches the pushed SHA (a `--limit 1` lookup could return the prior green run → false success). (5) **single-instance lockfile** (PID-checked) prevents concurrent watchers. (6) denylist → filename/prefix match (not substring — `tsconfig` no longer hits `tsconfig-helper.ts`). (7) success notice tells the user to `git pull` (local falls behind after an auto-fix push). (8) launcher detaches via `Start-Process -WindowStyle Hidden` (Win) / `nohup &` (nix), not a killable Bash background child.
 
 ---
