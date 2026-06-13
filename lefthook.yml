@@ -1,26 +1,18 @@
-# token-discipline two-loop gate (TS-only). Bodies are the repo's verify:* scripts.
-#   pre-commit  -> pnpm verify:fast  (format-all && lint-all && typecheck-all, kept sub-30s)
-#   pre-push    -> pnpm verify:full  (build-all && test-all:run)
-# Rust (cargo) and the Cloudflare worker (wrangler) are intentionally excluded from the
-# local gate: the .node binary is prebuilt and CI already runs the multi-OS rust build +
-# worker checks. See AGENTS.md "Token Discipline (dev-workflow)".
+# token-discipline local gate (lightened 2026-06-13): the low-spec machine does only
+# biome format+lint locally (sub-second on staged files). Typecheck + build + test are
+# offloaded to the CI `validate` pre-flight (which gates the matrix); see
+# docs/superpowers/specs/2026-06-13-ci-offload-autofix-design.md.
 pre-commit:
   parallel: false
   commands:
-    verify-fast:
+    format-lint:
       run: |
-        pnpm verify:fast
-    # Native lefthook glob filter (cross-shell): runs only when a type/API
-    # boundary file is staged; otherwise lefthook skips it (success). Keeps the
-    # body a plain echo so it works under cmd.exe (Windows) and sh alike.
+        pnpm format-all && pnpm lint-all
+    # Hint only (cross-shell echo): a type/API boundary changed — CI's validate
+    # pre-flight will typecheck it; run `pnpm typecheck-all` locally if you want certainty.
     api-escalation:
       glob:
         - "**/*types.ts"
         - "**/*.d.ts"
         - "**/src/index.ts"
-      run: echo "[token-discipline] API/type boundary changed -> run pnpm verify:full before push"
-pre-push:
-  commands:
-    verify-full:
-      run: |
-        pnpm verify:full
+      run: echo "[token-discipline] API/type boundary changed -> CI validate will typecheck; local typecheck optional"
