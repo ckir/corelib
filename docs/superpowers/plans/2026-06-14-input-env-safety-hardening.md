@@ -43,16 +43,18 @@
 
 **Why first:** Task 4 changes `WebsocketStreamerHost::new`'s signature; the CLI bins (`rust/src/bin/*_streamer.rs`) are only compiled in the tag-gated `build-rust` job today, so a break would pass PR CI undetected. Land the gate first.
 
-**Files:**
-- Modify: `.github/workflows/pipeline.yml` (the `validate` job, ~lines 21-50)
+> **agy plan-review Fix 1:** the Stage-1 `validate` job has **no Rust toolchain** — adding `cargo check` there fails / triggers a 3-5 min cold compile that blows the ~1-min pre-flight budget. Put the check in the **Stage-2 `test` matrix job**, which already installs the Rust toolchain (cached) and has a "Build Rust FFI" step.
 
-- [ ] **Step 1: Add a `cargo check --bins` step to the `validate` job**, after "Build TypeScript packages" (~line 47). Insert:
+**Files:**
+- Modify: `.github/workflows/pipeline.yml` (the `test` matrix job, ~lines 55-95 — NOT `validate`)
+
+- [ ] **Step 1: Add a `cargo check` step to the `test` job**, immediately AFTER the existing "Build Rust FFI" step (~line 84-90). Insert:
 
 ```yaml
-      - name: Cargo check (lib + bins + tests)
+      - name: Compile check Rust bins + tests
         run: cargo check --manifest-path rust/Cargo.toml --bins --tests
 ```
-(`--bins --tests` compiles the standalone `*_streamer` bins AND the `#[cfg(test)]` helpers so Task 4's call-site changes are fully verified per push.)
+(`--bins --tests` compiles the standalone `*_streamer` bins AND the `#[cfg(test)]` helpers so Task 4's call-site changes are fully verified per push, reusing the already-installed/cached toolchain.)
 
 - [ ] **Step 2: Verify the workflow is valid YAML & the step is reachable**
 
@@ -68,7 +70,7 @@ Expected: `Finished` (exit 0). If it fails on the unchanged tree, STOP and repor
 
 ```bash
 git add .github/workflows/pipeline.yml
-git commit -m "ci(epic2): cargo check --bins+tests in pre-flight (verify CLI bins per push)"
+git commit -m "ci(epic2): cargo check --bins+tests in the test job (verify CLI bins per push)"
 ```
 
 ---
@@ -83,7 +85,7 @@ git commit -m "ci(epic2): cargo check --bins+tests in pre-flight (verify CLI bin
 
 - [ ] **Step 1 (Rust): add the field.** In `FinnhubConfig` add `pub base_url: Option<String>,`. Extract the current hardcoded endpoint to `const FINNHUB_DEFAULT_WS_URL: &str = "wss://ws.finnhub.io";` (use the actual current literal).
 
-- [ ] **Step 2 (Rust): use it in the driver.** Where the driver builds the connect URL, replace the hardcoded base with `config.base_url.as_deref().unwrap_or(FINNHUB_DEFAULT_WS_URL)` then append the existing `?token=...` path. Keep scheme/query formatting byte-identical when `base_url` is None.
+- [ ] **Step 2 (Rust): thread `base_url` through to the driver (agy Fix).** `FinnhubDriver` does not see `FinnhubConfig` — so: add `pub base_url: Option<String>` to `FinnhubDriver`, store it on `FinnhubInner` in `init()` (from `config.base_url`), and pass it when constructing `FinnhubDriver`. Then where the driver builds the connect URL, use `self.base_url.as_deref().unwrap_or(FINNHUB_DEFAULT_WS_URL)` and append the existing `?token=...` path. Keep scheme/query formatting byte-identical when `base_url` is None.
 
 - [ ] **Step 3 (Rust): write/extend a unit test** (colocate in the finnhub module under `#[cfg(test)]`): assert the built URL uses `base_url` when `Some("ws://127.0.0.1:9001")` and the default when `None`.
 
@@ -248,7 +250,7 @@ Ok(Self { db, table, source, provider, sub_tx: None, stop_tx: None, monitor_task
 ```
 
 - [ ] **Step 4: Fix the 8 call sites.**
-  - CLI bins (`bin/{alpaca,yahoo}_streamer.rs`): their `main` returns a `Result` (or wrap with a clean `match … { Err(e) => { eprintln!("{e}"); std::process::exit(1) } }`). Propagate `new(...)?`. **No napi here.**
+  - CLI bins (`bin/{alpaca,yahoo}_streamer.rs`): their `main` **already returns `Result<(), Box<dyn std::error::Error>>`** (agy-confirmed) — just propagate with `new(...)?` (no `exit(1)` boilerplate needed). **No napi here.**
   - napi facades (`alpaca/finnhub/yahoo *_streamer.rs` constructors): make the `#[napi(constructor)]` (or factory) return `napi::Result<Self>` and bridge: `let host = WebsocketStreamerHost::new(...).map_err(|e| napi::Error::from_reason(e.to_string()))?;`
   - test helpers (`host.rs:278`, `alpaca:308`, `yahoo:252` — all `#[cfg(test)]`): `WebsocketStreamerHost::new(...).expect("test host")`.
 
@@ -279,8 +281,15 @@ git commit -m "feat(epic2): redb open is fallible (HostError) instead of process
 
 ```ts
 import { describe, expect, it, vi } from "vitest";
+// agy Fix: the facade reads the native class as `const RustAlpaca = (coreFFI as any)?.AlpacaStreaming`,
+// NOT a top-level export — so the mock MUST nest it under `coreFFI` (and keep getMode defined).
 vi.mock("@ckir/corelib", () => ({
-  AlpacaStreaming: class { constructor() { throw new Error("failed to open redb: DatabaseAlreadyOpen"); } },
+  coreFFI: {
+    AlpacaStreaming: class {
+      constructor() { throw new Error("failed to open redb: DatabaseAlreadyOpen"); }
+    },
+  },
+  getMode: () => "production",
 }));
 // import the FACADE after the mock
 import { AlpacaStreaming } from "./AlpacaStreaming";
@@ -291,7 +300,7 @@ describe("AlpacaStreaming construction error", () => {
   });
 });
 ```
-(Match the actual import path the facade uses for the native binding — adjust the `vi.mock` target to whatever `RustAlpaca` is imported from.)
+(Verify the exact native-binding accessor in the facade's `Streaming.ts` header — `coreFFI?.AlpacaStreaming` — and mirror it in the mock for each provider.)
 
 - [ ] **Step 2: Run to verify it fails or passes-trivially**, then make the facade behavior explicit. In each facade constructor wrap the native construction so the cause is preserved with context (do not catch-and-swallow):
 
@@ -353,30 +362,42 @@ git commit -m "test(epic2): cross-process redb collision probe validates fallibl
 - [ ] **Step 1: Implement the env-gated `#[napi]` flood hook** in `diagnostics.rs`:
 
 ```rust
+// agy Fix: napi here is built WITHOUT the serde-json feature, so ThreadsafeFunction<serde_json::Value>
+// will NOT compile. Use ThreadsafeFunction<String> and pass serialized JSON strings (mirrors the
+// existing `on_market_event` interface). Error-first delivery → JS sees (null, jsonString).
 #[napi]
 pub fn napi_trigger_diagnostic_flood(
     count: u32,
-    on_event: ThreadsafeFunction<serde_json::Value>, // shape to match the project's TSFN convention
+    on_event: ThreadsafeFunction<String>,
 ) -> napi::Result<()> {
     if std::env::var("CORELIB_DIAG_FLOOD").unwrap_or_default() != "1" {
         return Ok(()); // production no-op; symbol stays in index.d.ts
     }
     std::thread::spawn(move || {
         for i in 0..count {
-            let ev = /* synthetic MarketEvent json */;
-            // handle non-Ok statuses gracefully — never unwrap/panic
+            let ev = format!("{{\"seq\":{i}}}"); // synthetic event as a JSON string
+            // handle non-Ok statuses gracefully — never unwrap/panic (Status::Closing/InvalidArg on teardown)
             let _ = on_event.call(Ok(ev), ThreadsafeFunctionCallMode::Blocking);
         }
     });
     Ok(())
 }
 ```
-(Use the exact TSFN type/import the streaming crate already uses; if none, set one up. Do NOT `unwrap` the `call` result — `Status::Closing`/`InvalidArg` must be ignored gracefully.)
+(Match the exact `ThreadsafeFunction<String>` import/alias the streaming crate already uses for `on_market_event`. Do NOT `unwrap` the `call` result.)
 
-- [ ] **Step 2: Build the FFI and confirm the symbol is exported**
+Also **register the module** — in `rust/src/lib.rs`, inside the inline `mod streaming { … }` block (~line 70), add:
+```rust
+pub mod diagnostics;
+```
+(without this the new file is never compiled — agy Fix).
 
-Run: `pnpm --filter @ckir/corelib build` (regenerates `index.d.ts`) then `rg "napi_trigger_diagnostic_flood" ts-core/index.d.ts` (or wherever napi typings land)
-Expected: the function appears in the generated `.d.ts` (static, gating is runtime).
+- [ ] **Step 2: Build the FFI (Rust napi) and confirm the symbol is exported**
+
+> agy Fix: `pnpm --filter @ckir/corelib build` does NOT compile the Rust napi. Build the native addon and copy it:
+
+Run: `cd rust && pnpm run build:local && cp corelib-rust.node ../ts-core/corelib-rust.node`
+then `rg "napiTriggerDiagnosticFlood|napi_trigger_diagnostic_flood" rust/index.d.ts ts-core/*.d.ts 2>/dev/null`
+Expected: the function appears in the generated napi `.d.ts` (static export; gating is runtime).
 
 - [ ] **Step 3: Ensure `--expose-gc` for the suite.** In the integration vitest config that will run this suite (e.g. `ts-markets/vitest.integration.config.ts`), set `test.poolOptions.forks.execArgv: ["--expose-gc"]` (or the equivalent for the pool in use). Verify other suites are unaffected.
 
