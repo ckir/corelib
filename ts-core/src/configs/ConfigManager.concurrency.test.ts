@@ -70,7 +70,7 @@ describe("ConfigManager — concurrency layer (Epic-1 Task 4)", () => {
 
 	it("isInitialized flips after initialize(); whenReady resolves", async () => {
 		expect(cm.isInitialized).toBe(false);
-		const ready = cm.whenReady(); // returns the in-flight promise once init starts
+		const ready = cm.whenReady(); // called before initialize(); pre-init path → resolves immediately
 		const init = cm.initialize([]);
 		await init;
 		expect(cm.isInitialized).toBe(true);
