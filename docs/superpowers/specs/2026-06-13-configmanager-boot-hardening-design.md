@@ -174,12 +174,33 @@ would cache a permanently-rejected promise and wedge the process unrecoverably.
 async mutex (a `private _mutationChain: Promise<unknown>` that each async mutator chains
 onto). This prevents interleaved hierarchy merges (`-05`). `updateValue()` stays
 **synchronous** (its callers, e.g. integration tests, depend on sync semantics); it does a
-single in-place `setPath` on the live `_config` and emits — already reference-safe.
+single in-place `setPath` on the live `_config` and emits.
+
+**Sync-vs-async clobber (agy convergent CONCERN #4).** A synchronous `updateValue()` that
+lands *between awaits* of an in-flight `initialize`/`loadExternalConfig` would be silently
+overwritten by the final `clearAndFill` swap. To preserve sync-read-after-write semantics
+without breaking the staged build, the in-flight builder publishes its staging object on a
+`private _inFlightTempConfig: Record<string, unknown> | null` (set non-null only while a
+staged build is running, cleared in a `finally`). `updateValue()` applies its `setPath` to
+the live `_config` **and**, if `_inFlightTempConfig !== null`, to that staging object too —
+so the value survives the swap. This is the lowest-risk fix; it adds one nullable field and
+a two-line dual-write, no API change.
 
 ### 5.3 Staged-build + atomic in-place swap
 
 No mutator reassigns `this._config`. Instead each rebuild is computed on a throwaway
-`tempConfig` and committed with one synchronous deep in-place write:
+`tempConfig` and committed with one synchronous deep in-place write.
+
+**Implementation constraint (agy convergent CONCERN #3) — do NOT temp-swap the field.**
+The private builders (`loadDefaults`, `processHierarchy`, `applyEnvOverrides`,
+`applyCliOverrides`) currently mutate `this._config` directly. They MUST be refactored to
+accept an explicit `target: Record<string, unknown>` parameter and operate on *that* object.
+The implementer must **not** take the shortcut of temporarily doing `this._config = tempConfig`
+around the build and swapping back — that re-introduces the exact reference-severance and
+half-formed-read race this epic exists to kill. The canonical `this._config` is touched in
+exactly one place per mutator: the final `clearAndFill(this._config, tempConfig)`.
+
+Staged build:
 
 - **`initialize` / `runInitSequence`:** build `tempConfig = {}` → seed defaults → external
   hierarchy → env overrides → CLI overrides, **then** `clearAndFill(this._config, tempConfig)`.
@@ -265,6 +286,13 @@ and **flips to failing when fixed**. On the fix, update it to the fixed-contract
 6. **premature-read warning:** warns in dev, silent under `NODE_ENV=production`; `get()`
    returns seeded default either way.
 7. **detectRuntime:** memoized (second call cheap / stable), `__resetRuntimeCache()` works.
+8. **sync→async clobber survival** (agy CONCERN #5): a synchronous `updateValue(path, v)`
+   issued while a `loadExternalConfig`/`initialize` build is mid-await is still observable
+   via `get(path)` after the staged swap commits (verifies the `_inFlightTempConfig`
+   dual-write of §5.2).
+9. **non-fatal CLI parse:** a malformed/odd argv that makes commander throw under
+   `exitOverride()` is caught, logged, and `initialize()` still resolves (no `process.exit`,
+   bootstrap continues with defaults).
 
 **Regression gate (must stay green):** existing `initialize([])` call sites in
 `ts-core/tests/integration/*`, `ts-markets/tests/integration/*` and the lefthook
