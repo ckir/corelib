@@ -130,6 +130,15 @@ export class ConfigManager extends EventEmitter {
 	private _defaultsPath: string;
 	private static _logger = logger.child({ section: "ConfigManager" });
 
+	/** Single-flight guard for initialize(); null until first call, evicted on failure. */
+	private _initPromise: Promise<void> | null = null;
+	private _isInitialized = false;
+	/** Async mutex: every async mutator chains onto this so they never interleave. */
+	private _mutationChain: Promise<unknown> = Promise.resolve();
+	/** The staging object of an in-flight staged build, or null. Lets a synchronous
+	 *  updateValue() between awaits survive the final clearAndFill swap. */
+	private _inFlightTempConfig: Record<string, unknown> | null = null;
+
 	private constructor() {
 		super();
 		const __dirname = getDirname();
@@ -174,6 +183,11 @@ export class ConfigManager extends EventEmitter {
 	 * @returns The value at the specified path, or undefined if not found.
 	 */
 	public get(path: string): unknown {
+		if (!this._isInitialized && getMode() !== "production") {
+			ConfigManager._logger.warn(
+				`ConfigManager.get("${path}") called before initialize() resolved; returning seeded default`,
+			);
+		}
 		const keys = path.split(".");
 		let current: unknown = this._config;
 
@@ -199,14 +213,30 @@ export class ConfigManager extends EventEmitter {
 	}
 
 	/**
-	 * Main initialization sequence.
-	 * 1. Load Defaults
-	 * 2. Detect CLI -C flag for external config
-	 * 3. Process Hierarchy (commonAll -> app -> platform -> mode)
-	 * 4. Apply Env Overrides
-	 * 5. Apply CLI Overrides
+	 * Idempotent under concurrency: simultaneous calls share one in-flight
+	 * promise (-01). On failure the promise is evicted so a transient error can
+	 * self-heal on a later call. Signature unchanged (still awaitable Promise<void>).
 	 */
-	public async initialize(args?: string[]): Promise<void> {
+	public initialize(args?: string[]): Promise<void> {
+		if (this._initPromise) return this._initPromise;
+		this._initPromise = this._enqueue(() => this.runInitSequence(args)).then(
+			() => {
+				this._isInitialized = true;
+				this._initPromise = null; // clear after success so sequential re-calls can re-run
+			},
+			(error) => {
+				this._initPromise = null; // evict on failure → retryable
+				throw error;
+			},
+		);
+		return this._initPromise;
+	}
+
+	/**
+	 * Main initialization sequence (formerly the body of initialize()).
+	 * 1. Load Defaults 2. Detect CLI -C 3. Process Hierarchy 4. Env 5. CLI overrides.
+	 */
+	private async runInitSequence(args?: string[]): Promise<void> {
 		// 2. Parse argv with a dedicated parser (no commander): extract the
 		// external-config path (-C/--config) and collect arbitrary --kebab
 		// overrides. Guarded so edge runtimes without process.argv yield [].
@@ -249,23 +279,39 @@ export class ConfigManager extends EventEmitter {
 			overrides[key] = value;
 		}
 
-		// Staged build on a throwaway object; commit atomically at the end so a
-		// mid-build failure (network/parse/decrypt) never leaves a half-formed
-		// live config. Order: defaults -> external hierarchy -> env -> CLI.
+		// Staged build; publish the staging object so a sync updateValue between
+		// awaits dual-writes into it and survives the commit.
 		const tempConfig: Record<string, unknown> = {};
-		this.loadDefaults(tempConfig);
-
-		if (configPath) {
-			const externalData = await this.fetchExternalConfig(configPath);
-			this.processHierarchy(externalData, tempConfig);
+		this._inFlightTempConfig = tempConfig;
+		try {
+			this.loadDefaults(tempConfig);
+			if (configPath) {
+				const externalData = await this.fetchExternalConfig(configPath);
+				this.processHierarchy(externalData, tempConfig);
+			}
+			this.applyEnvOverrides(tempConfig);
+			this.applyCliOverrides(overrides, tempConfig);
+			clearAndFill(this._config, tempConfig);
+			this.emit("initialized", this._config);
+		} finally {
+			this._inFlightTempConfig = null;
 		}
+	}
 
-		this.applyEnvOverrides(tempConfig);
-		this.applyCliOverrides(overrides, tempConfig);
-
-		// Atomic in-place commit — preserves globalThis.sysconfig === this._config.
-		clearAndFill(this._config, tempConfig);
-		this.emit("initialized", this._config);
+	/**
+	 * Serializes an async mutator against all other mutators (initialize +
+	 * loadExternalConfig) via _mutationChain. The work runs after the previous
+	 * op settles (success OR failure — `.then(work, work)` so a prior rejection
+	 * never wedges the chain). The chain itself swallows results/errors so it
+	 * stays resolved; the caller still receives this op's real result/error.
+	 */
+	private _enqueue<T>(work: () => Promise<T>): Promise<T> {
+		const run = this._mutationChain.then(work, work);
+		this._mutationChain = run.then(
+			() => undefined,
+			() => undefined,
+		);
+		return run;
 	}
 
 	/**
@@ -275,24 +321,45 @@ export class ConfigManager extends EventEmitter {
 		return this._config;
 	}
 
+	/** True once a call to initialize() has settled successfully. */
+	public get isInitialized(): boolean {
+		return this._isInitialized;
+	}
+
+	/**
+	 * Resolves when the first initialize() settles successfully (rejects if that
+	 * in-flight initialize fails). If initialize() was never started, resolves
+	 * immediately — callers needing initialization must call initialize().
+	 */
+	public whenReady(): Promise<void> {
+		if (this._isInitialized) return Promise.resolve();
+		return this._initPromise ?? Promise.resolve();
+	}
+
 	/**
 	 * Public method to load and merge a new configuration from a URL or file path on demand.
 	 * Respects the established configuration hierarchy and maintains Env overrides.
 	 * @param source - The URL or local file path to the configuration.
 	 */
-	public async loadExternalConfig(source: string): Promise<void> {
+	public loadExternalConfig(source: string): Promise<void> {
+		return this._enqueue(() => this.loadExternalConfigInner(source));
+	}
+
+	private async loadExternalConfigInner(source: string): Promise<void> {
 		try {
 			const externalData = await this.fetchExternalConfig(source);
 
-			// Build on a clone of the current live config so a mid-merge failure
-			// leaves the live config untouched; merge external on top, re-apply env.
+			// Build on a clone of the current live config; publish it for dual-write.
 			const tempConfig = structuredClone(this._config);
-			this.processHierarchy(externalData, tempConfig);
-			this.applyEnvOverrides(tempConfig);
-
-			// Atomic in-place commit (reference unchanged).
-			clearAndFill(this._config, tempConfig);
-			this.emit("configLoaded", this._config);
+			this._inFlightTempConfig = tempConfig;
+			try {
+				this.processHierarchy(externalData, tempConfig);
+				this.applyEnvOverrides(tempConfig);
+				clearAndFill(this._config, tempConfig);
+				this.emit("configLoaded", this._config);
+			} finally {
+				this._inFlightTempConfig = null;
+			}
 		} catch (error) {
 			this.logError(
 				`Failed to load external config dynamically from ${source}`,
@@ -493,6 +560,11 @@ export class ConfigManager extends EventEmitter {
 	 */
 	public updateValue(path: string, value: unknown): void {
 		this.setPath(this._config, path, value);
+		// If a staged build is in flight, also write into its staging object so
+		// this synchronous update survives the upcoming clearAndFill swap (-05).
+		if (this._inFlightTempConfig !== null) {
+			this.setPath(this._inFlightTempConfig, path, value);
+		}
 		this.emit("change", { path, value });
 		this.emit(`change:${path}`, value);
 	}
@@ -592,5 +664,16 @@ export class ConfigManager extends EventEmitter {
 
 	public toBuffer(): Buffer {
 		return Buffer.from(this.toJsonString());
+	}
+
+	/**
+	 * Test-only: reset init/concurrency state so single-flight and failed-init
+	 * eviction can be exercised on the singleton. Does NOT clear _config.
+	 */
+	public __resetForTests(): void {
+		this._initPromise = null;
+		this._isInitialized = false;
+		this._inFlightTempConfig = null;
+		this._mutationChain = Promise.resolve();
 	}
 }
