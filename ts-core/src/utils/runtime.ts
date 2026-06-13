@@ -18,14 +18,9 @@ export type Runtime =
 	| "aws-lambda" // AWS Lambda
 	| "gcp-cloudrun"; // Google Cloud Run
 
-/**
- * Detects the current execution environment.
- * Uses various global signals and environment variables to distinguish between Node.js, Bun, Deno,
- * and different cloud platforms like Cloudflare Workers, AWS Lambda, and Google Cloud Run.
- *
- * @returns {Runtime} The detected runtime identifier. Defaults to 'node' if unable to determine.
- */
-export function detectRuntime(): Runtime {
+let _cachedRuntime: Runtime | undefined;
+
+function computeRuntime(): Runtime {
 	// 0. Manual override via environment variable
 	try {
 		if (typeof process !== "undefined" && process.env && process.env.RUNTIME) {
@@ -108,4 +103,22 @@ export function detectRuntime(): Runtime {
 
 	// Default = Node.js
 	return "node";
+}
+
+/**
+ * Detects the current execution environment.
+ * Uses various global signals and environment variables to distinguish between Node.js, Bun, Deno,
+ * and different cloud platforms like Cloudflare Workers, AWS Lambda, and Google Cloud Run.
+ *
+ * @returns {Runtime} The detected runtime identifier. Defaults to 'node' if unable to determine.
+ */
+export function detectRuntime(): Runtime {
+	if (_cachedRuntime !== undefined) return _cachedRuntime;
+	_cachedRuntime = computeRuntime();
+	return _cachedRuntime;
+}
+
+/** Test-only: clear the memoized runtime (some tests flip RUNTIME=). */
+export function __resetRuntimeCache(): void {
+	_cachedRuntime = undefined;
 }
