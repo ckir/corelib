@@ -50,7 +50,6 @@ const CLUSTER_SPECS = [
       "phase0-ts-core-node-module-core-index-01",
       "phase0-ts-core-node-crypto-ConfigUtils-01",
       "facade-node-module-crypto-edge-bundle-01",
-      "facade-worker-tsup-platform-node-01",
     ],
   },
   {
@@ -89,6 +88,11 @@ const CLUSTER_SPECS = [
     label: "redb-double-open-process-abort",
     memberIds: [
       "engine-redb-open-expect-abort-01",
+    ],
+  },
+  {
+    label: "ffi-poisoned-config-boundary-robust",
+    memberIds: [
       "ffi-poisoned-config-panic-01",
     ],
   },
@@ -96,6 +100,7 @@ const CLUSTER_SPECS = [
     label: "worker-bundle-size-and-platform",
     memberIds: [
       "facade-worker-bundle-size-perf-01",
+      "facade-worker-tsup-platform-node-01",
     ],
   },
   {

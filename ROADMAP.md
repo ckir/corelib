@@ -168,3 +168,13 @@ Clusters ordered by max severity (high → medium → low):
 - **redb-concurrent-persist-load-robust** · max: low · owner: `engine-redb-concurrent-persist-load-robust-01` · probe: `probes/rust/tests/redb_concurrent.rs::q2_concurrent_persist_and_load_is_consistent` · _positive result / no defect; MVCC redb is consistent under 8 concurrent writers + 6 readers; probe kept as regression guard_
 
 - **engine-reconnect-teardown-loom** · max: low · owner: `engine-reconnect-teardown-loom-01` · probe: none · _loom model of reconnect/teardown confirmed no deadlock, no send-after-close panic across all interleavings; probe at `probes/rust/tests/reconnect_teardown_loom.rs` is a durable regression guard_
+
+### Carry-forward: unprobed vectors & residuals (future cycles)
+
+- **TSFN inbound-delivery-under-GC race (TOP residual)** — races/edge · the reconnect-under-GC probe proved the FFI call-churn/reconnect/GC path robust but never delivered a frame (DELIVERED=0), so the §8 N-API callback-deadlock vector is unvalidated (`ffi-reentrancy-reconnect-gc-deadlock-01`, suspected/medium). · Recommended validation (a FIX-CYCLE task, NOT audit-cycle, because it needs a production change): add a test-only `#[napi]` diagnostic that floods the ThreadsafeFunction with mock frames from a native thread (no network/protocol), while JS runs `global.gc()` in a tight loop + churns subscribe/unsubscribe — isolates V8/N-API ref-pinning + queueing to prove DELIVERED>0 and no deadlock.
+
+- **Cross-process redb file-lock collision** — races/edge · in-process redb concurrency was probed (robust) but multi-PROCESS lock contention was not; Windows mandatory locks vs Linux advisory locks differ. · Probe a hot-reload/cold-start scenario where a 2nd process opens the redb path before the 1st fully exits (risk: startup lockout / `host.rs:57` abort cascade). Relates to `engine-redb-open-expect-abort-01`.
+
+- **FFI backpressure / event-loop starvation under market-data flood** — perf · unprobed: under a peak pricing burst while the JS event loop is briefly blocked, the TSFN queue buffers frames; memory limits + latency degradation + whether the Rust client applies TCP backpressure (vs OOM) are unknown.
+
+- **Long-running marshaling memory-leak profile** — perf/edge · unprobed: continuous per-tick JS string/buffer allocation across napi ref swaps risks V8 young-gen bloat; needs a multi-hour profiling harness (out of scope for a bounded audit).
