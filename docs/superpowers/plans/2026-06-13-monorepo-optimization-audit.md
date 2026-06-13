@@ -98,6 +98,10 @@ Expected: each provider exposes `pub base_url: Option<String>` and a `DEFAULT_*_
 If confirmed (expected): note in the Task A6 harness README that providers are pointed via `base_url`. Proceed.
 If **NOT** confirmed for any provider: append a finding `engine-<provider>-no-endpoint-override-01` (lens: edge/arch, testability D) and set that provider's FFI/engine probes to **recorded-frame replay** fallback (spec §9.2). Do **not** add an override to production source.
 
+> **A0 OUTCOME (2026-06-13):** Partially confirmed.
+> - **yahoo** (`yahoo_driver.rs:145`/`:184`) and **alpaca** (`alpaca_driver.rs:143`/`:213`) expose `pub base_url: Option<String>` overriding `DEFAULT_*_WS_URL` → **live loopback** (A6) applies.
+> - **finnhub** does NOT: `finnhub_driver.rs:125` hardcodes `format!("{FINNHUB_WS}?token={}", …)` and `FinnhubConfig` (`finnhub_streamer.rs:133`) exposes only `token`/`name`. Finding `engine-finnhub-no-endpoint-override-01` logged (severity low, confirmed-by-reading). **Finnhub FFI/engine probes (B2/B3) must use recorded-frame replay (spec §9.2), not live loopback.** No production override added.
+
 - [ ] **Step 3: Commit**
 
 ```bash
