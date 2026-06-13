@@ -15,7 +15,6 @@ import {
 	it,
 	vi,
 } from "vitest";
-import { endPoint } from "../../../ts-core/src/retrieve/RequestUnlimited";
 import { MarketMonitor } from "./MarketMonitor";
 import { MarketStatus } from "./MarketStatus";
 
@@ -28,25 +27,33 @@ const baseData = {
 };
 
 // Mock logger to prevent console noise
-const { mockDebug, mockWarn, mockError, mockInfo, mockChildLogger } =
-	vi.hoisted(() => {
-		const debug = vi.fn();
-		const warn = vi.fn();
-		const error = vi.fn();
-		const info = vi.fn();
-		return {
-			mockDebug: debug,
-			mockWarn: warn,
-			mockError: error,
-			mockInfo: info,
-			mockChildLogger: {
-				debug,
-				warn,
-				error,
-				info,
-			},
-		};
-	});
+const {
+	mockDebug,
+	mockWarn,
+	mockError,
+	mockInfo,
+	mockChildLogger,
+	mockEndPoint,
+} = vi.hoisted(() => {
+	const debug = vi.fn();
+	const warn = vi.fn();
+	const error = vi.fn();
+	const info = vi.fn();
+	const endPoint = vi.fn();
+	return {
+		mockDebug: debug,
+		mockWarn: warn,
+		mockError: error,
+		mockInfo: info,
+		mockChildLogger: {
+			debug,
+			warn,
+			error,
+			info,
+		},
+		mockEndPoint: endPoint,
+	};
+});
 
 vi.mock("@ckir/corelib", async () => {
 	const mockLogger = {
@@ -57,6 +64,7 @@ vi.mock("@ckir/corelib", async () => {
 	return {
 		default: mockLogger,
 		logger: mockLogger,
+		endPoint: mockEndPoint,
 		ConfigManager: {
 			get: vi.fn().mockReturnValue(undefined),
 		},
@@ -70,15 +78,9 @@ vi.mock("./MarketStatus", () => ({
 	},
 }));
 
-// Mock RequestUnlimited
-vi.mock("../../../ts-core/src/retrieve/RequestUnlimited", () => ({
-	endPoint: vi.fn(),
-}));
-
 describe("MarketMonitor (Exhaustive)", () => {
 	let monitor: MarketMonitor;
 	const mockGetStatus = MarketStatus.getStatus as any;
-	const mockEndPoint = endPoint as any;
 
 	beforeAll(() => {
 		// Initialize mock functions here to ensure they are defined
