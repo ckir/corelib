@@ -7,7 +7,6 @@
 // =============================================
 
 import { EventEmitter } from "node:events";
-import { Command } from "commander";
 import { deepmergeCustom } from "deepmerge-ts";
 import { serializeError } from "serialize-error";
 import logger from "../loggers";
@@ -32,6 +31,15 @@ import { decryptConfig } from "./ConfigUtils";
 const leafMerger = deepmergeCustom({
 	mergeArrays: false,
 });
+
+/**
+ * Rejects override keys whose dot/kebab segments would pollute the prototype
+ * chain (__proto__, constructor, prototype) before they reach setPath.
+ */
+const isSafeKey = (key: string): boolean =>
+	!key
+		.split(/[.-]/)
+		.some((p) => p === "__proto__" || p === "constructor" || p === "prototype");
 
 /**
  * Resolve the application identity used to match a config's top-level section.
@@ -161,17 +169,44 @@ export class ConfigManager extends EventEmitter {
 		// 1. Hardcoded Defaults
 		this.loadDefaults();
 
-		// Manual extraction of arguments
-		const argv = args ?? process.argv.slice(2);
+		// 2. Parse argv with a dedicated parser (no commander): extract the
+		// external-config path (-C/--config) and collect arbitrary --kebab
+		// overrides. Guarded so edge runtimes without process.argv yield [].
+		const argv =
+			args ??
+			(typeof process !== "undefined" && Array.isArray(process.argv)
+				? process.argv.slice(2)
+				: []);
 
-		// 2. Parse with commander for -C and dynamic overrides
-		const program = new Command();
-		program.option("-C, --config <path>", "external config file or URL");
-		program.allowUnknownOption(true);
-		program.helpOption(false); // Suppress auto-help to match original; adjust if needed
-		await program.parseAsync(argv, { from: "user" });
+		let configPath: string | undefined;
+		const overrides: Record<string, string | boolean> = {};
 
-		const configPath = program.opts().config;
+		for (let i = 0; i < argv.length; i++) {
+			const tok = argv[i];
+			if (tok === "-C" || tok === "--config") {
+				if (i + 1 < argv.length && !argv[i + 1].startsWith("-"))
+					configPath = argv[++i];
+				continue;
+			}
+			if (tok.startsWith("--config=")) {
+				configPath = tok.slice("--config=".length);
+				continue;
+			}
+			if (!tok.startsWith("--")) continue; // ignore bare operands
+
+			let key = tok.slice(2);
+			let value: string | boolean;
+			const eq = key.indexOf("=");
+			if (eq > -1) {
+				value = key.slice(eq + 1);
+				key = key.slice(0, eq);
+			} else if (i + 1 < argv.length && !argv[i + 1].startsWith("-")) {
+				value = argv[++i];
+			} else {
+				value = true; // bare --flag → true
+			}
+			overrides[key] = value;
+		}
 
 		if (configPath) {
 			const externalData = await this.fetchExternalConfig(configPath);
@@ -181,8 +216,8 @@ export class ConfigManager extends EventEmitter {
 		// 3. Apply Environment Variables (CORELIB_ prefix)
 		this.applyEnvOverrides();
 
-		// 4. Apply CLI Overrides from parsed args
-		await this.applyCliOverrides(program);
+		// 4. Apply CLI Overrides parsed above
+		this.applyCliOverrides(overrides);
 
 		// Finalize global object reference
 		(globalThis as any).sysconfig = this._config;
@@ -211,9 +246,6 @@ export class ConfigManager extends EventEmitter {
 
 			// 3. Re-apply environment variables to maintain precedence rules
 			this.applyEnvOverrides();
-
-			// Note: If you want CLI overrides to apply here as well, you would need to
-			// cache the parsed `program` from initialize() into a class property first.
 
 			// 4. Update the global object reference
 			(globalThis as any).sysconfig = this._config;
@@ -386,31 +418,18 @@ export class ConfigManager extends EventEmitter {
 	}
 
 	/**
-	 * Maps Kebab-case CLI arguments to the config structure.
+	 * Maps the parsed Kebab-case CLI overrides to the config structure.
+	 * Unsafe keys (__proto__/constructor/prototype segments) are dropped.
 	 */
-	private async applyCliOverrides(program: Command): Promise<void> {
-		const overrides: Record<string, any> = {};
-		let i = 0;
-		while (i < program.args.length) {
-			const arg = program.args[i];
-			if (arg.startsWith("--")) {
-				let key = arg.slice(2);
-				let value: any;
-				const eqIdx = key.indexOf("=");
-				if (eqIdx > -1) {
-					value = key.slice(eqIdx + 1);
-					key = key.slice(0, eqIdx);
-				} else {
-					i++;
-					value = i < program.args.length ? program.args[i] : true;
-				}
-				overrides[key] = value;
-			}
-			i++;
-		}
-
+	private applyCliOverrides(overrides: Record<string, string | boolean>): void {
 		Object.keys(overrides).forEach((key) => {
-			if (key === "config") return; // Skip -C
+			if (key === "config") return; // Skip -C/--config (consumed above)
+			if (!isSafeKey(key)) {
+				ConfigManager._logger.warn(
+					`Dropped unsafe CLI override key "${key}" (prototype-pollution guard)`,
+				);
+				return;
+			}
 			const configPath = key.replace(/-/g, ".");
 			const value = this.parseValue(overrides[key]);
 			this.updateValue(configPath, value);
