@@ -5,7 +5,7 @@
 // and premature-read warning.
 // =============================================
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ConfigManager } from "./ConfigManager";
 
 describe("ConfigManager — concurrency layer (Epic-1 Task 4)", () => {
@@ -36,9 +36,7 @@ describe("ConfigManager — concurrency layer (Epic-1 Task 4)", () => {
 			.spyOn(ConfigManager.prototype as any, "fetchExternalConfig")
 			.mockRejectedValueOnce(new Error("boom"));
 		try {
-			await expect(
-				cm.initialize(["-C", "x.json"]),
-			).rejects.toBeDefined();
+			await expect(cm.initialize(["-C", "x.json"])).rejects.toBeDefined();
 		} finally {
 			spy.mockRestore();
 		}
@@ -84,10 +82,7 @@ describe("ConfigManager — concurrency layer (Epic-1 Task 4)", () => {
 
 	it("warns in non-production when get() is called before initialize() resolves", async () => {
 		// Ensure isInitialized is false (reset done in beforeEach).
-		const warnSpy = vi.spyOn(
-			(ConfigManager as any)._logger,
-			"warn",
-		);
+		const warnSpy = vi.spyOn((ConfigManager as any)._logger, "warn");
 
 		const originalNodeEnv = process.env.NODE_ENV;
 		try {
@@ -106,10 +101,7 @@ describe("ConfigManager — concurrency layer (Epic-1 Task 4)", () => {
 	});
 
 	it("does NOT warn in production when get() is called before initialize() resolves", async () => {
-		const warnSpy = vi.spyOn(
-			(ConfigManager as any)._logger,
-			"warn",
-		);
+		const warnSpy = vi.spyOn((ConfigManager as any)._logger, "warn");
 
 		const originalNodeEnv = process.env.NODE_ENV;
 		try {
