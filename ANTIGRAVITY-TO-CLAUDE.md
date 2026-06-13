@@ -2004,5 +2004,143 @@ Rather than creating a bloated, single-purpose configuration harness, package th
 Lefthook's pre-commit is stripped down strictly to Biome linting and formatting (running in sub-150ms), and typechecking is offloaded to a rapid, 1-minute GHA pre-flight `Validate` runner. On failure, `rtk watch-ci` (triggered on-push) catches the failure, scrubs the logs, checks out a temporary background git worktree to avoid active local file pollution, runs the headless `claude -p` compiler fixer with a strict N=3 decrement limit, validates changes locally via `pnpm verify:fast`, and pushes back to `main`. Any escalating failures trigger terminal bells alongside a native Windows Toast notification via PowerShell, dropping a localized crash summary `CI-FAILURE-REPORT.md` at the root.
 
 #### Phase-1 Minimal vs Full Implementation Roadmap:
-*   **Phase-1 (MVP / Shipped in 1 day)**: A single Node script inside `C:\Users\user\.gemini\antigravity\bin\watch-ci.ts` (run on-demand via terminal tab) that monitors `gh run list`, fetches failing logs on red, invokes pre-configured headless `claude -m` directly inside the current checkout directory (with simple loop/retry checks), and triggers a PowerShell shell sound beep when failures escape.
-*   **The Full Spec**: The complete `rtk watch-ci` tool integrating isolated git worktrees, advanced log parsing/compression patterns, Windows-native Toast notifications, config-whitelisting controls, and a separate fast pre-flight GHA lane setup.
+* **Phase-1 (MVP / Shipped in 1 day)**: A single Node script inside `C:\Users\user\.gemini\antigravity\bin\watch-ci.ts` (run on-demand via terminal tab) that monitors `gh run list`, fetches failing logs on red, invokes pre-configured headless `claude -m` directly inside the current checkout directory (with simple loop/retry checks), and triggers a PowerShell shell sound beep when failures escape.
+### 2. Verdict & Recommendation
+
+> [!IMPORTANT]
+> **VERDICT: EXECUTE-WITH-FIXES**
+
+The proposed two-half architecture is highly cohesive, lightweight, and incredibly smart. However, the implementation **MUST** adopt the top 5 blocker corrections listed above prior to driving the code.
+
+**Summary of Must-Fix Prereqs Before Execution:**
+1. Let the script coordinate Git commits Programmatically so `changedFiles(wt)` checks unstaged edits safely.
+2. Replace `--permission-mode acceptEdits` with the verified `--dangerously-skip-permissions` flag to prevent background hangs.
+3. Reposition the temp `git worktree` under OS `tmpdir()` instead of `.git/`.
+4. Prevent lookup race conditions by polling `gh run list` until the local HEAD SHA matches the GHA run SHA.
+5. Prevent concurrent loop overlaps with a filesystem file-lock mutex.
+
+---
+
+## 2026-06-13 — Dev-workflow plan-phase review (2026-06-13)
+
+### 1. Critical Review & Findings
+
+This review pressure-tests the proposed architecture and implementation plan for the **CI-Offload + AI Auto-Fix Loop** prior to execution. While the core philosophy (offloading heavy validations and executing fixes in background worktrees) is sound and elegantly minimizes local development overhead, several high-impact system-level bugs, race conditions, and runner mismatches would break the workflow or cause headless hangs.
+
+---
+
+#### 🔴 Blocker — `changedFiles` Verification Mismatch Relative to `HEAD`
+* **Design Area**: `attemptFix()` verification and `changedFiles(wt)` ([2026-06-13-ci-offload-autofix.md#L371-L373](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b8557033/docs/superpowers/plans/2026-06-13-ci-offload-autofix.md#L371-L373))
+* **Issue**: The orchestration relies on a critical logical contradiction:
+  1. The prompt explicitly instructs Claude Code to run `git commit -am "fix(ci): auto-fix CI failure"`.
+  2. The script's rails then call `changedFiles(wt)` which runs `git diff --name-only HEAD`.
+  3. If Claude successfully commits, **the working directory has no dirty differences relative to `HEAD`**. Therefore, `changedFiles` returns empty, the script sees `diff.length === 0`, and immediately aborts back to the caller with `"abort:empty-diff"`.
+  4. If Claude does *not* commit, `changedFiles` sees the files, but because the script doesn't execute a commit itself, it pushes a stale detached `failSha` commit with absolutely zero changes, rendering the entire run a no-op loop.
+* **Concrete Fix**: Strip the `git commit` instruction from the LLM prompt. Let Claude Code purely apply its edits to the files and format/lint. Let the **orchestration script** run `changedFiles` (comparing worktree state to current HEAD unstaged via `git diff --name-only HEAD`), enforce the path-denylist and loop-fingerprint checks on those pending changes, and then have the script itself execute the commit:
+  ```js
+  sh("git", ["-C", wt, "add", "."]);
+  sh("git", ["-C", wt, "commit", "-m", "fix(ci): auto-fix CI failure"]);
+  ```
+  This guarantees total rail security, programmatic correctness, and leaves no reliance on the LLM's command-execution self-policing.
+
+---
+
+#### 🔴 Blocker — Improper Claude Non-Interactive Flags Causes Process Hangs
+* **Design Area**: Headless Claude invocation ([2026-06-13-ci-offload-autofix.md#L385-L386](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b8557033/docs/superpowers/plans/2026-06-13-ci-offload-autofix.md#L385-L386))
+* **Issue**: The plan calls Claude Code using `claude -p "<prompt>" --permission-mode acceptEdits`. There is no `--permission-mode` CLI argument in standard Claude Code. Without the correct non-interactive bypass, Claude Code will block waiting for human confirmation on file modifications or tool runs. Because this is executed in a detached background watcher, it will hang indefinitely, timing out the CI budget and exhausting resources.
+* **Concrete Fix**: Use the verified Claude Code CLI flag for fully non-interactive execution:
+  `claude -p "<prompt>" --dangerously-skip-permissions`
+
+---
+
+#### 🔴 Blocker — Creating Git Worktree inside `.git/` is Invalid
+* **Design Area**: Temporary worktree paths ([2026-06-13-ci-offload-autofix.md#L378](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b8557033/docs/superpowers/plans/2026-06-13-ci-offload-autofix.md#L378))
+* **Issue**: Spawning a worktree at `.git/watch-ci-worktrees/...` is treated as a severe security and namespace violation by Git. `.git/` is strictly reserved for metadata. Trying to add a nested working copy with its own `.git` reference file pointing back to the parent internal block will prompt Git to panic or fail (and can easily pollute your indexing structure).
+* **Concrete Fix**: Isolate the temporary worktree outside the repository's path entirely. Resolve the temporary worktree inside the OS temp directory using Node's `os.tmpdir()`:
+  ```js
+  import { tmpdir } from "node:os";
+  const wt = join(tmpdir(), "watch-ci-worktrees", `fix-${attempt}-${Date.now()}`);
+  ```
+  This is 100% clean, avoids path contamination, and is automatically garbage-collected by the operating system over time.
+
+---
+
+#### 🔴 Blocker — `gh run list` Race Condition Immediately Post-Push
+* **Design Area**: Initial CI run lookup ([2026-06-13-ci-offload-autofix.md#L420-L421](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b8557033/docs/superpowers/plans/2026-06-13-ci-offload-autofix.md#L420-L421))
+* **Issue**: The `watch-ci` script is designed to be triggered right after a `git push`. However, GitHub's webhook APIs and runners can take from 3 to 10 seconds to compile, queue, and register the new workflow run. If `watch-ci` calls `gh run list --branch main --limit 1` immediately, it risks returning the **prior completed workflow run**. Since the prior run is completed, `watchRun` returns immediately. If the prior run was green, the worker exits claiming "CI is GREEN", completely missing the active (and potentially failing) run.
+* **Concrete Fix**: Compute the expected local `HEAD` SHA before watching. Modify the lookup logic to poll/sleep until a run appears in GHA where `headSha` matches that local SHA:
+  ```js
+  const expectedSha = sh("git", ["rev-parse", "HEAD"]).trim();
+  let run = null;
+  while (!run) {
+    const list = JSON.parse(sh("gh", ["run", "list", "--branch", cfg.branch, "--limit", "3", "--json", "databaseId,headSha,status"]));
+    run = list.find(r => r.headSha === expectedSha);
+    if (!run) await sleep(3000); // Wait 3s for registration
+  }
+  ```
+
+---
+
+#### 🔴 Blocker — Concurrent Watcher Execution Collisions
+* **Design Area**: Multi-Instance Process Isolation ([2026-06-13-ci-offload-autofix.md#L411](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b8557033/docs/superpowers/plans/2026-06-13-ci-offload-autofix.md#L411))
+* **Issue**: If a developer pushes multiple commits rapidly, or repeatedly runs `/watch-ci`, multiple standalone detached Node processes will spin up parallel loops. They will lock the same GitHub runs, compile competing fixes inside overlapping worktrees, and trigger race-condition rejections on Git push.
+* **Concrete Fix**: Enforce a filesystem-based single-instance lock file (mutex) scoped to the repository workspace inside the OS temp directory. If another process is running, warn and exit immediately:
+  ```js
+  const lockFile = join(tmpdir(), `watch-ci-${fingerprint(repoRoot)}.lock`);
+  if (existsSync(lockFile)) {
+    const oldPid = parseInt(readFileSync(lockFile, "utf8"), 10);
+    if (isPidRunning(oldPid)) { log(`watch-ci already active (PID: ${oldPid}).`); return; }
+  }
+  writeFileSync(lockFile, String(process.pid), "utf8");
+  ```
+
+---
+
+#### 🟡 Should-Fix — Denylist Substring Matching is Excessively Broad
+* **Design Area**: Path safety verification ([2026-06-13-ci-offload-autofix.md#L304-L307](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b8557033/docs/superpowers/plans/2026-06-13-ci-offload-autofix.md#L304-L307))
+* **Issue**: `isDeniedPath(path, denylist)` uses a raw `.includes()` check. Crucial boundaries (such as preventing `tsconfig` edits) will mistakenly block completely benign modifications. For example, if a developer tries to modify a source file named `ts-core/src/configs/tsconfig-helper.ts` to solve a compiler bug, the substring `"tsconfig"` will match, triggering an immediate abort and false escalation.
+* **Concrete Fix**: Make the denylist validation match exact filenames or directory prefixes instead of loose substrings:
+  ```js
+  export function isDeniedPath(path, denylist) {
+    const p = path.replace(/\\/g, "/");
+    const filename = p.split("/").pop();
+    return denylist.some((d) => {
+      if (d.endsWith("/")) return p.includes(d);
+      if (d === "tsconfig") return filename === "tsconfig.json" || /^tsconfig\..*\.json$/.test(filename);
+      return filename === d;
+    });
+  }
+  ```
+
+---
+
+#### 🟡 Should-Fix — Out-of-Sync Local Workspaces Post-Fix
+* **Design Area**: Repository synchronization
+* **Issue**: When the background worker successfully pushes an auto-fix to `origin main`, the developer's local active checkout directory's HEAD remains at their original commit (which is now one commit behind `origin main`). If the developer proceeds to commit and push fresh code without pulling, their Git push will be rejected, forcing a manual and confusing merge cycle.
+* **Concrete Fix**: The final success notice should explicitly warn the developer to pulling the changes. Update `success()` toast to output:
+  `watch-ci ✅: CI is green. Auto-fix successfully applied! Run 'git pull' immediately to sync local branch.`
+
+---
+
+#### 🟢 Nit — Detached Process Lifecycle Reliability on Windows
+* **Design Area**: Service detaches ([2026-06-13-ci-offload-autofix.md#L557-L560](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b8557033/docs/superpowers/plans/2026-06-13-ci-offload-autofix.md#L557-L560))
+* **Issue**: Spawning background processes on Windows via Bash tools or simplistic `run_in_background` has a high risk of being killed when the parent terminal node closes or the computer sleeps.
+* **Concrete Fix**: On Windows, utilize PowerShell's native process engine with standard `Start-Process` specifying a hidden window to trigger an completely independent, headless OS-detached daemon:
+  `powershell -Command "Start-Process node -ArgumentList 'C:/Users/user/.claude/skills/watch-ci/watch-ci.mjs' -WindowStyle Hidden"`
+
+---
+
+### 2. Verdict & Recommendation
+
+> [!IMPORTANT]
+> **VERDICT: EXECUTE-WITH-FIXES**
+
+The proposed two-half architecture is highly cohesive, lightweight, and incredibly smart. However, the implementation **MUST** adopt the top 5 blocker corrections listed above prior to driving the code. 
+
+**Summary of Must-Fix Prereqs Before Execution:**
+1. Let the script coordinate Git commits Programmatically so `changedFiles(wt)` checks unstaged edits safely.
+2. Replace `--permission-mode acceptEdits` with the verified `--dangerously-skip-permissions` flag to prevent background hangs.
+3. Reposition the temp `git worktree` under OS `tmpdir()` instead of `.git/`.
+4. Prevent lookup race conditions by polling `gh run list` until the local HEAD SHA matches the GHA run SHA.
+5. Prevent concurrent loop overlaps with a filesystem file-lock mutex.
+
