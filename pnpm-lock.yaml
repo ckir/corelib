@@ -20,6 +20,9 @@ importers:
       dependency-cruiser:
         specifier: ^17.4.0
         version: 17.4.0
+      msw:
+        specifier: ^2.14.6
+        version: 2.14.6(@types/node@25.9.2)(typescript@6.0.3)
       nx:
         specifier: ^22.7.2
         version: 22.7.2
