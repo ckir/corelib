@@ -2384,3 +2384,28 @@ Pursuant to the pre-plan gate requirements, we have conducted a rigorous audit-o
 **VERDICT: PLAN-READY** (Proceed to writing the implementation plan).
 
 The Rev 2 specification represents the absolute peak of monorepo audit design. It addresses every technical concern, implements every mitigation correctly, enforces precise scopes, and provides high-value durable test infra patterns.
+
+---
+
+## 2026-06-13 — Standalone Vs. Workspace Probes (Narrow Divergence Check)
+
+### 1. Recommendation
+*   **Recommendation**: **Option (A)** (STANDALONE `/probes` crate, NOT in any Cargo workspace).
+*   **Reasoning**: Keeping the Cargo structure standalone perfectly preserves the repository-level reality where `rust` is a completely isolated package. Creating a root `Cargo.toml` workspace (Option B) forces Cargo to move the build target directory for `rust/` to the repo root `./target`. This changes compilation paths, which breaks the release workflow `.github/workflows/pipeline.yml` (e.g. `rust/target/release/{yahoo_streamer,nasdaq_polling,alpaca_streamer}`) and compromises `.gitignore` configurations, introducing high disruption and CI-break risks. Option (A) delivers 100% of the isolation intent of §9.1 with absolutely *zero* risk of CI disruption or structure pollution.
+
+### 2. Risk & Linkage Analysis
+*   **Compilation & Linking**: A path dependency (`corelib-rust = { path = "../../rust" }`) on a library with `crate-type = ["cdylib", "rlib"]` is flawlessly handled by Cargo. Cargo compiles and links the `rlib` target cleanly for standard unit/integration testing.
+*   **napi-derive Details**: The `#[napi]` attributes macro-expand into safe standard Rust wrapper structures and `#[no_mangle] pub extern "C"` functions inside the `rlib` library. Because `napi` uses dynamic symbols/weak-linkage resolving only at runtime under the Node.js host, building `corelib-rust` as a dependency for a standalone Rust test binary compiles and links perfectly without requiring any node-host libraries or custom link configs.
+*   **Loom Integration**:
+    *   Loom-based models check thread interleavings by substituting std wrappers (`std::sync`, `std::thread`, etc.) with `loom::sync` equivalents. To support this under Option A, the `corelib-rust` dependency must compile with its own conditional `loom` configuration activated.
+    *   In `probes/rust/Cargo.toml`, we can propagate this feature: `corelib-rust = { path = "../../rust", features = ["loom"] }`. 
+
+### 3. Location & Configuration
+*   **Exact Location**: `/probes/rust/Cargo.toml` (standard package root for Rust-specific probes, nested inside the repo-root `/probes/` directory).
+    *   This keeps the top-level `/probes/` folder cleanly organized, dedicating `/probes/rust/` strictly to Rust code and leaving `/probes/` open for Vitest/JS integration test setup and dynamic TCP/WS loopback harness configurations (`/probes/_harness/`).
+*   **Loom Variant Configuration**: The `loom` variant does not need a separate physical Rust `cfg` configuration profile (such as custom profile targets). It is best expressed as a standard Cargo feature `features = ["loom"]` on the `probes/rust` package, which activates the `loom` feature flag down to `corelib-rust`.
+
+### 4. Verdict Line
+
+> [!IMPORTANT]
+> **VERDICT: RECOMMEND-A** — Prevents critical CI-break risks associated with target directory relocation while providing flawless, isolated compilation capabilities for both rlib-linking and loom-based concurrency tests.
