@@ -1872,3 +1872,137 @@ The implementation plan is extremely detailed, precise, and structurally robust,
 4. **Harness setup skeleton**: Keep `setup.ts` dynamic imports unmapped in Task 3 to keep the intermediate compiler green and satisfy Lefthook pre-commits.
 5. **ESM compatibility**: Static-import fixture helpers in `server.ts` and replace `require.main` with `import.meta.url` in the coverage validator.
 6. **Alias compilation paths**: Extend `tsconfig.integration.json` to include sub-package integration paths under `"include"`.
+
+---
+
+## 2026-06-13 — Dev-workflow: CI-offload + AI auto-fix loop (divergent design)
+
+### 1. Local-Gate Rebalancing: Finding the Efficiency G-Spot
+
+#### Case Analysis of the Candidates
+*   **Candidate (a) — Keep `verify:fast` (format+lint+typecheck), drop pre-push `verify:full`**: Decent, but typechecking all packages (`tsc-all`) is an NTFS filesystem-bound crawl on weak Windows-spec engines, taking minutes to stat and resolve modules under Node.js overhead.
+*   **Candidate (b) — Format + lint only locally, move typecheck to CI (RECOMMENDED)**: This is the mathematically optimal choice under a hybrid AI safety-net setup. 
+*   **Candidate (c) — Drop all local gates**: Leads to rapid local divergence where developers can commit broken format syntax blocks, making raw git logs messy and driving high-frequency trivial failures.
+*   **Candidate (d) — Keep both**: Defeats the purpose of hardware offloading. The weak local machine continues cooking on heavy builds.
+
+#### Rationale for the Winner
+We strongly advocate for **Candidate (b) (Format + Lint locally, push typecheck and tests to CI)**. 
+1. **The IDE is Already Your Local Checker**: Modern developers use language servers (LSP/TSServer) embedded inside active editors (VS Code / Cursor). The editor highlights syntax and type diagnostics within 200ms of typing. Running CLI-based `tsc --noEmit` hooks over the entire workspace in pre-commit is highly redundant.
+2. **Sub-second Local Friction**: Formatting and linting via Biome/ESLint on staged files takes **under 150ms** locally. Offloading typechecking saves the developer up to minutes of local blocking per commit.
+3. **The GHA Pre-Flight Job Split (Crucial Caveat)**: Offloading typechecking to CI is a toxic cost-vector if it triggers the expensive 9-cell OS × Runtime matrix. Running native Rust builds and matrix coverage for a typo is a massive waste of resources. 
+    * *The Solution*: Split the CI pipeline into a **Validate Pre-Flight Stage** (single Linux runner executing rapid Lint + Node/TS `tsc-all` + `pnpm verify:fast` checking in under 60 seconds) and a subsequent **Execution Stage** (the multi-OS 9-cell matrix). The auto-fix watch loop binds and runs strictly against failures in the **Validate stage**. If the fast pre-flight job fails, the expensive matrix jobs are entirely skipped, safeguarding the CI budget.
+
+---
+
+### 2. The Monitor / Auto-Fix Architecture
+
+The architecture of a local watch loop must be incredibly lean and resilient, especially on Windows where system daemons are prone to registry blocks, orphaned background processes, and silent file-handle locks.
+
+```mermaid
+flowchart TD
+    Push["1. User: git push"] --> WatchCMD["2. CLI: rtk watch-ci"]
+    WatchCMD --> PollGH["3. Poll GitHub run status (gh run list)"]
+    PollGH -- PASS --> NotifyS["4a. SUCCESS Toast & Ring"]
+    PollGH -- FAIL --> PullLogs["4b. Pull Logs (gh run view --log-failed)"]
+    PullLogs --> Compressor["5. Strip ANSI, extract Compiler error block"]
+    Compressor --> IsolatedWorktree["6. Spin up isolated git worktree"]
+    IsolatedWorktree --> ClaudeCode["7. Run headless 'claude -p' with context"]
+    ClaudeCode --> DiffVerify["8. Local verify:fast pass"]
+    DiffVerify -- PASS --> PushFix["9. Commit & Push to main"]
+    PushFix --> PollGH
+    DiffVerify -- FAIL --> MaxRetries{"10. Retries exceeded?"}
+    MaxRetries -- YES --> NotifyEscalation["11. Failure Escalation & Report"]
+```
+
+#### Blueprint for the Leanest Core Architecture
+1. **Reject Background Daemons**: Do not write a long-running system service or persistent background listener. On Windows, file-monitoring daemons suffer from file-write polling latency and crash silently when the PC sleeps/hibernates.
+2. **Adopt the "Push-and-Watch" CLI Command**: Build an ephemeral, non-blocking terminal runner implemented directly under the existing `rtk` (repo-toolkit) suite (e.g., `rtk watch-ci`). The user triggers execution in their terminal when they push (e.g., aliased as `pnpm push-fix` matching `git push && rtk watch-ci`).
+3. **Concise Log Harvesting**:
+    * Run short polling `gh run list --branch main --limit 1 --json status,conclusion,databaseId` every 12 seconds.
+    * On failure, call `gh run view <run-id> --log-failed` to fetch raw text.
+    * **The Log Compressor Component**: Raw GitHub action logs contain extensive environment initialization scripts, setup lines, and carriage returns that inflate token usage and confuse AI parsers. The runner must split stdout lines and match regular expressions for common compilers (e.g., `/error TS\d+:/`, `/npm ERR!/`, biome linter blocks), exporting under **80 lines** of exact semantic context to focus the AI.
+4. **Local Fixer Invocation**:
+    * Do not execute the AI fix on the developer's active working directory! This would mangle the files they are currently interacting with for other projects.
+    * **The Isolated Fix-Worktree Pattern**: The runner automatically spawns a temporary background git worktree (`git worktree add .git/worktrees/ci-autofix`). Inside this isolated workspace, it triggers the headless fixer:
+      `claude -p "Fix the following CI compiler failure. Work only within the files flagged in the log. Execute a fast build verify, write the commit, and exit: <COMPRESSED_LOGS>"`
+    * This allows the developer to continue coding in their main folder without active files transforming or compiling beneath their editor.
+    * When the headless fixer completes, the loop pushes the fix from the worktree, deletes the worktree, and resumes watching.
+
+---
+
+### 3. Notification & Escalation
+
+When the loop exhausts its retries (N=3) without resolving the failure, we must reach the developer even if they have switched context to a different virtual desktop or another project.
+
+1. **Systemic Windows Toast Notification (Visual, Native)**:
+   Avoid heavy Node packages like `node-notifier` which depend on bulky native C++ bindings. Instead, invoke Windows' native Toast notification system via a zero-dependency PowerShell snippet executed from Node:
+   ```ts
+   import { exec } from "node:child_process";
+   const psCommand = `powershell -Command "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null; [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType = WindowsRuntime] > $null; $template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02); $textNodes = $template.GetElementsByTagName('text'); $textNodes.Item(0).AppendChild($template.CreateTextNode('CI Auto-Fix Escalation! 🚨')); $textNodes.Item(1).AppendChild($template.CreateTextNode('Fixer has exhausted retries. Human takeover required!')); $toast = [Windows.UI.Notifications.ToastNotification]::new($template); [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('CI-Auto-Fix').Show($toast);"`;
+   exec(psCommand);
+   ```
+2. **Terminal Bell and Local File Report**:
+   * Emit 5 consecutive terminal alert characters (`console.log("\x07")`) to trigger the physical PC speaker/terminal sound layer.
+   * Generate a structured, local markdown file `CI-FAILURE-REPORT.md` at the root of the repo summarizing:
+     * The exact compiler error logs matched.
+     * The file diffs generated by the agent across the 3 fail loops.
+     * Recommendations for local debugging.
+
+---
+
+### 4. Safety Rails Beyond Bounded Retries
+
+Automated, headless commits pushed directly to `main` require rigid guardrails to prevent infinite loops, merge conflicts, and code pollution:
+
+1. **Concurrency Lock / SHA Check**:
+   The watch loop must verify `git rev-parse HEAD` on the remote equals the exact commit that failed in CI before committing a fix. If a developer has pushed a new commit `B` in the meantime, the agent must abort immediate workspace pushes to prevent silent merge conflicts.
+2. **Workspace Hash Fingerprint (Loop-Detection Checks)**:
+   The monitor must compute an SHA-256 fingerprint of the files' contents before each push. If an edit proposed by the AI matches a state already attempted during the current loop, or if the git stage has no change (indicating the AI wrote empty code or is spinning in a circle), abort the run immediately.
+3. **Strict Whitelist Path Constraints**:
+   Identify restricted configuration boundaries in `.rtk.json` (e.g. `.github/workflows/*`, `tsconfig.json`, `package.json`, `Cargo.toml`). The autonomous runner must block pushes containing edits to those files, escalating to the developer instead.
+4. **No-Force-Push Mandate**:
+   Under no circumstances must the agent use `--force` or `--force-with-lease`. If a remote branch rejects a push, the agent aborts and yields control.
+
+---
+
+### 5. Reusability Across Projects
+
+Rather than creating a bloated, single-purpose configuration harness, package this system as a command module within the existant `rtk` (repo-toolkit) suite.
+
+*   **Config Surface**: Define a local `.rtk/ci-workflow.json` at the root of any target repo:
+    ```json
+    {
+      "workflow": "pipeline.yml",
+      "branch": "main",
+      "budget": {
+        "max_retries": 3,
+        "max_total_minutes": 30
+      },
+      "preflight_job_name": "validate",
+      "paths_denylist": [".github/workflows/", "Cargo.toml"]
+    }
+    ```
+*   **Decoupled CLI Integration**: Let `rtk` ship this as `rtk watch-ci`. If a project lacks `.rtk/ci-workflow.json`, the tool falls back to the monorepo's branch default configurations, making it instantly deployable across Node, Go, Rust, and Python projects with no setup friction.
+
+---
+
+### 6. Architectural Holes & Implicit Risks
+
+1. **The Flaky Live-Tier Vulnerability**:
+   If the integration test tier executes live stream assertions against dynamic APIs (e.g., Yahoo, Alpaca WS handshakes) inside the Validate stage, tests will occasionally fail due to network blips or remote provider downtime. If the auto-fixer triggers on a flaky live-test failure, it will attempt to "fix" perfectly fine local code, injecting bugs.
+   *   *Mitigation*: The Validate pre-flight stage in GHA must execute tests strictly in **MSW Replay Mode** (fully offline). Live integration tests must be scheduled as separate cron-runs or executed post-merge to isolate the auto-fixer from external networking variables.
+2. **Secret Exposure Hazards**:
+   The headless agent runs in a local workspace with write access to `main`. If a compiler error includes raw credentials inside debug streams, there is a risk of committing secrets during automatic crash-reporting.
+   *   *Mitigation*: Enforce regex-scrubbing on all compiler log payloads prior to feeding them to the AI engine, mimicking our integration-tier secret sanitization routines.
+
+---
+
+### Final Design Recommendation
+
+**Our preferred end-to-end shape is a "Format+Lint Local / Validate Remote" hybrid loop running an Ephemeral Active Terminal watch state, managed locally inside the developer's `rtk` toolkit via `rtk watch-ci`.** 
+
+Lefthook's pre-commit is stripped down strictly to Biome linting and formatting (running in sub-150ms), and typechecking is offloaded to a rapid, 1-minute GHA pre-flight `Validate` runner. On failure, `rtk watch-ci` (triggered on-push) catches the failure, scrubs the logs, checks out a temporary background git worktree to avoid active local file pollution, runs the headless `claude -p` compiler fixer with a strict N=3 decrement limit, validates changes locally via `pnpm verify:fast`, and pushes back to `main`. Any escalating failures trigger terminal bells alongside a native Windows Toast notification via PowerShell, dropping a localized crash summary `CI-FAILURE-REPORT.md` at the root.
+
+#### Phase-1 Minimal vs Full Implementation Roadmap:
+*   **Phase-1 (MVP / Shipped in 1 day)**: A single Node script inside `C:\Users\user\.gemini\antigravity\bin\watch-ci.ts` (run on-demand via terminal tab) that monitors `gh run list`, fetches failing logs on red, invokes pre-configured headless `claude -m` directly inside the current checkout directory (with simple loop/retry checks), and triggers a PowerShell shell sound beep when failures escape.
+*   **The Full Spec**: The complete `rtk watch-ci` tool integrating isolated git worktrees, advanced log parsing/compression patterns, Windows-native Toast notifications, config-whitelisting controls, and a separate fast pre-flight GHA lane setup.
