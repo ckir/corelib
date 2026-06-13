@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-06-12-integration-tests-design.md` (status: PLAN-READY).
 
+**Revised 2026-06-13 (agy plan-phase review folded — verdict EXECUTE-WITH-FIXES → fixed):** (1) DB uses `query` only — no `execute`; `query` returns `DatabaseResult<QueryResponse>` → assert `status==="success"`, rows at `value.rows` (Tasks 6/10). (2) in-memory SQLite needs `mode:"stateful"` (else wiped per query); teardown via `disconnect()` (Task 6). (3) `RequestResult` is a discriminated union → `res.status==="success"` then `res.value.status`/`res.value.body`; retry override is `ConfigManager.getInstance().updateValue(...)`, not `set` (Task 10). (4) ESM: no `require`/`require.main` — static imports in `server.ts`, `import.meta.url` main-check in the validator (Tasks 5/8). (5) `tsconfig.integration.json` includes the package test dirs; package tsconfigs only include `src` so the lefthook `tsc` gate never sees `@itest` (Task 2). (6) `setup.ts` is a skeleton in Task 3, finalized in Task 6 (no intermediate red state); record-mode uses ONE `response:bypass` listener (Task 5); root scripts use `pnpm -r run`. agy verified correct, no change: FFI exports (Task 9), `createRouter` (Task 13), worker `SELF` route (Task 14), streamer event/method surface (Task 15).
+
 ---
 
 ## Conventions for implementer subagents (READ FIRST — applies to EVERY task)
@@ -168,16 +170,23 @@ printf '' > tests/integration/_contracts/.gitkeep
       "@itest/*": ["./tests/integration/*"]
     }
   },
-  "include": ["tests/integration"]
+  "include": [
+    "tests/integration",
+    "ts-core/tests/integration/**/*.ts",
+    "ts-markets/tests/integration/**/*.ts",
+    "ts-cloud/tests/integration/**/*.ts"
+  ]
 }
 ```
 
-- [ ] **Step 3: Add root `package.json` integration scripts** (alongside the existing `*-all` / `verify:*`). Add these keys to `scripts`:
+> **Why the package test dirs are listed here (agy plan-pass):** the per-package `tsconfig.json` files include only `["src", ...]` — they do NOT pick up `tests/integration/**`, so the lefthook `tsc --noEmit` gate never typechecks the `@itest`-importing files (good — no gate breakage). This integration tsconfig is the one place those files are typechecked (editor + optional `tsc -p tsconfig.integration.json`), so it must include them.
+
+- [ ] **Step 3: Add root `package.json` integration scripts** (alongside the existing `*-all` / `verify:*`). Add these keys to `scripts` (use `-r run <script>` — the explicit recursive form):
 
 ```json
-    "test:integration": "pnpm -r --workspace-concurrency=1 test:integration",
-    "test:integration:record": "cross-env INTEGRATION_RECORD=1 pnpm -r --workspace-concurrency=1 test:integration",
-    "test:integration:live": "cross-env INTEGRATION_LIVE=1 pnpm -r --workspace-concurrency=1 test:integration",
+    "test:integration": "pnpm -r --workspace-concurrency=1 run test:integration",
+    "test:integration:record": "cross-env INTEGRATION_RECORD=1 pnpm -r --workspace-concurrency=1 run test:integration",
+    "test:integration:live": "cross-env INTEGRATION_LIVE=1 pnpm -r --workspace-concurrency=1 run test:integration",
     "test:integration:validate": "tsx tests/integration/coverage-validator.ts"
 ```
 
@@ -241,22 +250,13 @@ Each config matches its package's runtime and wires the `@ckir/*` source aliases
 
 **Current state (verify):** existing unit configs — `ts-core/vitest.config.ts` (`environment: "node"`), `ts-markets/vitest.config.ts` (`environment: "happy-dom"`, `globals: true`), `ts-cloud/vitest.config.ts` (workers pool via `wrangler.toml`). The integration configs are SEPARATE files; do not modify the unit configs.
 
-- [ ] **Step 1: Create the shared setup file** `tests/integration/_harness/setup.ts` (referenced by all node-project configs; imports are added by later tasks — for now it wires lifecycle):
+- [ ] **Step 1: Create the shared setup file as a SKELETON** `tests/integration/_harness/setup.ts`. The node-project configs reference it via `setupFiles`, but `./server` (Task 5) and `./temp` (Task 6) don't exist yet — keep it import-free now and FINALIZE it in Task 6 (the seam suites that depend on it don't run until Task 9). *(agy plan-pass: every intermediate commit stays self-consistent + runnable.)*
 
 ```ts
-import { afterAll, afterEach, beforeAll } from "vitest";
-import { assertNoMisses, beginItest, endItest, resetItest } from "./server";
-import { cleanupAll } from "./temp";
-
-beforeAll(() => beginItest());
-afterEach(() => {
-  assertNoMisses(); // any unmatched replay request fails the test loudly
-  resetItest();
-});
-afterAll(async () => {
-  await endItest();
-  await cleanupAll();
-});
+// Integration-tier global setup. The MSW server + temp/DB lifecycle are wired in once
+// those harness modules exist (finalized in Task 6). Until then this is a no-op so the
+// integration configs load cleanly.
+export {};
 ```
 
 - [ ] **Step 2: `ts-core/vitest.integration.config.ts`** (raw node — FFI, HTTP, DB, config):
@@ -696,12 +696,12 @@ describe("itest server (replay)", () => {
 });
 ```
 
-- [ ] **Step 3: Implement `tests/integration/_harness/server.ts`:**
+- [ ] **Step 3: Implement `tests/integration/_harness/server.ts`** (ESM-safe — static imports only, NO `require`; ONE global `response:bypass` listener so record mode can't leak listeners — agy plan-pass 🔴/🟡):
 
 ```ts
 import { http, HttpResponse, passthrough } from "msw";
 import { setupServer } from "msw/node";
-import { type Fixture, type FixtureFile, fixtureKey, readFixtureFile, writeFixtureFile } from "./fixtures";
+import { type Fixture, type FixtureFile, fixtureKey, fixturePathFor, readFixtureFile, writeFixtureFile } from "./fixtures";
 import { scrubFixture } from "./scrubber";
 
 export const IS_RECORD = process.env.INTEGRATION_RECORD === "1";
@@ -710,7 +710,9 @@ export const IS_LIVE = process.env.INTEGRATION_LIVE === "1";
 /** Per-test replay queues, keyed by "METHOD url". */
 const queues = new Map<string, Fixture[]>();
 const misses: string[] = [];
-const pendingWrites = new Map<string, FixtureFile>(); // record mode: path -> data
+const pendingWrites = new Map<string, Fixture>(); // record mode: path -> scrubbed fixture
+let recordTarget: { service: string; name: string } | undefined;
+let bypassListenerAttached = false;
 
 function enqueue(file: FixtureFile): void {
   const arr = Array.isArray(file) ? file : [file];
@@ -719,7 +721,7 @@ function enqueue(file: FixtureFile): void {
   queues.set(key, [...(queues.get(key) ?? []), ...arr]);
 }
 
-/** Register an in-memory fixture (used by tests + by loadFixtureFile). */
+/** Register an in-memory fixture (used by tests directly). */
 export function registerFixture(file: FixtureFile): void {
   enqueue(file);
 }
@@ -727,11 +729,15 @@ export function registerFixture(file: FixtureFile): void {
 /** Load a committed fixture file into the replay queue. No-op in live mode. */
 export function loadFixture(service: string, name: string): void {
   if (IS_LIVE) return;
-  const path = `${service}/${name}`; // resolved against _contracts by readFixtureFile via fixturePathFor
-  const { fixturePathFor } = require("./fixtures");
   const file = readFixtureFile(fixturePathFor(service, name));
-  if (!file) throw new Error(`itest: missing fixture ${path}.json (run with INTEGRATION_RECORD=1 to create)`);
+  if (!file) throw new Error(`itest: missing fixture ${service}/${name}.json (record with INTEGRATION_RECORD=1 to create)`);
   enqueue(file);
+}
+
+/** In record mode, name the fixture file the next passed-through real response is written to. Side-effect-free (no listeners). */
+export function recordTo(service: string, name: string): void {
+  if (!IS_RECORD) return;
+  recordTarget = { service, name };
 }
 
 function nextFixture(method: string, url: string): Fixture | undefined {
@@ -742,8 +748,7 @@ function nextFixture(method: string, url: string): Fixture | undefined {
 }
 
 const replayResolver = http.all("*", async ({ request }) => {
-  if (IS_LIVE) return passthrough();
-  if (IS_RECORD) return passthrough();
+  if (IS_LIVE || IS_RECORD) return passthrough();
   const fx = nextFixture(request.method, request.url);
   if (!fx) {
     misses.push(`${request.method} ${request.url}`);
@@ -761,10 +766,10 @@ export const itestServer = setupServer(replayResolver);
 export function beginItest(): void {
   if (IS_LIVE) return; // real network; no interception
   itestServer.listen({ onUnhandledRequest: "bypass" });
-  if (IS_RECORD) {
+  if (IS_RECORD && !bypassListenerAttached) {
+    bypassListenerAttached = true; // attach exactly once (no per-call leak)
     itestServer.events.on("response:bypass", async ({ request, response }) => {
-      const clone = response.clone();
-      const text = await clone.text();
+      const text = await response.clone().text();
       let body: unknown = text;
       try { body = JSON.parse(text); } catch { /* keep string */ }
       const raw: Fixture = {
@@ -773,12 +778,10 @@ export function beginItest(): void {
         recordedAt: new Date().toISOString(),
       };
       const scrubbed = scrubFixture(raw);
-      const { fixturePathFor } = require("./fixtures");
-      // Service/name are derived by the test via recordTo(); fallback writes under _contracts/_unsorted.
-      const target = (globalThis as any).__ITEST_RECORD_TARGET__ as { service: string; name: string } | undefined;
-      const path = fixturePathFor(target?.service ?? "_unsorted", target?.name ?? new URL(request.url).hostname);
-      // Diff is printed by recordTo(); here we just persist (overwrite/append handled by recordTo()).
-      pendingWrites.set(path, scrubbed);
+      const target = recordTarget ?? { service: "_unsorted", name: new URL(request.url).hostname };
+      pendingWrites.set(fixturePathFor(target.service, target.name), scrubbed);
+      // eslint-disable-next-line no-console
+      console.log(`[itest:record] ${target.service}/${target.name} <- ${request.method} ${request.url} (scrubbed before write)`);
     });
   }
 }
@@ -786,6 +789,7 @@ export function beginItest(): void {
 export function resetItest(): void {
   queues.clear();
   misses.length = 0;
+  recordTarget = undefined;
   itestServer.resetHandlers();
 }
 
@@ -800,22 +804,6 @@ export async function endItest(): Promise<void> {
   if (IS_LIVE) return;
   if (IS_RECORD) for (const [path, data] of pendingWrites) writeFixtureFile(path, data);
   itestServer.close();
-}
-```
-
-> **Record-target + diff helper.** Recording associates a request with a `<service>/<name>` fixture path. Tests set this via `recordTo(service, name)` (below) which also prints the raw→scrubbed diff per §6.2. Add to `server.ts`:
-
-```ts
-/** In record mode, name the fixture file the next real request should be written to + print the scrub diff. */
-export function recordTo(service: string, name: string): void {
-  if (!IS_RECORD) return;
-  (globalThis as any).__ITEST_RECORD_TARGET__ = { service, name };
-  itestServer.events.on("response:bypass", async ({ response }) => {
-    const clone = response.clone();
-    const text = await clone.text();
-    // eslint-disable-next-line no-console
-    console.log(`[itest:record] ${service}/${name} captured ${text.length}B (scrubbed before write)`);
-  });
 }
 ```
 
@@ -876,16 +864,17 @@ describe("temp isolation", () => {
   it("creates an isolated in-memory SQLite database", async () => {
     const db = await createTestDatabase();
     expect(db).toBeTruthy();
-    // basic round-trip via the corelib Database interface
-    await db.execute("CREATE TABLE t (id INTEGER)");
-    await db.execute("INSERT INTO t (id) VALUES (1)");
-    const rows = await db.query("SELECT id FROM t");
-    expect(rows.length).toBe(1);
+    // round-trip via the corelib Database interface (query returns DatabaseResult<QueryResponse>)
+    await db.query("CREATE TABLE t (id INTEGER)");
+    await db.query("INSERT INTO t (id) VALUES (1)");
+    const res = await db.query<{ id: number }>("SELECT id FROM t");
+    expect(res.status).toBe("success");
+    if (res.status === "success") expect(res.value.rows.length).toBe(1);
   });
 });
 ```
 
-> **Oracle note:** the corelib `Database` method names (`execute`/`query`) must match the real interface from `@ckir/corelib`'s `createDatabase` return type. In Step 0, open `ts-core/src/database/index.ts` and the `Database` type it returns; if the methods are named differently (e.g. `run`/`all`), use those exact names in BOTH this test and `createTestDatabase` — report `SHAPE_DIVERGENCE` if they differ from `execute`/`query` so the controller can confirm.
+> **Verified (agy plan-pass) — the corelib `Database` interface:** `query<T>(sql, params?): Promise<DatabaseResult<QueryResponse<T>>>` (also `transaction`, `disconnect`). There is **NO `execute`**. `DatabaseResult<V>` is the discriminated union `{ status: "success"; value: V } | { status: "error"; reason: ... }`; rows live at `value.rows`. Use `db.query(...)` for DDL/DML and SELECT alike; assert `res.status === "success"`, then read `res.value.rows`. (Checked `ts-core/src/database/core/types.ts`.)
 
 - [ ] **Step 2: Run — expect FAIL** (module missing).
 
@@ -908,45 +897,62 @@ export function getTestTempDir(): string {
   return dir;
 }
 
-/** An isolated SQLite DB (in-memory by default). Closed in cleanupAll(). */
+/** An isolated SQLite DB (in-memory by default). Disconnected in cleanupAll(). */
 export async function createTestDatabase(opts: { file?: boolean } = {}) {
   const url = opts.file ? `file:${join(getTestTempDir(), "itest.db")}` : ":memory:";
-  const db = await createDatabase({ dialect: "sqlite", url } as never);
-  if (typeof (db as { close?: unknown }).close === "function") {
-    closers.push(() => (db as { close: () => Promise<void> | void }).close());
-  }
+  // mode MUST be "stateful": "stateless" disconnects after EVERY query, wiping an in-memory DB.
+  const db = await createDatabase({ dialect: "sqlite", url, mode: "stateful" } as never);
+  closers.push(() => db.disconnect()); // the Database interface exposes disconnect(), not close()
   return db;
 }
 
-/** Recursively prune temp dirs + close DBs. Call in afterAll. */
+/** Recursively prune temp dirs + disconnect DBs. Call in afterAll. */
 export async function cleanupAll(): Promise<void> {
   for (const close of closers.splice(0)) { try { await close(); } catch { /* ignore */ } }
   for (const dir of tempDirs.splice(0)) { try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ } }
 }
 ```
 
-> **Oracle note (config shape):** `createDatabase`'s SQLite config object — verify the exact field names against `ts-core/src/database/index.ts` / `SqliteDb` (the digest shows `dialect: "sqlite"`, `url`, and optional `mode`/`authToken`). If `:memory:` needs a different field than `url`, use the real one and report SHAPE_DIVERGENCE.
+> **Verified (agy plan-pass) — `BaseDbConfig` requires a non-optional `mode: "stateless" | "stateful"`.** Pass `mode: "stateful"` for `:memory:` (under `"stateless"` the driver disconnects after each query and the in-memory DB is wiped). `url: ":memory:"` is correct. Teardown is `db.disconnect()`. (Checked `ts-core/src/database/sqlite/sqlite-config.ts`.)
 
 - [ ] **Step 4: Run — expect PASS.**
 
 Run: `pnpm --filter @ckir/corelib exec vitest run ../tests/integration/_harness/temp.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Re-verify the smoke test now runs end-to-end** (setup.ts deps now all exist):
+- [ ] **Step 5: Finalize the harness setup file** now that `./server` (Task 5) and `./temp` exist — replace the skeleton `tests/integration/_harness/setup.ts` with the full lifecycle:
+
+```ts
+import { afterAll, afterEach, beforeAll } from "vitest";
+import { assertNoMisses, beginItest, endItest, resetItest } from "./server";
+import { cleanupAll } from "./temp";
+
+beforeAll(() => beginItest());
+afterEach(() => {
+  assertNoMisses(); // any unmatched replay request fails the test loudly
+  resetItest();
+});
+afterAll(async () => {
+  await endItest();
+  await cleanupAll();
+});
+```
+
+- [ ] **Step 6: Re-verify the smoke + harness tests run end-to-end under the integration config:**
 
 Run: `pnpm --filter @ckir/corelib test:integration`
-Expected: the `_smoke` + harness tests run and PASS under the integration config.
+Expected: `_smoke` + scrubber/server/temp harness tests run and PASS.
 
-- [ ] **Step 6: Commit.**
+- [ ] **Step 7: Commit.**
 
 ```bash
-git add tests/integration/_harness/temp.ts tests/integration/_harness/temp.test.ts
+git add tests/integration/_harness/temp.ts tests/integration/_harness/temp.test.ts tests/integration/_harness/setup.ts
 git commit -m "$(cat <<'EOF'
-feat(itest): per-test temp-dir + isolated SQLite + global cleanup
+feat(itest): per-test temp-dir + isolated SQLite + finalize harness setup
 
-getTestTempDir() (unique mkdtemp) and createTestDatabase() (:memory: by default via
+getTestTempDir() (unique mkdtemp) and createTestDatabase() (:memory: stateful via
 @ckir/corelib createDatabase) so parallel files never collide; cleanupAll() prunes
-dirs and closes DBs in afterAll.
+dirs and disconnects DBs. setup.ts now wires the MSW + temp lifecycle for seam suites.
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
 EOF
@@ -1051,6 +1057,7 @@ export const COVERAGE_MATRIX: SeamCell[] = [
 ```ts
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { COVERAGE_MATRIX, type SeamCell } from "./coverage.matrix";
 import { type Fixture, findUnscrubbedSecrets } from "./_harness/scrubber";
 import { readFixtureFile } from "./_harness/fixtures";
@@ -1100,8 +1107,10 @@ function walkJson(dir: string): string[] {
   return out;
 }
 
-// CLI entry (run via `tsx tests/integration/coverage-validator.ts`).
-if (require.main === module) {
+// CLI entry (run via `tsx tests/integration/coverage-validator.ts`). ESM-safe main check
+// (no `require.main` — undefined under ESM/Vitest; agy plan-pass 🔴).
+const isMain = process.argv[1] != null && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMain) {
   const { ok, errors } = validateCoverage();
   if (!ok) { for (const e of errors) console.error(`✗ ${e}`); process.exit(1); }
   console.log("✓ coverage matrix valid");
@@ -1237,24 +1246,27 @@ beforeAll(async () => {
 });
 
 describe("RequestUnlimited (external, replay)", () => {
-  it("[itestCore.endpoint.success] returns body+status for a 200", async () => {
+  it("[itestCore.endpoint.success] returns a success result with body+status for a 200", async () => {
     loadFixture("itest-core", "endpoint-success");
-    const res = await endPoint("https://itest.local/core/ok");
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ ok: true });
+    const res = await endPoint<{ ok: boolean }>("https://itest.local/core/ok");
+    expect(res.status).toBe("success"); // RequestResult is a discriminated union
+    if (res.status === "success") {
+      expect(res.value.status).toBe(200); // HTTP status on the SerializedResponse
+      expect(res.value.body).toEqual({ ok: true });
+    }
   });
 
   it("[itestCore.endpoint.retry] recovers on the 3rd try after two 504s", async () => {
     // Bound retries small so the sequential queue [504,504,200] resolves quickly.
-    ConfigManager.getInstance().set?.("retrieve.retry.limit", 3);
+    ConfigManager.getInstance().updateValue("retrieve.retry.limit", 3);
     loadFixture("itest-core", "endpoint-retry"); // an ARRAY fixture: [504,504,200]
     const res = await endPoint("https://itest.local/core/flaky");
-    expect(res.status).toBe(200);
+    expect(res.status).toBe("success");
   });
 });
 ```
 
-> **Oracle note:** confirm `RequestResult` field names (`status`, `body`) and the retry-override mechanism. The digest shows `endPoint` reads `ConfigManager.get("retrieve.retry.limit")` at call time. If `ConfigManager` has no `set()` (use whatever the real setter is — e.g. via env `CORELIB_RETRIEVE__RETRY__LIMIT` or a config object), use the real path and report SHAPE_DIVERGENCE. If simplest, record the fixture so the success path needs no retry override.
+> **Verified (agy plan-pass):** `RequestResult<T>` is the discriminated union `{ status: "success"; value: SerializedResponse<T> } | { status: "error"; reason }` — assert `res.status === "success"`, then read the HTTP status/body from `res.value.status` / `res.value.body` (NOT `res.status`/`res.body`). `ConfigManager` has no `set()`; the runtime override is the instance method `ConfigManager.getInstance().updateValue(path, value)`. `ConfigManager.get(path)` (used below) is static. (Checked `RequestUnlimited.ts` + `ConfigManager.ts`.)
 
 - [ ] **Step 2: Create the fixtures.** `tests/integration/_contracts/itest-core/endpoint-success.json`:
 
@@ -1285,15 +1297,16 @@ import { createTestDatabase } from "@itest/_harness/temp";
 describe("database (real SQLite composition)", () => {
   it("[itestCore.db.roundtrip] creates a table, inserts, and reads back", async () => {
     const db = await createTestDatabase();
-    await db.execute("CREATE TABLE prices (sym TEXT, px REAL)");
-    await db.execute("INSERT INTO prices (sym, px) VALUES ('AAPL', 191.5)");
-    const rows = await db.query("SELECT sym, px FROM prices");
-    expect(rows).toEqual([{ sym: "AAPL", px: 191.5 }]);
+    await db.query("CREATE TABLE prices (sym TEXT, px REAL)");
+    await db.query("INSERT INTO prices (sym, px) VALUES ('AAPL', 191.5)");
+    const res = await db.query<{ sym: string; px: number }>("SELECT sym, px FROM prices");
+    expect(res.status).toBe("success");
+    if (res.status === "success") expect(res.value.rows).toEqual([{ sym: "AAPL", px: 191.5 }]);
   });
 });
 ```
 
-(Use the real `Database` method names confirmed in Task 6.)
+(`db.query(...)` for DDL/DML + SELECT; assert `res.status === "success"`, read `res.value.rows` — see Task 6's verified note.)
 
 - [ ] **Step 4: Config suite** `ts-core/tests/integration/config.integration.test.ts`:
 
