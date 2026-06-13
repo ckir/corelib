@@ -13,6 +13,7 @@ lint-output.txt
 
 # token-discipline + Antigravity dev-workflow (local working artifacts)
 .claude/token-ledger.ndjson
+.claude/worktrees/
 CLAUDE-TO-ANTIGRAVITY.md
 .agent/
 ts-core/.agent/
