@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-13
 **Epic:** 1 (first fix cycle following the 2026-06-13 monorepo optimization audit)
-**Status:** design — production changes IN scope this cycle
+**Status:** ✅ IMPLEMENTED 2026-06-13 — merged to `main` (`a7314f7`); all 7 findings resolved, tasks two-stage reviewed, final whole-branch review "Ship it", gate green (tsup DTS build + vitest 151/151)
 **Owner file:** `ts-core/src/configs/ConfigManager.ts` (+ a small memoize in `ts-core/src/utils/runtime.ts`)
 
 ---
