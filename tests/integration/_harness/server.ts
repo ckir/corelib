@@ -12,6 +12,7 @@ const misses: string[] = [];
 const pendingWrites = new Map<string, Fixture>(); // record mode: path -> scrubbed fixture
 let recordTarget: { service: string; name: string } | undefined;
 let bypassListenerAttached = false;
+let serverStarted = false;
 
 function enqueue(file: FixtureFile): void {
   const arr = Array.isArray(file) ? file : [file];
@@ -64,6 +65,8 @@ export const itestServer = setupServer(replayResolver);
 
 export function beginItest(): void {
   if (IS_LIVE) return; // real network; no interception
+  if (serverStarted) return; // idempotent: global setup + per-test beforeAll can both call safely
+  serverStarted = true;
   itestServer.listen({ onUnhandledRequest: "bypass" });
   if (IS_RECORD && !bypassListenerAttached) {
     bypassListenerAttached = true; // attach exactly once (no per-call leak)
@@ -101,6 +104,8 @@ export function assertNoMisses(): void {
 
 export async function endItest(): Promise<void> {
   if (IS_LIVE) return;
+  if (!serverStarted) return;
+  serverStarted = false;
   if (IS_RECORD) for (const [path, data] of pendingWrites) writeFixtureFile(path, data);
   itestServer.close();
 }

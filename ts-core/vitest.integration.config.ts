@@ -4,6 +4,7 @@ import { defineConfig } from "vitest/config";
 const root = resolve(__dirname, "..");
 
 export default defineConfig({
+	root,
 	resolve: {
 		alias: {
 			"@ckir/corelib": resolve(root, "ts-core/src/index.ts"),
@@ -12,7 +13,10 @@ export default defineConfig({
 	},
 	test: {
 		environment: "node",
-		include: ["tests/integration/**/*.integration.test.ts"],
+		include: [
+			"tests/integration/**/*.integration.test.ts",
+			"tests/integration/_harness/**/*.test.ts",
+		],
 		setupFiles: [resolve(root, "tests/integration/_harness/setup.ts")],
 		hookTimeout: 20000,
 		testTimeout: 20000,
