@@ -43,9 +43,16 @@ sequencing of 4 subprojects"). Five subprojects, each its own spec → plan → 
        empty uni. agy plan-phase PROCEED + convergent final SHIP-WITH-NITS. **All three providers
        (Alpaca/Finnhub/Yahoo) are now dual-mode on the shared engine.**
 
-   - **Phase 3 (gateway) — UNBLOCKED** (2026-06-13): all provider migrations complete, so the
-     unified streaming gateway / fan-out layer across all providers can begin (next spec → plan →
-     implementation cycle).
+   - **Phase 3 (gateway) — REDIRECTED to the finstream consolidation; DEFERRED** (2026-06-13):
+     brainstorming concluded that a streaming gateway/server is an *app*, not a library feature, so it
+     does NOT belong inside corelib. Instead the unified gateway + REST will live in the **finstream**
+     app, built on a shared **napi-free `corelib-streaming`** engine crate extracted from `corelib-rust`.
+     finstream is a real product but **not now**; the full plan is recorded in
+     `C:/Users/user/Development/Rust/finstream/ROADMAP.md` ("finstream on corelib") and the agy
+     advisories in `ANTIGRAVITY-TO-CLAUDE.md` (shape-reconsidered + consolidation). corelib-side
+     prerequisite when revived: **Phase A — extract `corelib-streaming` (napi-free engine), `corelib-rust`
+     becomes a thin `#[napi]` adapter** (valuable to corelib on its own merits — a testable, cleanly
+     layered engine; mind the dual-mode raw-payload `#[napi(object)]` seam).
    - *Deferred (Phase 2a plan-pass, agy):* **Finnhub reconnect-resume of in-session subscriptions.** Finnhub
      resumes from the `symbols` snapshot passed at `start()`, so dynamic subscribes added mid-session are lost
      on reconnect (pre-existing Phase 1 behavior — not a 2a regression). Apply the same redb-fresh-read pattern
