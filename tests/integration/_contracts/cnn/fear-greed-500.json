@@ -1,0 +1,9 @@
+{
+  "request": { "method": "GET", "url": "https://production.dataviz.cnn.io/index/fearandgreed/graphdata/2026-06-13", "headers": {} },
+  "response": {
+    "status": 500,
+    "headers": {},
+    "body": { "message": "internal server error" }
+  },
+  "recordedAt": "2026-06-13T00:00:00.000Z"
+}

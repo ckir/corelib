@@ -1,0 +1,9 @@
+{
+  "request": { "method": "GET", "url": "https://api.nasdaq.com/api/quote/ZZZZ/info?assetclass=stocks", "headers": {} },
+  "response": {
+    "status": 404,
+    "headers": {},
+    "body": { "message": "symbol not found" }
+  },
+  "recordedAt": "2026-06-13T00:00:00.000Z"
+}

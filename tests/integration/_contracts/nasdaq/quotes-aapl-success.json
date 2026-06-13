@@ -1,0 +1,40 @@
+{
+  "request": { "method": "GET", "url": "https://api.nasdaq.com/api/quote/AAPL/info?assetclass=stocks", "headers": {} },
+  "response": {
+    "status": 200,
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "status": { "rCode": 200, "bCodeMessage": null, "developerMessage": null },
+      "data": {
+        "summary": {
+          "symbol": "AAPL",
+          "companyName": "Apple Inc.",
+          "stockType": "Common Stock",
+          "exchange": "NASDAQ",
+          "isNasdaqListed": true,
+          "isNasdaq100": true,
+          "isHeld": false,
+          "primaryData": {
+            "lastSalePrice": "$212.50",
+            "netChange": "+1.23",
+            "percentageChange": "+0.58%",
+            "deltaIndicator": "up",
+            "lastTradeTimestamp": "Jun 13, 2026",
+            "isRealTime": true,
+            "bidPrice": "N/A",
+            "askPrice": "N/A",
+            "volume": "45,123,456",
+            "lotSize": "N/A"
+          },
+          "secondaryData": null,
+          "marketStatus": "Open",
+          "annualizedDividend": "1.00",
+          "peRatio": "32.50",
+          "eps": "6.54",
+          "marketCap": "$3.2T"
+        }
+      }
+    }
+  },
+  "recordedAt": "2026-06-13T00:00:00.000Z"
+}

@@ -1,0 +1,69 @@
+{
+  "request": { "method": "GET", "url": "https://production.dataviz.cnn.io/index/fearandgreed/graphdata/2026-06-13", "headers": {} },
+  "response": {
+    "status": 200,
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "fear_and_greed": {
+        "score": 45.5,
+        "rating": "Neutral",
+        "timestamp": "2026-06-13T00:00:00+00:00",
+        "previous_close": 43.2,
+        "previous_1_week": 38.9,
+        "previous_1_month": 52.1,
+        "previous_1_year": 61.3
+      },
+      "fear_and_greed_historical": {
+        "data": [
+          { "x": 1749772800000, "y": 45.5, "rating": "Neutral" }
+        ]
+      },
+      "market_momentum_sp500": {
+        "score": 51.2,
+        "rating": "Neutral",
+        "timestamp": "2026-06-13T00:00:00+00:00"
+      },
+      "market_momentum_sp125": {
+        "score": 48.7,
+        "rating": "Neutral",
+        "timestamp": "2026-06-13T00:00:00+00:00"
+      },
+      "stock_price_strength": {
+        "score": 42.3,
+        "rating": "Fear",
+        "timestamp": "2026-06-13T00:00:00+00:00"
+      },
+      "stock_price_breadth": {
+        "score": 55.1,
+        "rating": "Greed",
+        "timestamp": "2026-06-13T00:00:00+00:00"
+      },
+      "put_call_options": {
+        "score": 40.8,
+        "rating": "Fear",
+        "timestamp": "2026-06-13T00:00:00+00:00"
+      },
+      "market_volatility_vix": {
+        "score": 38.4,
+        "rating": "Fear",
+        "timestamp": "2026-06-13T00:00:00+00:00"
+      },
+      "market_volatility_vix_50": {
+        "score": 50.2,
+        "rating": "Neutral",
+        "timestamp": "2026-06-13T00:00:00+00:00"
+      },
+      "junk_bond_demand": {
+        "score": 62.5,
+        "rating": "Greed",
+        "timestamp": "2026-06-13T00:00:00+00:00"
+      },
+      "safe_haven_demand": {
+        "score": 33.7,
+        "rating": "Fear",
+        "timestamp": "2026-06-13T00:00:00+00:00"
+      }
+    }
+  },
+  "recordedAt": "2026-06-13T00:00:00.000Z"
+}

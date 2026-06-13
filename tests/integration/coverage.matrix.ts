@@ -25,4 +25,13 @@ export const COVERAGE_MATRIX: SeamCell[] = [
   { seam: "cross-package", id: "xpkg.getTempDir" },
   { seam: "cross-package", id: "xpkg.getMode" },
   { seam: "cross-package", id: "xpkg.config" },
+  // ts-markets external REST seam (Task 12)
+  { seam: "external", id: "nasdaq.marketStatus.success", fixturePath: "nasdaq/market-status-success.json" },
+  { seam: "external", id: "nasdaq.marketStatus.500", fixturePath: "nasdaq/market-status-500.json" },
+  { seam: "external", id: "nasdaq.quotes.success", fixturePath: "nasdaq/quotes-aapl-success.json" },
+  { seam: "external", id: "nasdaq.quotes.404", fixturePath: "nasdaq/quotes-404.json" },
+  { seam: "external", id: "nasdaq.top100.success", fixturePath: "nasdaq/top100-success.json" },
+  { seam: "external", id: "cnn.fearGreed.success", fixturePath: "cnn/fear-greed-success.json" },
+  { seam: "external", id: "cnn.fearGreed.500", fixturePath: "cnn/fear-greed-500.json" },
+  // TODO(itest): yahoo.historical.success — URL contains timestamps, intractable offline; record live
 ];
