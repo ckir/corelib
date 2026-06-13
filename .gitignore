@@ -40,3 +40,7 @@ full-modules.svg
 /ts-core/docs
 /ts-markets/docs
 __pycache__
+
+# /probes build artifacts (the probe SOURCES are durable + tracked)
+probes/**/target
+probes/**/node_modules

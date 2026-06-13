@@ -5,6 +5,7 @@ packages:
   - ts-markets
   - ts-cloud
   - rust
+  - probes
 
 
 allowBuilds:
