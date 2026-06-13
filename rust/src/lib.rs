@@ -88,9 +88,7 @@ pub mod markets {
                     /// Protobuf handler for Yahoo Finance websocket messages.
                     pub mod yahoo_streaming_proto_handler;
                     /// Re-export Yahoo streaming components for convenience.
-                    pub use yahoo_streamer::{
-                        EventRecord, LogRecord, YahooConfig, YahooStreaming,
-                    };
+                    pub use yahoo_streamer::{EventRecord, LogRecord, YahooConfig, YahooStreaming};
                 }
                 /// Shared trait-backed streaming engine (driver trait, schema, reconnect, supervisor, host).
                 pub mod core;

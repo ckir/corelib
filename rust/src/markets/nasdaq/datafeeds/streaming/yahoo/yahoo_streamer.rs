@@ -271,9 +271,6 @@ mod facade_tests {
         let host = fresh_host();
         host.subscribe(vec!["AAPL".into(), "MSFT".into()]).await;
         host.unsubscribe(vec!["AAPL".into()]).await;
-        assert_eq!(
-            host.get_persisted_subscriptions(),
-            vec!["MSFT".to_string()]
-        );
+        assert_eq!(host.get_persisted_subscriptions(), vec!["MSFT".to_string()]);
     }
 }
