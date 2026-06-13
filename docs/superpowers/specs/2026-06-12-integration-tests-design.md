@@ -1,15 +1,17 @@
 # Integration Test Tier — Design Spec
 
 - **Date:** 2026-06-12
-- **Status:** Approved (design); agy divergent passes complete (brainstorm + spec). Refreshed 2026-06-13
-  for the final provider set (§5.4 now covers all three dual-mode streamers). Pending final user review.
+- **Status:** Approved; agy divergent passes complete (brainstorm + spec). Refreshed 2026-06-13 for the
+  final provider set (§5.4 = all three dual-mode streamers), then a third agy **refreshed-spec review**
+  (verdict **PLAN-READY**) folded in: streaming execution guard, live credentials, structural `market`
+  shape check, anti-flake symbols, and the `live-streaming` coverage-matrix seam. **PLAN-READY.**
 - **Subproject:** Exhaustive integration tests for the corelib monorepo.
 - **Review record:** `ANTIGRAVITY-TO-CLAUDE.md` → "2026-06-12 — Integration-test tier (divergent design pass)".
 
 ## 1. Context & Goal
 
 corelib is a pnpm-workspace monorepo: `ts-core` (base: FFI, logging, resilient HTTP, config, database)
-is consumed by `ts-markets` (Nasdaq/Yahoo/Alpaca data feeds) and `ts-cloud` (Cloudflare Workers / edge),
+is consumed by `ts-markets` (Nasdaq/Yahoo/Alpaca/Finnhub data feeds) and `ts-cloud` (Cloudflare Workers / edge),
 with a private Rust core exposed via `corelib-rust.node` (N-API).
 
 The existing test suite is **co-located unit tests that mock the internal package boundary**
@@ -131,12 +133,34 @@ missing platform/binary so coverage holes are never silent.
 
 All three providers — `AlpacaStreaming`, `FinnhubStreaming`, `YahooStreaming` — drive their sockets
 through `coreFFI.*Streaming` (the shared Rust `WebsocketStreamerHost` + `tokio-tungstenite` engine).
-Each is now **dual-mode** (Phase 2a/2b): it emits the byte-identical raw payload (`pricing` event) AND
-the unified finstream-superset `MarketEvent` JSON (`market` event), plus lifecycle status events. MSW
-(JS-layer) **cannot** intercept native sockets, so all three are excluded from the deterministic replay
-tier and covered only under `INTEGRATION_LIVE=1` with loose shape assertions on the `pricing` and
-`market` events (and the connected/disconnected/reconnecting status events) plus a hard per-socket
-timeout (§7). The deterministic loopback harness is deferred (§12).
+Each is **dual-mode** (Phase 2a/2b): it emits the byte-identical raw payload (`pricing` event) AND the
+unified finstream-superset `MarketEvent` JSON (`market` event), plus lifecycle status events
+(`connected` / `disconnected` / `reconnecting` / `error`). MSW (JS-layer) **cannot** intercept native
+sockets, so all three are excluded from the deterministic replay tier.
+
+**Execution guard (mandatory).** Every streaming suite is wrapped in
+`describe.skipIf(!process.env.INTEGRATION_LIVE)` so it NEVER opens a native socket during the default
+offline replay run (which would hang/crash the FFI). They run only under `INTEGRATION_LIVE=1`. *(agy
+refreshed-spec pass 🟡.)*
+
+**Live credentials.** Alpaca requires `APCA_API_KEY_ID` + `APCA_API_SECRET_KEY`; Finnhub requires
+`FINNHUB_API_KEY`; Yahoo is tokenless. A streaming live test whose required credentials are absent skips
+with the same loud diagnostic as §5.3 — never a silent pass. *(agy refreshed-spec pass 🟡.)*
+
+**Assertions (loose, drift safety-net).** Each test sets a hard per-socket timeout (§7) and asserts, at
+minimum, that a `connected` status event fires within the connect timeout (the hard gate). When a data
+frame arrives, the `pricing` payload and the parsed `market` object are shape-checked: `market` must
+carry the unified core fields (`type` ∈ {`trade`,`quote`}, `ticker`, `timestamp`, `price`) plus the
+provider-keyed extras object (`alpaca` / `finnhub` / `yahoo`). Full generated-schema validation of the
+unified event is out of scope for v1. *(agy refreshed-spec pass 🟡, scoped to a structural check.)*
+
+**Symbol choice (anti-flake).** Use ultra-liquid symbols so a frame arrives inside the short window:
+equities `AAPL` / `MSFT` for Alpaca/Finnhub (U.S. hours) and a 24/7 instrument (`BTC-USD` via Yahoo) so
+at least one streamer produces frames off-hours. Per §7 no test asserts market open/close state — the
+data-frame shape check is best-effort/timeout-bounded; the `connected` assertion is the hard gate.
+*(agy refreshed-spec pass 🟡.)*
+
+The deterministic loopback harness is deferred (§12).
 
 ## 6. Contract Record/Replay Harness
 
@@ -209,21 +233,28 @@ enumerating, per seam:
 - **external:** each provider × { success, 404, 500, timeout→retry, malformed-body }.
 - **cross-package:** each real consumer→provider binding listed in §5.1.
 - **ffi-scalar:** each exported native function + the availability-fallback path.
+- **live-streaming:** each of the three streamers (`alpaca` / `finnhub` / `yahoo`) — `testFilePath`
+  required, `fixturePath` omitted (no offline fixture; the live suite is the coverage record). This keeps
+  the streaming seam *visible* to the validator even though it has no replay fixture. *(agy refreshed-spec
+  pass 🟡.)*
 
 Each entry is a typed `SeamCell` so the mapping is unambiguous for static analysis:
 
 ```ts
 interface SeamCell {
-  seam: "external" | "cross-package" | "ffi-scalar";
-  id: string;                 // e.g. "nasdaq.marketStatus.500"
-  fixturePath?: string;       // required for external; relative to _contracts/ (omit for non-HTTP seams)
+  seam: "external" | "cross-package" | "ffi-scalar" | "live-streaming";
+  id: string;                 // e.g. "nasdaq.marketStatus.500" or "stream.alpaca"
+  fixturePath?: string;       // required for "external"; relative to _contracts/ (omit for non-HTTP seams)
+  testFilePath?: string;      // required for "live-streaming": the live suite covering this streamer
 }
 ```
 
 A `coverage-validator` script (run in CI and via `test:integration` setup) asserts:
 1. every external matrix cell has a corresponding `_contracts/**` fixture;
 2. every fixture passes the secret-scrub check;
-3. no orphan fixtures (fixture without a matrix entry).
+3. no orphan fixtures (fixture without a matrix entry);
+4. every `live-streaming` cell has an existing `testFilePath` (the live suite is present even though it
+   has no fixture).
 Failure is a hard error → exhaustiveness is statically measurable, not a vibe.
 
 ## 9. Directory Layout
@@ -273,7 +304,7 @@ push gate fast.
 | Item | Status | Trigger to revive |
 |---|---|---|
 | Source-alias tests miss bundling/ESM-CJS/`exports`-map bugs (agy 🟡) | **Deferred** — dist/`.tgz` smoke layer in `ROADMAP.md` | a packaging bug escapes to a consumer |
-| Deterministic Rust-streaming coverage | **Deferred** — loopback harness in `ROADMAP.md`; live-tier covers it meanwhile | CI needs deterministic streaming; verify Rust streamer accepts endpoint override first |
+| Deterministic Rust-streaming coverage | **Deferred** — loopback harness in `ROADMAP.md`; live-tier covers it meanwhile | CI needs deterministic streaming; verify all three native streaming drivers accept a socket endpoint override first |
 | Fixture rot / provider drift | **Mitigated** — nightly live tier + validator | — |
 | Secret leakage into committed fixtures | **Mitigated** — mandatory scrubber + validator gate | — |
 | Worker-sandbox filesystem/FFI limits | **Mitigated** — DB/FFI tested in node project; worker project = edge/proxy only | — |
@@ -290,3 +321,12 @@ change, independently verified) plus 🟡s folded above: `@itest` alias pollutio
 fixtures (§6.1), body scrubbing + record dry-run (§6.2), version-vs-package.json assert (§5.3), `SeamCell`
 mapping (§8), and parallel temp/DB isolation (§7). agy's verdict: "[Verified Clean] with adjustments —
 exceptionally cohesive and highly implementable." Full record in `ANTIGRAVITY-TO-CLAUDE.md`.
+
+**Refreshed-spec pass (2026-06-13)** over the §5.4 final-provider-set update: verdict **PLAN-READY**, no
+blockers. Folded five 🟡s — streaming execution guard (`describe.skipIf(!INTEGRATION_LIVE)`, §5.4), live
+credentials per provider (§5.4), structural `market`-event shape check (§5.4), anti-flake liquid symbols
+(§5.4), and the `live-streaming` coverage-matrix seam + validator assertion #4 (§8) — and two 🟢 staleness
+nits (§1 provider list, §12 wording). Two agy specifics were corrected against ground truth: status events
+are `connected/disconnected/reconnecting/error` (no `silence-reconnect` on the shared host — that was a
+stale wrapper comment), and the Finnhub env var is `FINNHUB_API_KEY` (not `FINNHUB_TOKEN`). Record in
+`ANTIGRAVITY-TO-CLAUDE.md` → "(c) Integration-test tier — refreshed-spec review (2026-06-13)".
