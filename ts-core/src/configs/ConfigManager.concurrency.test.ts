@@ -78,6 +78,28 @@ describe("ConfigManager — concurrency layer (Epic-1 Task 4)", () => {
 		await ready; // must not hang/reject
 	});
 
+	it("whenReady() after initialize() starts returns the same in-flight promise", async () => {
+		// Hold the build open on the fetch await so _initPromise is observably live.
+		let release!: () => void;
+		const spy = vi
+			.spyOn(ConfigManager.prototype as any, "fetchExternalConfig")
+			.mockReturnValue(
+				new Promise<Record<string, unknown>>((res) => {
+					release = () => res({});
+				}),
+			);
+		try {
+			const init = cm.initialize(["-C", "slow.json"]);
+			const ready = cm.whenReady(); // _initPromise live → exercises that branch
+			expect(ready).toBe(init);
+			release();
+			await init;
+		} finally {
+			spy.mockRestore();
+		}
+		expect(cm.isInitialized).toBe(true);
+	});
+
 	// ── 5. Premature-read warning ─────────────────────────────────────────────
 
 	it("warns in non-production when get() is called before initialize() resolves", async () => {

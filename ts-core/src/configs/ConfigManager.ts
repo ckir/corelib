@@ -138,6 +138,9 @@ export class ConfigManager extends EventEmitter {
 	/** The staging object of an in-flight staged build, or null. Lets a synchronous
 	 *  updateValue() between awaits survive the final clearAndFill swap. */
 	private _inFlightTempConfig: Record<string, unknown> | null = null;
+	/** Throttle: emit the premature-read warning at most once per process (get()
+	 *  is called pervasively, so a per-call warn would flood dev logs). */
+	private static _prematureWarnEmitted = false;
 
 	private constructor() {
 		super();
@@ -183,7 +186,12 @@ export class ConfigManager extends EventEmitter {
 	 * @returns The value at the specified path, or undefined if not found.
 	 */
 	public get(path: string): unknown {
-		if (!this._isInitialized && getMode() !== "production") {
+		if (
+			!this._isInitialized &&
+			!ConfigManager._prematureWarnEmitted &&
+			getMode() !== "production"
+		) {
+			ConfigManager._prematureWarnEmitted = true;
 			ConfigManager._logger.warn(
 				`ConfigManager.get("${path}") called before initialize() resolved; returning seeded default`,
 			);
@@ -304,6 +312,12 @@ export class ConfigManager extends EventEmitter {
 	 * op settles (success OR failure — `.then(work, work)` so a prior rejection
 	 * never wedges the chain). The chain itself swallows results/errors so it
 	 * stays resolved; the caller still receives this op's real result/error.
+	 *
+	 * Note: the chain's swallow-handler means a `loadExternalConfig` rejection is
+	 * absorbed if the caller discards the returned promise. `initialize()` is
+	 * different — it wraps this result in `_initPromise`, which is NOT on the
+	 * chain, so an un-awaited failed `initialize()` surfaces as an unhandled
+	 * rejection in Node strict mode. Callers should await/catch both.
 	 */
 	private _enqueue<T>(work: () => Promise<T>): Promise<T> {
 		const run = this._mutationChain.then(work, work);
@@ -328,8 +342,10 @@ export class ConfigManager extends EventEmitter {
 
 	/**
 	 * Resolves when the first initialize() settles successfully (rejects if that
-	 * in-flight initialize fails). If initialize() was never started, resolves
-	 * immediately — callers needing initialization must call initialize().
+	 * in-flight initialize fails). If initialize() was never started — OR a prior
+	 * attempt failed and was evicted — this resolves immediately and does NOT
+	 * imply the manager is initialized; callers needing guaranteed initialization
+	 * must call initialize() first and catch its rejection.
 	 */
 	public whenReady(): Promise<void> {
 		if (this._isInitialized) return Promise.resolve();
@@ -675,5 +691,6 @@ export class ConfigManager extends EventEmitter {
 		this._isInitialized = false;
 		this._inFlightTempConfig = null;
 		this._mutationChain = Promise.resolve();
+		ConfigManager._prematureWarnEmitted = false;
 	}
 }
