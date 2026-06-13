@@ -1699,3 +1699,72 @@ graph TD
 ### Final Recommendation
 
 **We strongly recommend executing the engine consolidation via Monorepo Integration paired with an Engine Boundary Split. Corelib's streamer engine is highly robust and must survive as a shared, 100% NAPI-free cargo library (`corelib-streaming`), serving as a common base for a thin N-API wrapper (`corelib-rust`) and the standalone microservice gateway (`finstream/bin`). Maintaining two parallel engines is a toxic technical debt vector that invites telemetry schema drifts, connection de-synchronization, and double-maintenance costs. Integrating these projects inside the same pnpm/cargo monorepo workspace allows for atomic cross-layer commits and compile-time correctness guarantees. The first phase must launch immediately with a non-breaking extraction of the NAPI-free core streaming library, paving a decoupled roadway for multi-account scaling and unified streaming.**
+
+---
+
+## (c) Integration-test tier — refreshed-spec review (2026-06-13)
+
+### 1. Correctness of the Refresh
+*   **Verdict**: **[Verified Clean]** (with one minor status-event correction).
+*   **Exact §/file**: §5.4 [`docs/superpowers/specs/2026-06-12-integration-tests-design.md`](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b3773c56/docs/superpowers/specs/2026-06-12-integration-tests-design.md#L130-L139).
+*   **Severity**: 🟢 Nit
+*   **Concrete Fix**: The three TS wrappers ([`AlpacaStreaming.ts`](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b3773c56/ts-markets/src/nasdaq/datafeeds/streaming/alpaca/AlpacaStreaming.ts), [`YahooStreaming.ts`](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b3773c56/ts-markets/src/nasdaq/datafeeds/streaming/yahoo/YahooStreaming.ts), and [`FinnhubStreaming.ts`](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b3773c56/ts-markets/src/nasdaq/datafeeds/streaming/finnhub/FinnhubStreaming.ts)) all utilize an identical event emission layout. However, §5.4 lists only the `connected`/`disconnected`/`reconnecting` status events. It omits the `error` event (which is crucial for failure/assertion boundaries) and Alpaca's `silence-reconnect` event.
+    *   *Fix*: Update the parenthetical in §5.4 to read: `(and the connected/disconnected/reconnecting/error/silence-reconnect status events)`.
+
+---
+
+### 2. Consistency
+*   **Finding 2.1 — Static Validator Blindspot for Streaming Coverage**
+    *   **Exact §/file**: §8 [`docs/superpowers/specs/2026-06-12-integration-tests-design.md`](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b3773c56/docs/superpowers/specs/2026-06-12-integration-tests-design.md#L204-L227).
+    *   **Severity**: 🟡 Should-Fix
+    *   **Issue**: §8 defines "exhaustive" coverage through a static `coverage-validator.ts` script checking cells in `coverage.matrix.ts` against MSW JSON file fixtures under `_contracts/**`. Since streaming is live-tier only and has no JSON fixtures, it is excluded from §8's matrix, leaving streaming coverage statically unmeasured.
+    *   *Concrete Fix*: Expand `SeamCell` in `coverage.matrix.ts` to support a `live-streaming` seam where `fixturePath` is omitted, replacing it with a required `testFilePath` (e.g. `testFilePath: "ts-markets/tests/integration/AlpacaStreaming.integration.test.ts"`). This allows `coverage-validator` to statically verify that active integration test suites exist for all three streamers.
+
+*   **Finding 2.2 — Streaming Execution Guard in Replay Mode**
+    *   **Exact §/file**: §6 [`docs/superpowers/specs/2026-06-12-integration-tests-design.md`](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b3773c56/docs/superpowers/specs/2026-06-12-integration-tests-design.md#L141-L150).
+    *   **Severity**: 🟡 Should-Fix
+    *   **Issue**: Sockets cannot be intercepted by MSW, but default runs perform `pnpm test:integration` (replay mode, offline). If a developer runs replay mode, the native websocket initialization inside FFI-based streaming classes could crash or hang unless explicitly gated.
+    *   *Concrete Fix*: Formally require in §6 that all streaming test blocks employ conditional execution guards, such as `describe.runIf(process.env.INTEGRATION_LIVE)` or `describe.skipIf(!process.env.INTEGRATION_LIVE)`, ensuring streaming suites are strictly isolated from standard offline replay runs.
+
+---
+
+### 3. Completeness
+*   **Finding 3.1 — Schema Validation on `market` Events**
+    *   **Exact §/file**: §5.4 [`docs/superpowers/specs/2026-06-12-integration-tests-design.md`](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b3773c56/docs/superpowers/specs/2026-06-12-integration-tests-design.md#L130-L139).
+    *   **Severity**: 🟡 Should-Fix
+    *   **Issue**: The spec requests only "loose shape assertions" for live-tier events. However, because the `market` event emits a parsed, unified `MarketEvent` JSON object (copied from `finstream`'s core schemas), we have a concrete TypeScript type schema available in the monorepo.
+    *   *Concrete Fix*: Spec §5.4 should mandate that live assertions validate the received `market` parsed payload structurally against the unified `MarketEvent` TypeScript interfaces/types to prevent schema drift regressions.
+
+*   **Finding 3.2 — Live Execution Credentials for Finnhub**
+    *   **Exact §/file**: §5.4 [`docs/superpowers/specs/2026-06-12-integration-tests-design.md`](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b3773c56/docs/superpowers/specs/2026-06-12-integration-tests-design.md#L130-L139).
+    *   **Severity**: 🟡 Should-Fix
+    *   **Issue**: To execute `FinnhubStreaming` live tests during nightly runs, a valid api token/key is required. The spec defines the Alpaca keys but lacks a declared credential requirement for Finnhub.
+    *   *Concrete Fix*: Add a clear credential dependency mapping to §5.4: Alpaca requires `APCA_API_KEY_ID` + `APCA_API_SECRET_KEY`, and Finnhub requires `FINNHUB_TOKEN` (provided as secure environment variables in localized setups). Yahoo is noted as tokenless.
+
+*   **Finding 3.3 — High-Liquidity Tickers for Live Handshake Assertions**
+    *   **Exact §/file**: §5.4 [`docs/superpowers/specs/2026-06-12-integration-tests-design.md`](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b3773c56/docs/superpowers/specs/2026-06-12-integration-tests-design.md#L130-L139).
+    *   **Severity**: 🟡 Should-Fix
+    *   **Issue**: Live tests execute with tight socket connect/teardown timeouts (≤ `1000ms`). If we subscribe to inactive or untraded tickers, the tests will frequently timeout waiting for a message frame, leading to flaky CI runs.
+    *   *Concrete Fix*: Prescribe a set of ultra-liquid, globally trade-active symbols for live assertions (e.g. `AAPL` and `MSFT` for equities, and major currency pairs like `EURUSD=X` for FX/Yahoo) to guarantee message reception during the short assertion windows.
+
+---
+
+### 4. Stale References
+*   **Finding 4.1 — Stale Datafeed Providers List**
+    *   **Exact §/file**: §1 [`docs/superpowers/specs/2026-06-12-integration-tests-design.md`](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b3773c56/docs/superpowers/specs/2026-06-12-integration-tests-design.md#L11-L13).
+    *   **Severity**: 🟢 Nit
+    *   **Issue**: Line 12 reads: `ts-markets (Nasdaq/Yahoo/Alpaca data feeds)`. This is stale because it omits the newly added **Finnhub** data feed.
+    *   *Concrete Fix*: Update to: `ts-markets (Nasdaq/Yahoo/Alpaca/Finnhub data feeds)`.
+
+*   **Finding 4.2 — Generic Rust Streamer Reference**
+    *   **Exact §/file**: §12 [`docs/superpowers/specs/2026-06-12-integration-tests-design.md`](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-b3773c56/docs/superpowers/specs/2026-06-12-integration-tests-design.md#L275-L277).
+    *   **Severity**: 🟢 Nit
+    *   **Issue**: Table cell in "Trigger to revive" says: `verify Rust streamer accepts endpoint override first`. This uses the singular `Rust streamer`.
+    *   *Concrete Fix*: Update to: `verify all three native streaming drivers accept socket endpoint overrides (for loopback mocking)`.
+
+---
+
+### 5. Implementability
+We verify that with these minor Should-Fix additions, the spec is fully cohesive, comprehensive, and **PLAN-READY**. The three typescript wrappers represent high implementation parity with the refreshed layout, and no ambiguities remain to derail the implementation plan creation.
+
+*   **Verdict**: **PLAN-READY** (incorporating the above recommendations during the task planning phase).
