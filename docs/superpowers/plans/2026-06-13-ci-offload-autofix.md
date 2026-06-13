@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-06-13-ci-offload-autofix-design.md` (Approved).
 
+**Revised 2026-06-13 (agy plan-phase review folded — verdict EXECUTE-WITH-FIXES → fixed):** (1) `claude` only edits (UNCOMMITTED); the **script** runs rails on the pending diff then commits (the old prompt-commits-then-check-unstaged path always aborted `empty-diff`). (2) headless flag → `--dangerously-skip-permissions` (not `--permission-mode acceptEdits`, which hangs on bash prompts). (3) worktree → `os.tmpdir()` (git rejects worktrees inside `.git/`). (4) post-push **race**: `waitForRun` polls until a run's `headSha` matches the pushed SHA (a `--limit 1` lookup could return the prior green run → false success). (5) **single-instance lockfile** (PID-checked) prevents concurrent watchers. (6) denylist → filename/prefix match (not substring — `tsconfig` no longer hits `tsconfig-helper.ts`). (7) success notice tells the user to `git pull` (local falls behind after an auto-fix push). (8) launcher detaches via `Start-Process -WindowStyle Hidden` (Win) / `nohup &` (nix), not a killable Bash background child.
+
 ---
 
 ## Conventions for implementer subagents (READ FIRST)
@@ -203,6 +205,7 @@ test("isDeniedPath blocks high-blast-radius files", () => {
   assert.equal(isDeniedPath("package.json", denied), true);
   assert.equal(isDeniedPath("Cargo.toml", denied), true);
   assert.equal(isDeniedPath("pnpm-lock.yaml", denied), true);
+  assert.equal(isDeniedPath("ts-core/src/configs/tsconfig-helper.ts", denied), false); // substring must NOT match
   assert.equal(isDeniedPath("ts-core/src/configs/ConfigManager.ts", denied), false);
 });
 
@@ -303,7 +306,12 @@ export function scrubLog(raw) {
 
 export function isDeniedPath(path, denylist) {
   const p = path.replace(/\\/g, "/");
-  return denylist.some((d) => p.includes(d));
+  const filename = p.split("/").pop();
+  return denylist.some((d) => {
+    if (d.endsWith("/")) return p.includes(d); // directory prefix, e.g. ".github/workflows/"
+    if (d === "tsconfig") return filename === "tsconfig.json" || /^tsconfig\..*\.json$/.test(filename);
+    return filename === d; // exact filename, e.g. "package.json" (won't match tsconfig-helper.ts)
+  });
 }
 
 export function fingerprint(text) {
@@ -330,8 +338,10 @@ Add the side-effecting orchestration on top of the helpers: resolve the run, wat
 import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 const log = (...a) => console.log("[watch-ci]", ...a);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function sh(file, args, opts = {}) {
   return execFileSync(file, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...opts });
@@ -339,6 +349,9 @@ function sh(file, args, opts = {}) {
 function shTry(file, args, opts = {}) {
   const r = spawnSync(file, args, { encoding: "utf8", ...opts });
   return { ok: r.status === 0, status: r.status ?? 1, out: (r.stdout || "") + (r.stderr || "") };
+}
+function isPidRunning(pid) {
+  try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
 function loadRepoConfig(cwd) {
@@ -348,56 +361,66 @@ function loadRepoConfig(cwd) {
 }
 
 // --- gh interactions ---
-function latestRun(cfg) {
-  const args = ["run", "list", "--branch", cfg.branch, "--limit", "1", "--json", "databaseId,headSha,status,conclusion,workflowName"];
-  const arr = JSON.parse(sh("gh", args));
-  return arr[0] ?? null;
+function runsForBranch(cfg, limit = 5) {
+  const args = ["run", "list", "--branch", cfg.branch, "--limit", String(limit), "--json", "databaseId,headSha,status,conclusion,workflowName"];
+  return JSON.parse(sh("gh", args));
 }
 function watchRun(id) {
   // Blocks until the run concludes; exit 0 = success, non-zero = failure.
-  const r = shTry("gh", ["run", "watch", String(id), "--exit-status"]);
-  return r.ok;
+  return shTry("gh", ["run", "watch", String(id), "--exit-status"]).ok;
 }
 function failedLog(id) {
-  const r = shTry("gh", ["run", "view", String(id), "--log-failed"]);
-  return r.out;
+  return shTry("gh", ["run", "view", String(id), "--log-failed"]).out;
+}
+// Resolve the CI run whose headSha matches `wantSha`, waiting out the post-push registration race
+// (blocker: `--limit 1` can return the PRIOR completed run before the new one registers).
+async function waitForRun(cfg, wantSha, timeoutMs = 90000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const run = runsForBranch(cfg).find((r) => r.headSha === wantSha);
+    if (run) return run;
+    await sleep(3000);
+  }
+  return null;
 }
 
 // --- git interactions ---
 function remoteHead(cfg) {
-  const out = sh("git", ["ls-remote", "origin", `refs/heads/${cfg.branch}`]).trim();
-  return out.split(/\s+/)[0] || "";
+  return sh("git", ["ls-remote", "origin", `refs/heads/${cfg.branch}`]).trim().split(/\s+/)[0] || "";
 }
-function changedFiles(cwd) {
-  return sh("git", ["-C", cwd, "diff", "--name-only", "HEAD"], {}).split(/\r?\n/).filter(Boolean);
+function pendingFiles(cwd) {
+  return sh("git", ["-C", cwd, "diff", "--name-only", "HEAD"]).split(/\r?\n/).filter(Boolean);
 }
 
-// --- the fix attempt (returns "pushed" | "abort:<reason>") ---
+const seenFingerprints = new Set();
+
+// One bounded fix attempt. Returns "pushed" | "abort:<reason>". ALL rails are script-side.
 function attemptFix({ cfg, failSha, compressed, repoRoot, attempt }) {
-  // Isolated worktree at the failing commit.
-  const wt = join(repoRoot, ".git", "watch-ci-worktrees", `fix-${attempt}-${Date.now()}`);
+  // Isolated worktree OUTSIDE the repo (git rejects worktrees inside .git/).
+  const wt = join(tmpdir(), "watch-ci-worktrees", `fix-${attempt}-${Date.now()}`);
   sh("git", ["-C", repoRoot, "worktree", "add", "--detach", wt, failSha]);
   try {
     const prompt =
-      `CI failed on commit ${failSha}. Fix ONLY the code at fault, then run \`pnpm format-all && pnpm lint-all\`, ` +
-      `and \`git commit -am "fix(ci): auto-fix CI failure"\`. Do NOT push. Do NOT edit build/config files ` +
-      `(.github/workflows, tsconfig*, package.json, lockfiles, Cargo.*). Failing log:\n\n${compressed}`;
-    // Headless fix in the worktree. --dangerously-skip-permissions keeps it non-interactive for an unattended run.
-    const fix = shTry("claude", ["-p", prompt, "--permission-mode", "acceptEdits"], { cwd: wt });
+      `CI failed on commit ${failSha}. Fix ONLY the code at fault, then run \`pnpm format-all && pnpm lint-all\`. ` +
+      `Do NOT git commit, do NOT git push, do NOT edit build/config files (.github/workflows, tsconfig*, ` +
+      `package.json, lockfiles, Cargo.*). Leave your edits UNCOMMITTED. Failing log:\n\n${compressed}`;
+    // Fully non-interactive headless fix in the worktree (must not prompt — it's a detached watcher).
+    const fix = shTry("claude", ["-p", prompt, "--dangerously-skip-permissions"], { cwd: wt });
     if (!fix.ok) return "abort:claude-failed";
 
-    // RAILS (deterministic, script-side) ---
-    const diff = changedFiles(wt);
-    if (diff.length === 0) return "abort:empty-diff";
-    const denied = diff.filter((f) => isDeniedPath(f, cfg.paths_denylist));
+    // RAILS — on the UNCOMMITTED edits, before the SCRIPT commits ---
+    const changed = pendingFiles(wt);
+    if (changed.length === 0) return "abort:empty-diff";
+    const denied = changed.filter((f) => isDeniedPath(f, cfg.paths_denylist));
     if (denied.length) return `abort:denied-path:${denied.join(",")}`;
-    const fp = fingerprint(sh("git", ["-C", wt, "diff", failSha]));
+    const fp = fingerprint(sh("git", ["-C", wt, "diff", "HEAD"]));
     if (seenFingerprints.has(fp)) return "abort:loop-detected";
     seenFingerprints.add(fp);
-    // Concurrency guard: main must not have moved since the failing run.
-    if (remoteHead(cfg) !== failSha) return "abort:main-moved";
+    if (remoteHead(cfg) !== failSha) return "abort:main-moved"; // concurrency guard: a human pushed since
 
-    // Push the worktree's HEAD onto the branch (never force).
+    // The SCRIPT commits + pushes (never the LLM; never force).
+    sh("git", ["-C", wt, "add", "."]);
+    sh("git", ["-C", wt, "commit", "-m", "fix(ci): auto-fix CI failure"]);
     const push = shTry("git", ["-C", wt, "push", "origin", `HEAD:${cfg.branch}`]);
     if (!push.ok) return "abort:push-rejected";
     return "pushed";
@@ -406,34 +429,42 @@ function attemptFix({ cfg, failSha, compressed, repoRoot, attempt }) {
   }
 }
 
-const seenFingerprints = new Set();
-
 async function main() {
-  const dryRun = process.argv.includes("--dry-run");
+  if (process.argv.includes("--dry-run")) { log("dry-run: would watch + fix; exiting"); return; }
   const repoRoot = sh("git", ["rev-parse", "--show-toplevel"]).trim();
   const cfg = loadRepoConfig(repoRoot);
+
+  // Single-instance lock per repo (avoid concurrent watchers colliding on runs/worktrees/pushes).
+  const lockFile = join(tmpdir(), `watch-ci-${fingerprint(repoRoot).slice(0, 16)}.lock`);
+  if (existsSync(lockFile) && isPidRunning(parseInt(readFileSync(lockFile, "utf8"), 10) || -1)) {
+    log("already watching this repo (lock held); exiting"); return;
+  }
+  writeFileSync(lockFile, String(process.pid), "utf8");
+
   const startedAt = Date.now();
   let attempts = 0;
+  try {
+    while (true) {
+      const wantSha = remoteHead(cfg); // the SHA on origin/<branch> = exactly what CI runs (updates after each fix push)
+      const run = await waitForRun(cfg, wantSha);
+      if (!run) { log(`no CI run registered for ${wantSha.slice(0, 7)} on ${cfg.branch}`); return; }
+      log(`watching run ${run.databaseId} (${run.workflowName}) @ ${run.headSha.slice(0, 7)}`);
+      if (watchRun(run.databaseId)) { success(repoRoot); return; }
 
-  while (true) {
-    if (dryRun) { log("dry-run: would watch + fix; exiting"); return; }
-    const run = latestRun(cfg);
-    if (!run) { log("no run found for", cfg.branch); return; }
-    log(`watching run ${run.databaseId} (${run.workflowName}) @ ${run.headSha.slice(0, 7)}`);
-    const green = watchRun(run.databaseId);
-    if (green) { success(repoRoot); return; }
+      if (attempts >= cfg.max_retries) return escalate(repoRoot, cfg, "max retries", run);
+      if ((Date.now() - startedAt) / 60000 >= cfg.max_total_minutes) return escalate(repoRoot, cfg, "time budget", run);
+      attempts++;
 
-    if (attempts >= cfg.max_retries) return escalate(repoRoot, cfg, "max retries", run);
-    if ((Date.now() - startedAt) / 60000 >= cfg.max_total_minutes) return escalate(repoRoot, cfg, "time budget", run);
-    attempts++;
+      const compressed = scrubLog(compressLog(failedLog(run.databaseId)));
+      if (!compressed.trim()) return escalate(repoRoot, cfg, "no localizable error (likely infra/flaky)", run);
 
-    const compressed = scrubLog(compressLog(failedLog(run.databaseId)));
-    if (!compressed.trim()) return escalate(repoRoot, cfg, "no localizable error (likely infra/flaky)", run);
-
-    log(`attempt ${attempts}/${cfg.max_retries}: fixing`);
-    const result = attemptFix({ cfg, failSha: run.headSha, compressed, repoRoot, attempt: attempts });
-    if (result !== "pushed") return escalate(repoRoot, cfg, result, run, compressed);
-    log("fix pushed; re-watching new run");
+      log(`attempt ${attempts}/${cfg.max_retries}: fixing`);
+      const result = attemptFix({ cfg, failSha: run.headSha, compressed, repoRoot, attempt: attempts });
+      if (result !== "pushed") return escalate(repoRoot, cfg, result, run, compressed);
+      log("fix pushed; re-watching new run");
+    }
+  } finally {
+    try { rmSync(lockFile, { force: true }); } catch { /* ignore */ }
   }
 }
 
@@ -442,7 +473,7 @@ async function main() {
 main().catch((e) => { console.error("[watch-ci] fatal", e); process.exit(1); });
 ```
 
-> **Oracle note (verify in Step 0):** confirm the exact non-interactive `claude -p` flag for unattended edits. The plan uses `claude -p "<prompt>" --permission-mode acceptEdits`. If your installed Claude Code uses a different flag for non-interactive auto-accept (e.g. `--dangerously-skip-permissions` or a settings-based permission mode), use the real one and report `SHAPE_DIVERGENCE`. The headless invocation MUST run unattended (no prompts) in the worktree `cwd`.
+> **Oracle note (verify in Step 0):** the non-interactive flag is `claude -p "<prompt>" --dangerously-skip-permissions` (agy plan-pass 🔴 — `--permission-mode acceptEdits` would still prompt on bash commands and hang a detached watcher). Confirm this against the installed Claude Code; if the real fully-unattended flag differs, use it and report `SHAPE_DIVERGENCE`. The invocation MUST run with no prompts in the worktree `cwd`.
 
 - [ ] **Step 2: Dry-run smoke (no live CI needed).**
 
@@ -490,9 +521,10 @@ function toast(title, message) {
 }
 
 function success(repoRoot) {
-  log("CI is GREEN ✅");
+  // After an auto-fix push, the user's local <branch> is one commit behind origin (agy plan-pass 🟡).
+  log("CI is GREEN ✅  — if a fix was auto-pushed, run `git pull` to sync your local branch");
   bell();
-  toast("watch-ci ✅", "CI is green.");
+  toast("watch-ci ✅", "CI is green. If a fix was auto-pushed, run `git pull` to sync local.");
 }
 
 function escalate(repoRoot, cfg, reason, run, compressed = "") {
@@ -553,11 +585,11 @@ worker as a DETACHED background process and return immediately — do not block 
 Steps:
 1. Confirm the cwd is a git repo with a GitHub remote and `gh` is authenticated
    (`gh auth status`). If not, tell the user how to fix it and stop.
-2. Launch the worker detached so it survives this turn and does not tie up the session:
-   - Bash tool, run_in_background: true →
-     `node "$HOME/.claude/skills/watch-ci/watch-ci.mjs"`
-     (on Windows the Bash tool maps `$HOME`; or use the absolute
-     `C:/Users/user/.claude/skills/watch-ci/watch-ci.mjs`.)
+2. Launch the worker as a fully OS-detached process (survives this turn AND the terminal closing —
+   agy plan-pass 🟢; a Bash `run_in_background` child can be killed when the session/terminal ends):
+   - **Windows:** `powershell -NoProfile -Command "Start-Process node -ArgumentList 'C:/Users/user/.claude/skills/watch-ci/watch-ci.mjs' -WindowStyle Hidden"`
+   - **macOS/Linux:** `nohup node "$HOME/.claude/skills/watch-ci/watch-ci.mjs" >/dev/null 2>&1 &`
+   - The worker's single-instance lock makes a duplicate `/watch-ci` invocation a safe no-op.
 3. Tell the user: "watch-ci is now watching <branch>. It will toast + bell on green, and
    auto-fix up to N=3 times on red, escalating with CI-FAILURE-REPORT.md if it can't.
    You're free to switch projects." Then end the turn.
