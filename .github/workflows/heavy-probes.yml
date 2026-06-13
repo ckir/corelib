@@ -1,0 +1,23 @@
+name: Heavy Probes
+on:
+  workflow_dispatch:
+    inputs:
+      probe:  { description: "probe id (cargo test name or probe path)", required: true }
+      commit: { description: "commit SHA to check out", required: true }
+jobs:
+  run-probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with: { ref: "${{ inputs.commit }}" }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: pnpm/action-setup@v5
+        with: { version: 11.5.2 }
+      - uses: actions/setup-node@v6
+        with: { node-version: 24, cache: 'pnpm' }
+      - run: pnpm install
+      - name: Run probe (prints a machine-parseable RESULT line)
+        run: |
+          echo "PROBE_START ${{ inputs.probe }}"
+          cargo test --manifest-path probes/rust/Cargo.toml "${{ inputs.probe }}" -- --nocapture 2>&1 | tee probe.out || true
+          echo "RESULT probe=${{ inputs.probe }} outcome=$(grep -q 'PROBE_CONFIRMED' probe.out && echo confirmed || echo not-reproduced)"
