@@ -126,7 +126,8 @@ import { ConfigManager } from '@ckir/corelib';
 
 const config = ConfigManager.getInstance();
 
-// Initialize (parses CLI, Env, and local defaults)
+// Initialize (parses CLI, Env, and local defaults). Idempotent under
+// concurrency: simultaneous calls share one in-flight run.
 await config.initialize();
 
 // Get nested value with dot-notation
@@ -140,6 +141,32 @@ config.on('change:database.port', (newPort) => {
   console.log(`Port changed to ${newPort}`);
 });
 ```
+
+#### Readiness
+
+`get()` is synchronous and never throws — bundled defaults are seeded in the
+constructor, so reads are safe even before `initialize()` resolves (a one-time
+dev warning fires if you read pre-init, suppressed in production). Long-lived
+orchestrators (DB connections, stream wrappers) that need *resolved* config
+should gate on readiness:
+
+```typescript
+if (!config.isInitialized) {
+  await config.whenReady(); // resolves when the first initialize() settles
+}
+```
+
+> **Anti-pattern — don't cache a sub-section at module scope.** Read at the hot
+> point instead. `this._config`'s object identity is stable (mutation is in
+> place), but caching a nested slice can still mask a later override:
+>
+> ```typescript
+> // ❌ captured once at import; may miss overrides applied during initialize()
+> const db = ConfigManager.getInstance().get('database');
+>
+> // ✅ read at the use site
+> const port = ConfigManager.get('database.port');
+> ```
 
 ### 6. Native Core FFI
 Access high-performance Rust logic directly from TypeScript. The implementation is resilient and will disable FFI features if the native binary is missing rather than crashing the module.

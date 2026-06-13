@@ -135,11 +135,20 @@ than one global audit.
 
 Clusters ordered by max severity (high → medium → low):
 
+> **✅ Epic 1 (ConfigManager / boot-hardening) — RESOLVED 2026-06-13.** The two
+> boot clusters below plus `detectRuntime-uncached` (7 findings: -01, -02, -05,
+> -06, -07, -08, -09) are fixed on branch `worktree-epic1-boot-hardening`:
+> commander dropped for a hand-rolled argv parser (+ `isSafeKey` guard), atomic
+> in-place config mutation (stable `globalThis.sysconfig` identity), single-flight
+> `initialize()` with failure eviction, mutator mutex + dual-write, constructor-
+> seeded defaults, and a readiness API (`isInitialized`/`whenReady`). Spec:
+> `docs/superpowers/specs/2026-06-13-configmanager-boot-hardening-design.md`.
+
 ### High severity
 
-- **configmanager-cli-argv-hazards** · max: high · owner: `boot-ConfigManager-cli-override-process-exit-07` · probe: `probes/js/configmanager-init-race.probe.test.ts` · _`initialize()` calls `process.exit(1)` on any unknown CLI flag under commander@15; documented dynamic-override feature is non-functional and DoS-able_
+- ✅ **configmanager-cli-argv-hazards** · max: high · owner: `boot-ConfigManager-cli-override-process-exit-07` · probe: `probes/js/configmanager-init-race.probe.test.ts` (flipped to fixed-contract oracle) · **RESOLVED (Epic 1)** — commander removed; hand-rolled parser cannot `process.exit`; `process.argv` guarded (-07, -08).
 
-- **configmanager-concurrency-races** · max: high · owner: `boot-ConfigManager-initialize-races-01` · probe: none · _`initialize()` has no concurrent-call guard; two concurrent callers interleave `loadDefaults()` + `this._config` reassignments, producing non-deterministic config; 3 related race findings (partial-init window, external-config concurrency, sysconfig reference severance)_
+- ✅ **configmanager-concurrency-races** · max: high · owner: `boot-ConfigManager-initialize-races-01` · probe: none · **RESOLVED (Epic 1)** — single-flight `initialize()` + failure eviction, mutator mutex, atomic `clearAndFill` commit, and constructor-seeded defaults close all 4 race findings (-01 concurrent-init, -02 partial-init window, -05 external-config concurrency, -09 sysconfig reference severance).
 
 ### Medium severity
 
@@ -157,7 +166,7 @@ Clusters ordered by max severity (high → medium → low):
 
 ### Low severity
 
-- **detectRuntime-uncached** · max: low · owner: `boot-detectRuntime-uncached-06` · probe: none · _`detectRuntime()` recomputes full env-probe ladder on every call; memoize to a module-level constant_
+- ✅ **detectRuntime-uncached** · max: low · owner: `boot-detectRuntime-uncached-06` · probe: none · **RESOLVED (Epic 1)** — `detectRuntime()` memoized to a module-level cache (`computeRuntime()` extracted; `__resetRuntimeCache()` test hook) (-06).
 
 - **gcp-logger-stray-console-calls** · max: low · owner: `phase0-logger-gcp-console-01` · probe: none · _4 `console.log/error` calls in `createGcpLogger()` bypass the structured `StrictLogger` interface_
 
