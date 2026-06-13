@@ -42,6 +42,40 @@ const isSafeKey = (key: string): boolean =>
 		.some((p) => p === "__proto__" || p === "constructor" || p === "prototype");
 
 /**
+ * In-place deep mutator. Makes `target` structurally equal to `source` WITHOUT
+ * replacing `target`'s object identity: prunes keys absent from source, recurses
+ * into plain objects (preserving nested identity where shapes match), and
+ * replaces arrays + primitives wholesale (matches the leafMerger "arrays are
+ * leaves" contract). Exported for unit testing.
+ */
+export function clearAndFill(
+	target: Record<string, unknown>,
+	source: Record<string, unknown>,
+): void {
+	for (const key of Object.keys(target)) {
+		if (!(key in source)) delete target[key];
+	}
+	for (const key of Object.keys(source)) {
+		const val = source[key];
+		if (val && typeof val === "object" && !Array.isArray(val)) {
+			if (
+				!target[key] ||
+				typeof target[key] !== "object" ||
+				Array.isArray(target[key])
+			) {
+				target[key] = {};
+			}
+			clearAndFill(
+				target[key] as Record<string, unknown>,
+				val as Record<string, unknown>,
+			);
+		} else {
+			target[key] = val;
+		}
+	}
+}
+
+/**
  * Resolve the application identity used to match a config's top-level section.
  *
  * Monorepo-aware: walks up from `cwd` to the nearest workspace root — a
@@ -111,10 +145,17 @@ export class ConfigManager extends EventEmitter {
 
 		this._defaultsPath = defaultsPath;
 
-		// Initialize the Global Active Object if not already present
-		if (!(globalThis as any).sysconfig) {
-			(globalThis as any).sysconfig = this._config;
-		}
+		// Seed bundled defaults synchronously so get()/getConfig() return real
+		// values before initialize() resolves (closes the partial-init window,
+		// finding -02). Mutates the live _config in place; never reassigns it.
+		clearAndFill(
+			this._config,
+			builtinDefaults as unknown as Record<string, unknown>,
+		);
+
+		// Bind the live config object ONCE. Its reference never changes for the
+		// life of the process; all mutation is in place (finding -09).
+		(globalThis as any).sysconfig = this._config;
 	}
 
 	/**
@@ -166,9 +207,6 @@ export class ConfigManager extends EventEmitter {
 	 * 5. Apply CLI Overrides
 	 */
 	public async initialize(args?: string[]): Promise<void> {
-		// 1. Hardcoded Defaults
-		this.loadDefaults();
-
 		// 2. Parse argv with a dedicated parser (no commander): extract the
 		// external-config path (-C/--config) and collect arbitrary --kebab
 		// overrides. Guarded so edge runtimes without process.argv yield [].
@@ -211,19 +249,22 @@ export class ConfigManager extends EventEmitter {
 			overrides[key] = value;
 		}
 
+		// Staged build on a throwaway object; commit atomically at the end so a
+		// mid-build failure (network/parse/decrypt) never leaves a half-formed
+		// live config. Order: defaults -> external hierarchy -> env -> CLI.
+		const tempConfig: Record<string, unknown> = {};
+		this.loadDefaults(tempConfig);
+
 		if (configPath) {
 			const externalData = await this.fetchExternalConfig(configPath);
-			this.processHierarchy(externalData);
+			this.processHierarchy(externalData, tempConfig);
 		}
 
-		// 3. Apply Environment Variables (CORELIB_ prefix)
-		this.applyEnvOverrides();
+		this.applyEnvOverrides(tempConfig);
+		this.applyCliOverrides(overrides, tempConfig);
 
-		// 4. Apply CLI Overrides parsed above
-		this.applyCliOverrides(overrides);
-
-		// Finalize global object reference
-		(globalThis as any).sysconfig = this._config;
+		// Atomic in-place commit — preserves globalThis.sysconfig === this._config.
+		clearAndFill(this._config, tempConfig);
 		this.emit("initialized", this._config);
 	}
 
@@ -241,19 +282,16 @@ export class ConfigManager extends EventEmitter {
 	 */
 	public async loadExternalConfig(source: string): Promise<void> {
 		try {
-			// 1. Fetch and parse the external configuration using existing logic
 			const externalData = await this.fetchExternalConfig(source);
 
-			// 2. Process it through the established hierarchy (commonAll -> app -> platform -> mode)
-			this.processHierarchy(externalData);
+			// Build on a clone of the current live config so a mid-merge failure
+			// leaves the live config untouched; merge external on top, re-apply env.
+			const tempConfig = structuredClone(this._config);
+			this.processHierarchy(externalData, tempConfig);
+			this.applyEnvOverrides(tempConfig);
 
-			// 3. Re-apply environment variables to maintain precedence rules
-			this.applyEnvOverrides();
-
-			// 4. Update the global object reference
-			(globalThis as any).sysconfig = this._config;
-
-			// 5. Emit a general update event for listeners to react
+			// Atomic in-place commit (reference unchanged).
+			clearAndFill(this._config, tempConfig);
 			this.emit("configLoaded", this._config);
 		} catch (error) {
 			this.logError(
@@ -269,18 +307,20 @@ export class ConfigManager extends EventEmitter {
 	 * Always seeds from the bundled JSON (available in all runtimes, including edge).
 	 * If the JSON file is also found on disk, it replaces the bundled defaults.
 	 */
-	private loadDefaults(): void {
-		this._config = {
+	private loadDefaults(target: Record<string, unknown>): void {
+		let defaults: Record<string, unknown> = {
 			...(builtinDefaults as unknown as Record<string, unknown>),
 		};
 		if (existsSync(this._defaultsPath)) {
 			try {
-				const raw = readTextFileSync(this._defaultsPath);
-				this._config = JSON.parse(raw) as Record<string, unknown>;
+				defaults = JSON.parse(
+					readTextFileSync(this._defaultsPath),
+				) as Record<string, unknown>;
 			} catch (e) {
 				this.logError("Failed to load defaults", e);
 			}
 		}
+		clearAndFill(target, defaults);
 	}
 
 	/**
@@ -353,7 +393,7 @@ export class ConfigManager extends EventEmitter {
 	 * Processes the specific hierarchy:
 	 * commonAll -> [AppName].common -> [AppName].[platform] -> [AppName].[platform].[mode]
 	 */
-	private processHierarchy(data: Record<string, unknown>): void {
+	private processHierarchy(data: Record<string, unknown>, target: Record<string, unknown>): void {
 		if (!data) return;
 
 		const appName = this.getAppName();
@@ -395,17 +435,18 @@ export class ConfigManager extends EventEmitter {
 			}
 		}
 
-		this._config = leafMerger(this._config, layeredConfig) as Record<
+		const merged = leafMerger(target, layeredConfig) as Record<
 			string,
 			unknown
 		>;
+		clearAndFill(target, merged);
 	}
 
 	/**
 	 * Maps CORELIB_ prefixed environment variables to config keys.
 	 * Example: CORELIB_DB_PORT -> config.db.port
 	 */
-	private applyEnvOverrides(): void {
+	private applyEnvOverrides(target: Record<string, unknown>): void {
 		const prefix = "CORELIB_";
 		const env = getAllEnv();
 		Object.keys(env).forEach((envKey) => {
@@ -415,7 +456,7 @@ export class ConfigManager extends EventEmitter {
 					.toLowerCase()
 					.replace(/_/g, ".");
 				const value = this.parseValue(env[envKey]);
-				this.setPath(this._config, configPath, value);
+				this.setPath(target, configPath, value);
 			}
 		});
 	}
@@ -424,7 +465,7 @@ export class ConfigManager extends EventEmitter {
 	 * Maps the parsed Kebab-case CLI overrides to the config structure.
 	 * Unsafe keys (__proto__/constructor/prototype segments) are dropped.
 	 */
-	private applyCliOverrides(overrides: Record<string, string | boolean>): void {
+	private applyCliOverrides(overrides: Record<string, string | boolean>, target: Record<string, unknown>): void {
 		Object.keys(overrides).forEach((key) => {
 			if (key === "config") return; // Skip -C/--config (consumed above)
 			if (!isSafeKey(key)) {
@@ -435,7 +476,7 @@ export class ConfigManager extends EventEmitter {
 			}
 			const configPath = key.replace(/-/g, ".");
 			const value = this.parseValue(overrides[key]);
-			this.updateValue(configPath, value);
+			this.setPath(target, configPath, value);
 		});
 	}
 
