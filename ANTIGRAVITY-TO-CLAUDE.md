@@ -2759,3 +2759,69 @@ Our divergent design review fully validates Epic 1's goal: consolidating the boo
     2.  **Array Leaf-Replacement Behavior**: Verify that nested arrays are cleanly replaced wholesale rather than merged or appended.
     3.  **Non-Fatal CLI Parse Failure**: Verify that passing malformed text or CLI parser hiccups gracefully catches throwing exceptions, logs them, and continues bootstrap without process crash.
 
+---
+
+## 2026-06-13 — Epic 1: CLI parser replacement (divergent)
+
+We have conducted a rigorous comparative analysis of potential CLI parsing paradigms under the strict constraint of the **Reproducibility Rule** (preserves exact behavioral contracts for arbitrary config-data ingestion without introducing regression/drift).
+
+### 1. Ranked Recommendation
+
+#### 🥇 Rank 1: Candidate 1 — Hand-Roll Dedicated Parser (~25 lines)
+*   **Verdict**: **RECOMMENDED**
+*   **Behavioral-Drift Risk**: **ZERO**. Extends directly from the existing `applyCliOverrides` parsing model, ensuring exact reproduction of arbitrary unknown kebab-case flags into config overrides (e.g. `--key value` and `--key=value`) and bare options supporting boolean `true` fallbacks.
+*   **Security & Safety**: Complete structural immunity against `process.exit()` crashes. Additionally permits clean integration of a robust prototype-pollution guard before values traverse into nested config paths.
+*   **Dependency Profile**: Net reduction in dependencies (safely drops `commander` entirely).
+
+#### 🥈 Rank 2: Candidate 2 — Node.js Built-in `node:util` `parseArgs` (strict: false, tokens: true)
+*   **Verdict**: **REJECTED**
+*   **Behavioral-Drift Risk**: **HIGH**. Under `strict: false`, `parseArgs` treats any unconfigured CLI options as booleans. Thus, a space-separated pair like `--key value` will be parsed as `{ key: true }` with `"value"` relegated as a standalone positional argument.
+*   **Redundancy**: To recover the required contract, the consumer must manually walk the token array, peeking ahead to associate contiguous positionals. Re-implementing dynamic lookahead is equivalent to writing a custom parser on top of `parseArgs`, making the built-in library completely redundant while adding overhead.
+
+#### 🥉 Rank 3: Candidate 3 — Permissive Third-Party Parser (e.g., minimist, mri)
+*   **Verdict**: **REJECTED**
+*   **Security Risk**: **HIGH**. Unconfigured permissive third-party parsers are notorious for prototype-pollution vulnerabilities (such as passing `--__proto__.poisoned=true`), which is dangerous at host config boundaries.
+*   **Maintenance**: Adds an external package dependency for ~25 lines of direct parsing code, increasing surface area with zero functional benefit.
+
+---
+
+### 2. Analysis of Node `util.parseArgs` Token Behavior
+When `parseArgs({ strict: false, tokens: true })` is invoked with an unconfigured unknown flag-value pair (e.g., `--key value`), its token stream behaves as follows:
+- Option Token: `{ kind: "option", name: "key", rawName: "--key", value: undefined, inlineValue: undefined }`
+- Positional Token: `{ kind: "positional", value: "value" }`
+
+Because there is no configuration defining `--key` as a string-typed parameter, `parseArgs` natively maps `key: true` and fails to perform value association. To successfully reconcile this case, you must write lookahead peeking logic to stitch these tokens back together. This defeats the purpose of the built-in parser and risks complex parser discrepancies.
+
+---
+
+### 3. Implementation Blueprint for Hand-Rolled Parser & Prototype Pollution Guards
+A hand-rolled option allows us to completely secure the configuration boundary against malicious input.
+
+#### 3.1 Exact Prototype-Pollution Guard
+The parser and the setPath path-walk must explicitly reject:
+- `__proto__`
+- `constructor`
+- `prototype`
+
+A simple utility matches and rejects these properties:
+```typescript
+const isSafeKey = (key: string): boolean => {
+  const parts = key.split(/[.-]/);
+  return !parts.some(p => p === "__proto__" || p === "constructor" || p === "prototype");
+};
+```
+
+#### 3.2 Verification of Ordering
+To ensure byte-identical values and coercion, the hand-rolled execution sequence maintains precise ordering:
+1. **Extract**: Parse `argv` into a flat `Record<string, string | boolean>` dictionary of `overrides` (skipping `-C`/`--config`).
+2. **Filter**: Skip `config` and assert `isSafeKey(key)`.
+3. **Normalize**: Map kebab keys to dot-notation (e.g., `db-mysql-port` to `db.mysql.port`).
+4. **Coerce**: Run `this.parseValue(value)` to process booleans, numbers, and JSON arrays/objects.
+5. **Assign**: Call `this.setPath(target, path, coercedValue)` to merge down on `tempConfig`.
+
+---
+
+### 4. 4th Option: Preprocessing Argv Rewrite
+We explored a 4th option: **Rewriting raw argv before parsing**. This preprocessor searches the raw `argv` array, locates space-separated options (e.g. `--key`, `value`), and merges them into a single inline assignment `"--key=value"` before transmitting them to standard parsers. While functional, the preprocessing loop itself is a hand-rolled parser with its own complex lookahead scanner. Directly implementing the clean ~25-line extraction loop of Rank 1 remains the most elegant, robust, and zero-drift technique.
+
+
