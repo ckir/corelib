@@ -127,3 +127,44 @@ than one global audit.
 - **Tighten the rust lint gate** — `lint-all` currently runs `cargo clippy` (warn-only via the rust
   package's `lint` script). *Revive when:* the crate is warning-clean and ready for
   `cargo clippy -- -D warnings` in the fast loop.
+
+## Audit findings (2026-06-13)
+
+> Each cluster becomes its own spec→plan→cycle; no fixes were made in the audit cycle.
+> Full ranked backlog: `docs/superpowers/audits/2026-06-13-monorepo-audit-findings.md`
+
+Clusters ordered by max severity (high → medium → low):
+
+### High severity
+
+- **configmanager-cli-argv-hazards** · max: high · owner: `boot-ConfigManager-cli-override-process-exit-07` · probe: `probes/js/configmanager-init-race.probe.test.ts` · _`initialize()` calls `process.exit(1)` on any unknown CLI flag under commander@15; documented dynamic-override feature is non-functional and DoS-able_
+
+- **configmanager-concurrency-races** · max: high · owner: `boot-ConfigManager-initialize-races-01` · probe: none · _`initialize()` has no concurrent-call guard; two concurrent callers interleave `loadDefaults()` + `this._config` reassignments, producing non-deterministic config; 3 related race findings (partial-init window, external-config concurrency, sysconfig reference severance)_
+
+### Medium severity
+
+- **redb-double-open-process-abort** · max: medium · owner: `engine-redb-open-expect-abort-01` · probe: `probes/rust/tests/redb_concurrent.rs::q3_shared_path_double_open_panics` · _`host.rs:57` `.expect("Failed to open redb")` panics and aborts the Node process when two streamers share a redb path via env override; replace with `?`-propagation so it surfaces as a catchable JS error_
+
+- **error-serialization-log-gaps** · max: medium · owner: `phase0-logger-raw-error-sqlite-01` · probe: none · _raw `error: e` passed to structured logger across sqlite-db, postgres-db, router, and Top100; non-enumerable Error properties and cause chains are silently dropped in JSON logs; replace with `serializeError(e)` across 4 sites_
+
+- **http-retry-config-hazards** · max: medium · owner: `boot-RequestUnlimited-retry-limit-unbounded-03` · probe: none · _config-derived `retry.limit` passes to ky with no upper-bound clamp; a poisoned/malformed config value yields unbounded retries; also: no jitter causes thundering-herd retry storms_
+
+- **ts-core-node-imports-edge-compat** · max: medium · owner: `phase0-ts-core-node-module-SysInfo-01` · probe: `probes/_harness/edge-boot.mjs` · _4 unconditional `node:module`/`node:crypto` static imports in ts-core; currently masked by `nodejs_compat` + tsup specifier rewrite; conformance/fragility issue across 6 related findings including tsup `platform:"node"` for the CF worker_
+
+- **market-status-http-error-swallow** · max: medium · owner: `facade-market-status-error-status-swallowed-01` · probe: none · _`MarketStatusCloud` catch block returns HTTP 200 on fatal error; callers cannot distinguish success from failure by status code_
+
+- **worker-bundle-size-and-platform** · max: medium · owner: `facade-worker-bundle-size-perf-01` · probe: none · _Cloudflare worker bundle is 6.29 MB / gzip 901 KiB; includes unreachable server deps (@google-cloud/\*, @libsql/client, pino-pretty) due to `noExternal:[/.*/]` + `platform:"node"`_
+
+### Low severity
+
+- **detectRuntime-uncached** · max: low · owner: `boot-detectRuntime-uncached-06` · probe: none · _`detectRuntime()` recomputes full env-probe ladder on every call; memoize to a module-level constant_
+
+- **gcp-logger-stray-console-calls** · max: low · owner: `phase0-logger-gcp-console-01` · probe: none · _4 `console.log/error` calls in `createGcpLogger()` bypass the structured `StrictLogger` interface_
+
+- **finnhub-no-endpoint-override** · max: low · owner: `engine-finnhub-no-endpoint-override-01` · probe: none · _FinnhubConfig has no `base_url` override unlike yahoo/alpaca; prevents loopback test injection; forces recorded-frame replay in probes_
+
+- **ffi-reentrancy-reconnect-gc** · max: low · owner: `ffi-reentrancy-reconnect-gc-deadlock-01` · probe: none · _suspected TSFN re-entrancy/callback-after-teardown under GC; probe exercised call-churn but never drove `DELIVERED>0`, so the inbound Rust→JS delivery race path is unvalidated_
+
+- **redb-concurrent-persist-load-robust** · max: low · owner: `engine-redb-concurrent-persist-load-robust-01` · probe: `probes/rust/tests/redb_concurrent.rs::q2_concurrent_persist_and_load_is_consistent` · _positive result / no defect; MVCC redb is consistent under 8 concurrent writers + 6 readers; probe kept as regression guard_
+
+- **engine-reconnect-teardown-loom** · max: low · owner: `engine-reconnect-teardown-loom-01` · probe: none · _loom model of reconnect/teardown confirmed no deadlock, no send-after-close panic across all interleavings; probe at `probes/rust/tests/reconnect_teardown_loom.rs` is a durable regression guard_
