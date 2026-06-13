@@ -2311,3 +2311,76 @@ The Monorepo Optimization Audit design spec is exceptionally high quality, prese
 3.  **Stopping Rule**: Specify the probabilistic probe execution envelopes (such as the 20,000 max iteration/20s envelope) under §3.1.
 4.  **Static Isomorphic Sweep**: Add isomorphic imports boundary checks (e.g. banning Node standard APIs in TS-core exports) to the Phase 0 static sweep scope under §4.
 5.  **Mock Loopback Harness**: Define the `/probes/_harness/` TCP/WS in-process mock server inside §9 to enable offline, deterministic concurrency evaluation.
+
+---
+
+## 2026-06-13 — Spec Rev-2 Readiness Re-Review (Divergent pre-plan gate pass)
+
+### 1. Tight Verification of Rev-2 Requirements
+
+Pursuant to the pre-plan gate requirements, we have conducted a rigorous audit-only evaluation of the revised Monorepo Optimization Audit Design Specification (rev 2). No core code has been modified. Below is our formal verification of the 7 must-fix and scope items:
+
+1. **/probes exclusion architecture** — **RESOLVED**
+   * **Verification**: Spec §9.1 fully satisfies this. It details the exclusion boundaries for Vitest (via `exclude` paths for standard package runs and a dedicated `vitest -c probes/vitest.config.ts` configuration) and Cargo (workspace-level members inclusion with exclusion from root runs using `default-members = ["rust"]`). This preserves IDE type resolution while keeping probes completely isolated.
+   * **Quote §9.1**:
+     - **Vitest:** append `'/probes/**'` (and the repo-root `probes/**`) to `exclude` in every package `vitest.config.*`...
+     - **Cargo:** register the probe crate in the workspace but keep it out of default runs using `default-members`...
+       ```toml
+       [workspace]
+       members = ["rust", "probes"]
+       default-members = ["rust"]
+       ```
+
+2. **Deterministic dedup ownership rule** — **RESOLVED**
+   * **Verification**: Spec §6 defines a rigid topological assignment rule where cross-system/cross-boundary faults are owned by the lowest boundary zone in the chain, preventing multiple inflated findings for the same core failure.
+   * **Quote §6**:
+     "Assign a single owner zone — when a fault chains across a boundary (e.g. surfaces in Z-Facade but originates at the FFI threshold), it is owned by the **lowest boundary zone in the chain** (`engine` < `ffi` < `boot` < `facade`); the higher zones are recorded as `affected_surfaces`, not as separate findings. This yields **exactly one** backlog entry per root fault."
+
+3. **Probe stopping-rule / budget envelope; budget-exhausted ⇒ suspected, not proven-absent** — **RESOLVED**
+   * **Verification**: Spec §3.1 includes the complete probabilistic execution envelope, early exit condition, and clear "suspected" classification rule on budget exhaustion to ensure runs remain bounded and resources are capped without making false negative claims.
+   * **Quote §3.1**:
+     - **Budget cap** — default ≤ 20 000 iterations *or* ≤ 20 s of continuous run-time...
+     - **Exit-early on confirmation** — stop and report success on the **first** occurrence of the targeted faulty behavioral outcome.
+     - **Budget-exhausted ≠ proven-absent** — if the cap is reached without reproducing the outcome, the probe reports `0 / N` and exits `0`, and the finding is classified **`suspected` / unconfirmed under this profile** — *never* "confirmed absent."
+
+4. **Static isomorphic-import denylist on ts-core edge-reachable files** — **RESOLVED**
+   * **Verification**: Incorporated cleanly in the Phase 0 Static sweep row under §4 and defined as an explicit denylist rule in §4.1. This addresses imports of Node-native libraries unless guarded dynamically behind a runtime check.
+   * **Quote §4.1**:
+     "The Phase 0 sweep therefore enforces, statically, that `ts-core` source reachable from non-Node entry points does **not** hard-depend on Node-only built-ins. The denylist (starting set, extend during the sweep): `node:fs`, `node:path`, `node:module`, `node:child_process`, `node:os`, and their bare aliases... — **unless** the import sits behind a runtime guard... so the Node-only branch is unreachable under Bun/Deno/edge."
+
+5. **/probes/_harness loopback mock + the endpoint-override contingency as the plan's first task** — **RESOLVED**
+   * **Verification**: Spec §9.2 establishes the offline mockup in-process Node server and details the contingency plan, designating the verification of streamers supporting the override as the absolute first chore in the plan.
+   * **Quote §9.2**:
+     "...A shared in-process **Node TCP/WebSocket mock server** under `/probes/_harness/` lets probes orchestrate explicit disconnects, block threads on demand...
+     - **Prerequisite / contingency:** the harness requires the Rust streamers to accept an **endpoint override** (`localhost:<port>`). **The plan's first task verifies this.** If the streamers already support it → proceed. If not, that gap is recorded as a **finding** and the deterministic-FFI probes fall back to recorded-frame replay..."
+
+6. **Gap 3 — CI-offload gh workflow run → poll → parse → reclaim protocol** — **RESOLVED**
+   * **Verification**: Spec §9.3 defines a flawless 4-step headless workflow to trigger, monitor, retrieve logs, parse probe stats, and merge results back without manual intervention.
+   * **Quote §9.3**:
+     "...via a headless, automatable protocol — no human steps:
+     1. The local agent writes a stub finding with `confidence = suspected` (annotate `pending-ci`) to `.agent/audit_scratchpad.json`.
+     2. Trigger the workflow: `gh workflow run heavy-probes.yml -f probe=<probe-id> -f commit=<sha>`.
+     3. Poll run status; on completion pull logs via `gh run view <id> --log`...
+     4. Merge the parsed outcome back into the scratchpad — promoting `suspected → confirmed-by-probe`..."
+
+7. **Scope cap — durable probe mandatory ONLY for confirmed-by-probe; reading/suspected carry probe:null** — **RESOLVED**
+   * **Verification**: Grounded cleanly in §2 under Goals and formalized inside §7's Probe-requirement rule. Probes are strictly isolated to verified behavioral repros, preventing scope bloat for trivial items.
+   * **Quote §7**:
+     "**Probe-requirement rule:** `confidence = confirmed-by-probe` **requires** a non-empty `probe` path under `/probes/`; `confirmed-by-reading` and `suspected` findings **must not** be blocked on authoring a harness (they carry `probe: null`). This is the scope cap from §2..."
+
+---
+
+### 2. Integrity of Prior Commitments & New Edits Assessment
+
+* **New Issues or Ambiguities**: We analyzed all relationships, subsection additions, and timeline links. There are zero dangling cross-references, zero logical loops, and the A/B split in §6.1 matches the architecture flawlessly.
+* **Fixed Rulings Status**:
+  * **(a) NO fixes this cycle**: Fully sustained. Section §2, §11, and §9.2 actively safeguard this, explicitly delegating fixes to downstream cycles and turning endpoint-override absences into findings rather than silent implementation tasks.
+  * **(b) Behavioral reproducibility vs. Shape-divergence**: Thoroughly protected. Section §3.1 maintains the exact boundaries between behavioral outcomes (race states, latencies, resource leaks) and serialization FFI contract byte correctness, ensuring that refactoring-resilient behavioral probes remain the focus of the audit.
+
+---
+
+### 3. Final Gate Verdict
+
+**VERDICT: PLAN-READY** (Proceed to writing the implementation plan).
+
+The Rev 2 specification represents the absolute peak of monorepo audit design. It addresses every technical concern, implements every mitigation correctly, enforces precise scopes, and provides high-value durable test infra patterns.
