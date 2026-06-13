@@ -1,7 +1,8 @@
 # Integration Test Tier — Design Spec
 
 - **Date:** 2026-06-12
-- **Status:** Approved (design); agy divergent passes complete (brainstorm + spec). Pending final user review.
+- **Status:** Approved (design); agy divergent passes complete (brainstorm + spec). Refreshed 2026-06-13
+  for the final provider set (§5.4 now covers all three dual-mode streamers). Pending final user review.
 - **Subproject:** Exhaustive integration tests for the corelib monorepo.
 - **Review record:** `ANTIGRAVITY-TO-CLAUDE.md` → "2026-06-12 — Integration-test tier (divergent design pass)".
 
@@ -24,8 +25,8 @@ checklist plus a validator that fails when a declared seam lacks a fixture.
 
 - **Cross-runtime parity** (Bun/Deno) — explicitly excluded.
 - **Artifact/`dist` black-box smoke layer** — deferred (see §12, `ROADMAP.md`).
-- **Deterministic Rust-native streaming** (Alpaca/Yahoo FFI sockets) — covered in the live tier only for
-  v1; the loopback harness is deferred (§12).
+- **Deterministic Rust-native streaming** (Alpaca/Finnhub/Yahoo FFI sockets) — covered in the live tier
+  only for v1; the loopback harness is deferred (§12).
 - **Replacing or modifying the existing unit tests.**
 
 ## 3. Locked Decisions
@@ -128,11 +129,14 @@ missing platform/binary so coverage holes are never silent.
 
 ### 5.4 streaming (live-tier only, v1)
 
-`AlpacaStreaming`/`YahooStreaming` drive their sockets through `coreFFI.AlpacaStreaming` /
-`coreFFI.YahooStreaming` (Rust `tokio-tungstenite`). MSW (JS-layer) **cannot** intercept native sockets,
-so these are excluded from the deterministic replay tier and covered only under `INTEGRATION_LIVE=1`
-with loose shape assertions and a hard per-socket timeout (§7). The deterministic loopback harness is
-deferred (§12).
+All three providers — `AlpacaStreaming`, `FinnhubStreaming`, `YahooStreaming` — drive their sockets
+through `coreFFI.*Streaming` (the shared Rust `WebsocketStreamerHost` + `tokio-tungstenite` engine).
+Each is now **dual-mode** (Phase 2a/2b): it emits the byte-identical raw payload (`pricing` event) AND
+the unified finstream-superset `MarketEvent` JSON (`market` event), plus lifecycle status events. MSW
+(JS-layer) **cannot** intercept native sockets, so all three are excluded from the deterministic replay
+tier and covered only under `INTEGRATION_LIVE=1` with loose shape assertions on the `pricing` and
+`market` events (and the connected/disconnected/reconnecting status events) plus a hard per-socket
+timeout (§7). The deterministic loopback harness is deferred (§12).
 
 ## 6. Contract Record/Replay Harness
 
