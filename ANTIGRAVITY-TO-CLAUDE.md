@@ -2409,3 +2409,53 @@ The Rev 2 specification represents the absolute peak of monorepo audit design. I
 
 > [!IMPORTANT]
 > **VERDICT: RECOMMEND-A** — Prevents critical CI-break risks associated with target directory relocation while providing flawless, isolated compilation capabilities for both rlib-linking and loom-based concurrency tests.
+
+---
+
+## 2026-06-13 — Phase-A Checkpoint Review (agy)
+
+### 1. Phase-A False Negatives (In-Scope Boot/Facade Hazards)
+We identified several critical boot-time and static import hazards within Phase-A scope that were not flagged in the initial sweep:
+
+*   **Fatal `TypeError` Crash on Cloudflare Worker Bootstrap**:
+    *   **Source**: [ConfigManager.ts:165](file:///C:/Users/user/Development/Node/corelib/ts-core/src/configs/ConfigManager.ts#L165)
+    *   **Vulnerability**: The line `const argv = args ?? process.argv.slice(2);` executes during synchronous bootstrap initialization if `args` are omitted. Under Cloudflare Workers (even with `nodejs_compat`), `process` is a shim that does **not** expose a command-line `process.argv` list (it remains `undefined`). Attempting to call `.slice(2)` on it triggers a fatal `TypeError: Cannot read properties of undefined (reading 'slice')` at startup, crashing the Worker instantly.
+    *   **Recommendation**: Change to a safe guard: `const argv = args ?? (typeof process !== "undefined" && process.argv ? process.argv.slice(2) : []);`.
+
+*   **Global `sysconfig` Reference Severance & Boot Race**:
+    *   **Source**: [ConfigManager.ts:107-110](file:///C:/Users/user/Development/Node/corelib/ts-core/src/configs/ConfigManager.ts#L107-L110), [ConfigManager.ts:162](file:///C:/Users/user/Development/Node/corelib/ts-core/src/configs/ConfigManager.ts#L162), and [ConfigManager.ts:363](file:///C:/Users/user/Development/Node/corelib/ts-core/src/configs/ConfigManager.ts#L363)
+    *   **Vulnerability**: At constructor time (line 107), `globalThis.sysconfig` is bound to the empty, initial `this._config` object reference (Reference A). However, during `initialize()` (line 162), `loadDefaults()` is called which re-assigns `this._config` to a new object (Reference B). Any concurrent background task accessing `globalThis.sysconfig` during this boot window will read Reference A (which is empty and lacks default settings), leading to unhandled `undefined` parameters. Furthermore, inside `processHierarchy()` (line 363), `this._config` is re-assigned again with the outputs of `leafMerger` (Reference C). This completely severs downstream system modules from configuration updates if they cached or held direct references to `globalThis.sysconfig` nested elements.
+    *   **Recommendation**: Mutate the original `globalThis.sysconfig` / `this._config` object reference rather than re-assigning it, or encapsulate configuration lookups under a stable Proxy wrapper.
+
+*   **Static ESM Loader Failures on Cloudflare Workers**:
+    *   **Source**: [ConfigManager.ts:11](file:///C:/Users/user/Development/Node/corelib/ts-core/src/configs/ConfigManager.ts#L11), [SysInfo.ts:11](file:///C:/Users/user/Development/Node/corelib/ts-core/src/utils/SysInfo.ts#L11)
+    *   **Vulnerability**: Both files statically import `createRequire` from `node:module` at the top level. Static ES module imports are processed by the V8 isolate loader prior to executing any script code. Under Cloudflare Workers' `nodejs_compat` at compatibility date `2025-02-04`, `node:module` does **not** export/support `createRequire` (which is blocked due to the isolate's sandbox architecture lacking local dyn-load scopes). Consequently, importing `createRequire` as a named ESM import causes the CF worker bundle loader to fail at startup, completely bypassing any runtime runtime checks (e.g. `isNodeLike` is inert at this phase).
+
+---
+
+### 2. Divergent View: Mis-Severity and Facade Downgrades (False Positives)
+**We strongly disagree with the critical→medium and high→medium facade downgrades, and urge restoring them to HIGH SEVERITY:**
+
+*   **Static vs. Dynamic Execution Fallacy**: The downgrades were justified under the assumption that the `isNodeLike` guard safely encapsulates dynamic Node actions. This is correct for procedural runtime code, but **100% false for top-level static ES module imports**. As detailed above, the static imports of `createRequire` in shared dependency paths of `@ckir/corelib` causes the loader to throw *named binding resolution errors* inside wrangler/workerd during initial Worker compilation. Since `ts-cloud` bundles `ts-core` without externalizing it (`noExternal: [/.*/]`), loader failures are 100% reachable on cold starts, rendering the worker completely undeployable.
+*   **Tree-shaking and Bundle Size Leakage**: With `noExternal` set to bundle everything, heavy Node-only packages statically referenced in Core (such as `deepmerge-ts` at line 11 and `confbox` at line 278 of `ConfigManager.ts`) are fully dragged into the worker's bundle. This heavily inflates the compressed bundle size, threatening the strict 1MB size limit of Cloudflare's free tiers and degrading cold-start performance. Unless these imports are dynamically isolated to Node-specific sub-paths or fully tree-shaken, they present a high architectural risk to Edge environments.
+
+---
+
+### 3. Phase-B Target Ordering (FFI and Concurrency Probes)
+We recommend a strict ordering for running Phase-B concurrency and FFI probes:
+
+1.  **Target 1: JS-to-Rust ConfigManager-FFI Panic-Guard and Input-Sanitization Probe** (🔴 Highest Priority)
+    *   **Rationale**: The `ConfigManager` init races ([affected:["ffi"]]) frequently cause `undefined` config strings, malformed credential maps, or empty keys to slip past the JS system layer and down into N-API function invocations. In Rust, any unhandled thread panic (e.g., calling `.unwrap()` on an empty environment string or a null FFI pointer) will **abort the entire Node.js/Bun process immediately** with Exit Code 139 (SIGSEGV) or 101. It completely bypasses all JS `try-catch` structures, Honoring-middleware, and custom application loggers, resulting in silent service drop-outs. Ensuring FFI-boundary sanitization via a targeted probe is the prerequisite to stabilizing all downstream streaming engines.
+2.  **Target 2: Multi-Writer FFI `redb` Concurrency Lock Probe** (🟡 Secondary)
+    *   **Rationale**: Focus on verifying the local database lock-handling. File-locking on Windows behaves in a blocking fashion compared to Linux's advisory locks, making Windows tests highly susceptible to lock freezes during concurrent streaming subscribes.
+3.  **Target 3: N-API Threadsafe Function (TSFN) Callback Queue Saturation Probe** (🟢 Tertiary)
+    *   **Rationale**: Check callback latency and memory leak profiles while running high-frequency GC sweeps and event-loop stalls.
+
+---
+
+### 4. Infrastructure Gaps Before Phase B
+To guarantee deterministic execution of Phase B, we must close three engineering gaps in our audit tooling:
+
+*   **Mock Server Latency Handling**: The `LoopbackServer` under [loopback-server.mjs](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-ef3e4649/probes/_harness/loopback-server.mjs) lacks built-in telemetry validation or latency injection metrics. It should be enhanced to programmatically stall the TCP sock layer and verify that Rust reconnect loops back off gracefully without starving the JS main thread.
+*   **Headless CI Reclamation Protocol**: The trigger script `ci-offload.mjs` must be fully automated to bridge local scratchpad states. It must write its findings programmatically to `.agent/audit_scratchpad.json` with confidence `suspected` and tag it as `pending-ci` to avoid manual data reconciliation.
+*   **Crate Feature Propagation**: To ensure the standalone test crate couples cleanly, ensure `Cargo.toml` propagates conditional compile flags, explicitly forwarding `features = ["loom"]` down to the `corelib-rust` local dependency.
