@@ -1768,3 +1768,107 @@ graph TD
 We verify that with these minor Should-Fix additions, the spec is fully cohesive, comprehensive, and **PLAN-READY**. The three typescript wrappers represent high implementation parity with the refreshed layout, and no ambiguities remain to derail the implementation plan creation.
 
 *   **Verdict**: **PLAN-READY** (incorporating the above recommendations during the task planning phase).
+
+---
+
+## (c) Integration-test tier — plan-phase review (2026-06-13)
+
+### 1. Critical Review & Verification Findings
+
+This review pressure-tests the newly compiled integration-test tier implementation plan ([`2026-06-13-integration-test-tier.md`](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0b97b5ce/docs/superpowers/plans/2026-06-13-integration-test-tier.md)) against real-world codebase interfaces and types, hunting down latent execution blockers and design flaws.
+
+#### A. DB Interface (Task 6/10)
+*   **Verdict & Verification**: 🔴 **Blocker** (checked [`ts-core/src/database/core/types.ts`](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0b97b5ce/ts-core/src/database/core/types.ts#L48-L76) and [`ts-core/src/database/sqlite/sqlite-db.ts`](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0b97b5ce/ts-core/src/database/sqlite/sqlite-db.ts)).
+*   **Issue**: Crucial wrong assumptions regarding the `Database` interface. 
+    1. There is **no** `execute` method on the `Database` interface or the `SqliteDb` class.
+    2. The `.query` method does not return flat rows directly; it returns `Promise<DatabaseResult<QueryResponse<T>>>`.
+    3. `DatabaseResult` is a discriminated union of success (`{ status: "success", value: QueryResponse<T> }`) and error (`{ status: "error", reason: ... }`).
+    4. `QueryResponse<T>` holds rows under `.rows`.
+*   **Concrete Fix**: All test files must use `.query` instead of `.execute`, assert `status === "success"`, and access rows through `.value.rows`.
+    *   *Bad (Plan)*: `const rows = await db.query("SELECT..."); expect(rows.length).toBe(1);`
+    *   *Good (Fix)*: `const res = await db.query<T>("SELECT..."); expect(res.status).toBe("success"); expect(res.value.rows.length).toBe(1);`
+
+#### B. createDatabase Config (Task 6)
+*   **Verdict & Verification**: 🔴 **Blocker** (checked [`ts-core/src/database/sqlite/sqlite-config.ts`](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0b97b5ce/ts-core/src/database/sqlite/sqlite-config.ts)).
+*   **Issue**: The `BaseDbConfig` type demands a non-optional `mode: DbMode;` where `DbMode = "stateless" | "stateful"`. The plan's call `createDatabase({ dialect: "sqlite", url: ":memory:" })` lacks `mode` and fails compilation. Furthermore, if `mode` is `"stateless"`, the driver will call `.disconnect()` and close the client after EVERY query, immediately wiping out an in-memory SQLite database.
+*   **Concrete Fix**: The minimal valid config for an in-memory SQLite database must explicitly configure stateful mode:
+    ```ts
+    { dialect: "sqlite", url: ":memory:", mode: "stateful" }
+    ```
+
+#### C. FFI Exports (Task 9)
+*   **Verdict & Verification**: 🟢 **Nit (Verified Correct)** (checked [`ts-core/src/core/index.ts`](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0b97b5ce/ts-core/src/core/index.ts#L138-L205)).
+*   **Conclusion**: `getVersion` and `logAndDouble` are indeed exported by name in `ts-core/src/core/index.ts` and re-exported in `ts-core/src/index.ts` (via `export * from "./core"`), making them reachable directly at the `@ckir/corelib` index. `isFfiAvailable` and `Core` are indeed TS wrappers there. The plan's imports here are correct.
+
+#### D. RequestResult & Retry Override (Task 10)
+*   **Verdict & Verification**: 🔴 **Blocker** (checked [`ts-core/src/retrieve/RequestUnlimited.ts`](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0b97b5ce/ts-core/src/retrieve/RequestUnlimited.ts#L31-L33)).
+*   **Issue**: 
+    1. `RequestResult<T>` is a discriminated union of `{ status: "success"; value: SerializedResponse<T> }` and error. The plan asserts directly on the wrapper structure (`res.status === 200` and `res.body`), which will error because `status` is a string (e.g., `"success"`) and `body` does not exist on the parent result object.
+    2. `ConfigManager` has **no** `set()` method. The method to modify key bindings at runtime is `updateValue(path, value)`.
+*   **Concrete Fix**: 
+    *   Assert wrapper status and read nested properties: `expect(res.status).toBe("success"); expect(res.value.status).toBe(200); expect(res.value.body).toEqual(...);`
+    *   Use `updateValue` for dynamic overrides: `ConfigManager.getInstance().updateValue("retrieve.retry.limit", 3);`
+
+#### E. ts-cloud Router (Task 13)
+*   **Verdict & Verification**: 🟢 **Nit (Verified Correct)** (checked [`ts-cloud/src/index.ts`](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0b97b5ce/ts-cloud/src/index.ts) and [`ts-cloud/src/core/router.ts`](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0b97b5ce/ts-cloud/src/core/router.ts)).
+*   **Conclusion**: `createRouter` is cleanly exported from the index, returns a standard Hono app supporting `.request()`, and `/health` is fully constructible on Node with no live Cloudflare env or wrangler bindings needed (thanks to `c.env = c.env || {}` fallback inside the global middleware).
+
+#### F. Worker SELF route (Task 14)
+*   **Verdict & Verification**: 🟢 **Nit (Verified Correct)** (checked [`ts-cloud/wrangler.toml`](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0b97b5ce/ts-cloud/wrangler.toml) and [`ts-cloud/src/platform/cloudflare/worker.ts`](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0b97b5ce/ts-cloud/src/platform/cloudflare/worker.ts)).
+*   **Conclusion**: wrangler `main` targets `worker.ts`, which exports a default `fetch()` delegate to the Hono instance. Root `/health` is indeed reachable via `SELF.fetch("http://itest.local/health")`. `defineWorkersConfig` is the standard integration import for version `v0.16.x`.
+
+#### G. Streamer Event/Method Surface (Task 15)
+*   **Verdict & Verification**: 🟢 **Nit (Verified Correct)** (checked [`ts-markets/src/nasdaq/datafeeds/streaming/`](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0b97b5ce/ts-markets/src/nasdaq/datafeeds/streaming/)).
+*   **Conclusion**: All three streamers have 0-arg constructors, match `.subscribe(symbols)`, `.start()`, `.stop()`, and emit `"market"` events carrying the parsed JSON schema comprising `type`, `ticker`, `timestamp`, `price` + provider extras keys.
+
+#### H. MSW v2 API Correctness (Task 5)
+*   **Verdict & Verification**: 🟡 **Should-Fix** (checked [`tests/integration/_harness/server.ts`](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0b97b5ce/tests/integration/_harness/server.ts) draft).
+*   **Issue**: MSW 2 APIs (`setupServer`, `http.all`, `passthrough()`, `response:bypass`) are syntactically and semantically correct. However, adding `response:bypass` event listeners inside the `recordTo()` helper *every time* it runs will leak listeners. Globals are shared inside test files, leading to stacked listeners and duplicate console log outputs.
+*   **Concrete Fix**: Keep `recordTo` side-effect free; register a single global `response:bypass` listener in `beginItest()` that reads record targets from a global variable (e.g. `(globalThis as any).__ITEST_RECORD_TARGET__`) and coordinates printing.
+
+#### I. ESM require() Bug (Task 5/8)
+*   **Verdict**: 🔴 **Blocker** (node ESM environment constraint).
+*   **Issue**: Under ES Modules (TS compiled to ESM), `require("./fixtures")` inside `server.ts` and `require.main === module` inside `coverage-validator.ts` will trigger an immediate runtime crash: `ReferenceError: require is not defined`.
+*   **Concrete Fix**: 
+    1. Static-import fixtures parameters at the top of `server.ts` (there is no circular dependency, so dynamic/inline loading is unnecessary).
+    2. Use an ESM-safe script invocation check inside `coverage-validator.ts`:
+       ```ts
+       import { fileURLToPath } from "node:url";
+       import { resolve } from "node:path";
+       const isMain = process.argv[1] && (resolve(process.argv[1]) === fileURLToPath(import.meta.url) || process.argv[1].endsWith("coverage-validator.ts"));
+       if (isMain) { ... }
+       ```
+
+#### J. @itest Alias Resolution & Typings (Task 2)
+*   **Verdict**: 🔴 **Blocker** (TS compilation failure).
+*   **Issue**: `tsconfig.integration.json` defines `"include": ["tests/integration"]`. This only compiles the root harness directory, meaning **no package-level integration tests are tracked or compiled** by the root runner! Attempting to typecheck inside sub-packages will fail immediately since local tsplugins extend `tsconfig.base.json` which excludes `@itest/*` path definitions to ensure isolation.
+*   **Concrete Fix**: Fix the `"include"` configuration in `tsconfig.integration.json` to explicitly track package-level test paths:
+    ```json
+    "include": [
+      "tests/integration",
+      "ts-core/tests/integration/**/*.ts",
+      "ts-markets/tests/integration/**/*.ts",
+      "ts-cloud/tests/integration/**/*.ts"
+    ]
+    ```
+
+#### K. Intermediate Red State & Syntax Errors (Task 2/3)
+*   **Verdict**: 🔴 **Blocker** (violates "never --no-verify" pre-commit gate).
+*   **Issue**: Task 3 introduces `tests/integration/_harness/setup.ts` which immediately imports from `./server` (created in Task 5) and `./temp` (created in Task 6). Committing Task 3 will trigger Lefthook `verify:fast` (types-check) and fail because of missing files, preventing completion of intermediate steps. Furthermore, custom package scripts in recursive workspace runs must use `pnpm -r run <command>` instead of `pnpm -r <command>` to avoid package-resolution mismatches.
+*   **Concrete Fix**:
+    1. Create `setup.ts` as a clean skeleton in Task 3, and add MSW/temp wiring in Tasks 5 and 6, keeping all commits 100% green and type-safe.
+    2. Adjust root scripts to `pnpm -r run test:integration`.
+
+---
+
+### 2. Verdict: EXECUTE-WITH-FIXES
+
+The implementation plan is extremely detailed, precise, and structurally robust, but **must not be executed as-is**. The blockers listed above (especially DB interface types, missing ConfigManager `set`, ESM require crashes, and missing TS typings tracking) will derail the subagents halfway through implementation.
+
+#### Must-Fix items before execution:
+1. **Database queries**: Change all `.execute` calls to `.query`, assert `status === "success"`, and read flat row values from `.value.rows`.
+2. **SQLite Config**: Supply `mode: "stateful"` to in-memory/isolated SQLite configurations to prevent state wipeout on stateless disconnects.
+3. **ConfigManager updates**: Replace `.set` overrides with `.updateValue`.
+4. **Harness setup skeleton**: Keep `setup.ts` dynamic imports unmapped in Task 3 to keep the intermediate compiler green and satisfy Lefthook pre-commits.
+5. **ESM compatibility**: Static-import fixture helpers in `server.ts` and replace `require.main` with `import.meta.url` in the coverage validator.
+6. **Alias compilation paths**: Extend `tsconfig.integration.json` to include sub-package integration paths under `"include"`.
