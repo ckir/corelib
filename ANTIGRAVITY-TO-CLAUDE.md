@@ -2218,4 +2218,96 @@ graph TD
 4.  **Phase 3 (Core Engines)**: Execute stress tests on local `redb` files and tokio task channels.
 5.  **Phase 4 (Synthesize)**: Generate the final schema-calibrated backlog pointing to durable diagnostics setup.
 
+---
 
+## 2026-06-13 — Monorepo Optimization Audit Design Spec Review (Divergent Pass)
+
+### 1. Correctness: Faithful Transmission vs. Weakened Seams
+
+The design spec ([2026-06-13-monorepo-optimization-audit-design.md](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-8ed3cb64/docs/superpowers/specs/2026-06-13-monorepo-optimization-audit-design.md)) faithfully captures key paradigms from our prior divergent design pass, including boundary-first partitioning, bootstrap-first sequencing, append-only scratchpad registers with correlation sweeps, and the N-API callback-deadlock blindspot. 
+
+However, one critical area was **weakened and diluted** in translation:
+*   **The Isomorphism Lens (Z-Boot & Z-Facade)**: In our original approach, Zone Runtime Swaps was designed to actively test cross-runtime boundaries of `ts-core` to ensure that standard Node-only dynamic actions or dependency paths are completely unreachable when running in sterile/standardized Bun, Deno, or edge-worker environments. In the committed spec, this was weakened to a simple "runtime detection" sweep in Z-Boot and a basic bundle-size/cold-start evaluation in Z-Facade. It misses the rigorous testing of isomorphic boundaries—allowing hidden dependencies (e.g. `@types/node` references or raw Node fs modules) to slip into `ts-core` and crash edge execution.
+
+---
+
+### 2. Execution Gaps (Blockers on Execution)
+
+We identify four severe technical gaps in the spec that will derail the implementation plan if left unaddressed:
+
+#### 🔴 Gap 1 — The Probabilistic Stopping Rule & Interleaving Budget
+*   **Issue**: §3.1 and §7 specify that probes for non-deterministic faults record observed frequencies (e.g. `12 / 10 000`). However, the spec fails to establish a **stopping rule** or **interleaving budget** for these probes. 
+    *   If a bug is successfully fixed (or is non-reproducible on a clean build), how does the probe determine that it should stop running? Without an explicit budget cap, a stress probe will either execute indefinitely, timing out local runs and CI budgets, or exit prematurely without sufficient sampling depth to confidently flag a race condition.
+*   **Concrete Requirement**: Every non-deterministic probe must adopt a uniform execution envelope:
+    1.  *Budget Cap*: Maximum 20,000 iterations or 20 seconds of continuous run-time.
+    2.  *Stopping Rule*: Exit early with success (bug reproduced) on the first confirmation of the targeted faulty behavioral outcome.
+    3.  *Confirmation Rule*: If the budget cap is reached without reproducing the outcome, report `0 / N` findings and exit gracefully with code `0`, classifying the finding as unconfirmed/inactive under that profile.
+
+#### 🔴 Gap 2 — Deterministic Finding Deduplication Algo
+*   **Issue**: §6 states that the main thread conducts a "correlation / dedup / rank sweep" over `.agent/audit_scratchpad.json` to prevent a single under-the-floor fault from appearing as multiple separate entries. The spec provides zero execution machinery for *how* this is computed. If left as a manual/aesthetic exercise, different agents will group issues inconsistently, polluting the backlog.
+*   **Concrete Requirement**: Deduping must be driven by a rigid topological correlation algorithm defined in the implementation plan:
+    *   *Hash Matching*: Primary clustering is established by file-and-symbol hashes (e.g., target Rust `struct` or JS `class` name).
+    *   *Systemic Chaining*: If an issue triggers across an FFI threshold, the finding is assigned to the corresponding **lower boundary zone** (e.g. Z-FFI or Z-Engine) with the higher boundary (Z-Facade) listed as an affected surface, generating exactly *one* backlog entry.
+
+#### 🔴 Gap 3 — CI-Offloaded Automated Triggering & Result Reclamation
+*   **Issue**: §9 notes that heavy runs (Loom thread-checking, TSan-nightly, long-running WS stress) are offloaded to "a temporary/opt-in CI workflow," with the local finding subsequently recording the result. But since the execution plan is subagent-driven and automated, a local agent has no headless protocol to trigger a GitHub GHA run, wait, and parse back findings without human steps.
+*   **Concrete Requirement**: The workflow must be automated via `gh workflow run`:
+    1.  The local agent writes a stub entry with confidence `suspected-pending-ci` to `.agent/audit_scratchpad.json`.
+    2.  The script triggers the workflow: `gh workflow run heavy-probes.yml -f probe=<probe-id> -f commit=<sha>`.
+    3.  The script polls of GHA run status, pulls raw output logs via `gh run view --log`, parses the execution statistics, and merges the confirmed status back into the audit scratchpad.
+
+#### 🔴 Gap 4 — Isolation of `/probes/` from Standard Host Test Suites
+*   **Issue**: §9 specifies that `/probes/` is excluded from standard sweeps (Vitest + Cargo test). However, how this isolation is technically achieved is a deep blindspot:
+    *   *Vitest Collision*: If `/probes/` sits in the workspace root, a standard root `vitest.config.ts` or raw global pattern `**/*.test.ts` will still sweep and execute them unless strictly ignored.
+    *   *Cargo Workspace Pollution*: If the probes directory contains native Rust code, adding it to the parent `Cargo.toml` workspace forces standard `cargo test` to execute them. If excluded from the workspace entirely to prevent this, the Rust analyzer and IDE will break, resulting in unresolved types and broken import resolution for the developer.
+*   **Concrete Requirement**: Specify concrete, isolated boundaries:
+    1.  *Vitest Config*: Explicitly append `/probes/**` to `exclude` inside all parent package `vitest.config.ts` files, and run probes solely via a dedicated `vitest -c probes/vitest.config.ts` runtime config.
+    2.  *Cargo Config*: Include the `/probes` crate in the workspace `members` list in the root `Cargo.toml` so IDE linting is preserved, but explicitly exclude it from standard root runs by using the `default-members` configuration array:
+        ```toml
+        [workspace]
+        members = ["rust", "probes"]
+        default-members = ["rust"]
+        ```
+        Running `cargo test` from the root will safely ignore `/probes`, whereas executing probes is isolated to `cargo test --package probes`.
+
+---
+
+### 3. Contradictions & Ambiguity
+
+*   **Isomorphic Import Safety vs. Static Sweeps**: §4 declares Phase 0 as checking cross-package import directions (e.g. `ts-markets` only imports `ts-core`). But who checks that `ts-core` itself doesn't import Node runtime packages inside blocks consumed by edge environments? Zone Z-Boot checks TS-core, but focuses only on runtime detection and `ConfigManager`. This creates a severe gap where static isomorphic safety is unallocated.
+    *   *Resolution*: Phase 0's static imports sweep must explicitly check `ts-core` files against a **cross-runtime imports denylist** (e.g. no imports of `node:fs`, `node:path`, or `module` from files exposed to edge sandboxes).
+*   **Finding Confidence vs. Probe Creation Scope**: §2 states "each high-value finding confirmed by a durable, re-runnable probe where feasible," but §9 says "All confirming probes... are checked into a single new `/probes/` directory". This introduces dangerous ambiguity. Is a developer/subagent forced to write a dynamic, complex probe for *every single medium/low* concurrency or performance suspect to prove its validity?
+    *   *Resolution*: Enforce that dynamic/durable probes are mandatory **only** for findings classified as `confidence === confirmed-by-probe`. Findings confirmed by direct code analysis can sit securely in the backlog as `confidence === confirmed-by-reading`, strictly capping scope creep.
+
+---
+
+### 4. Sizing & Phasing Analysis
+
+This spec is **not correctly sized for a single unphased implementation plan**. Concurrently setting up AST static scanners, FFI threadsafe function hooks, memory-leak diagnostics, Loom model checkers, and wrangler cold-starts within one plan will overwhelm local subagent sessions, resulting in coordinate pollution and git-tree drift.
+
+We advise splitting the implementation plan into two clearly sequenced phases:
+*   **Phase A (Isomorphic & Static Foundation)**: Static import sweeps (Phase 0), startup/singleton validations (Z-Boot), edge bundle-size diagnostics (Z-Facade), and the scaffold setup of the `/probes` exclusion configurations.
+*   **Phase B (Thread-concurrency & Native FFI)**: FFI callback deadlocks (Z-FFI), `redb` concurrent writers (Z-Engine), Loom model integrations, GHA remote runner triggers, and the final deduplicated synthesis.
+
+---
+
+### 5. Single Highest-Value Change Before Implementation
+
+**Implement a Standardized JS-to-Rust WS Loopback & Mock Framework under `/probes/_harness/`.**
+
+To test FFI callback-deadlocks, reconnect supervisors, and Threadsafe Function (TSFN) queue starvation deterministically, probes cannot interact with live networks (which are prone to arbitrary delays and rate-limiting). The single highest-value addition is to deploy a dedicated Node.js in-process TCP/Websocket mock runner within `/probes/_harness/`. This local loopback listener allows probes to orchestrate explicit socket disconnects, block threads on demand, stream raw tick payloads, and force specific execution timelines to verify Rust-to-JS behavior with microsecond-level precision.
+
+---
+
+### 2. Verdict & Must-Fix Checklist
+
+> [!IMPORTANT]
+> **VERDICT: PLAN-READY-WITH-FIXES**
+
+The Monorepo Optimization Audit design spec is exceptionally high quality, presenting a massive leap forward in audit rigor. We can proceed directly to implementation planning once the following 5 fixes are incorporated:
+
+1.  **Exclusion Architecture**: Incorporate the explicit cargo `default-members` block and Vitest exclusion paths under §9 to cleanly isolate the `/probes/` directory.
+2.  **Deterministic Deduping**: Add the topological correlation rule in §6 to enforce unique, lowest-boundary assigning during sweep consolidation.
+3.  **Stopping Rule**: Specify the probabilistic probe execution envelopes (such as the 20,000 max iteration/20s envelope) under §3.1.
+4.  **Static Isomorphic Sweep**: Add isomorphic imports boundary checks (e.g. banning Node standard APIs in TS-core exports) to the Phase 0 static sweep scope under §4.
+5.  **Mock Loopback Harness**: Define the `/probes/_harness/` TCP/WS in-process mock server inside §9 to enable offline, deterministic concurrency evaluation.
