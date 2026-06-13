@@ -86,45 +86,35 @@ getter would be a breaking change across the whole consumer surface.
 
 ---
 
-## 4. CLI parsing — neuter commander in place (resolves -07, -08)
+## 4. CLI parsing — drop commander, hand-roll a dedicated parser (resolves -07, -08)
 
-Commander is **retained** (dependency stays) but made incapable of terminating the host.
+**Decision (agy + Claude converged, under the Reproducibility Rule):** `commander` is
+**removed** from `ts-core` and replaced with a ~25-line dedicated argv parser. The CLI
+requirement here is unusual — *accept arbitrary unknown `--kebab` flags as config data* —
+which is the opposite of what commander/yargs/cac are built for (they reject unknown
+options; that rejection IS the `-07` crash). `node:util parseArgs` was evaluated and
+rejected: in `strict:false` it parses an unconfigured `--key value` as `{key:true}` + a
+stray positional `"value"`, so reproducing our contract would require a manual token
+lookahead anyway (drift risk, no benefit). minimist/mri were rejected for prototype-pollution
+history at a config boundary. The hand-roll has **zero behavioral-drift risk** because it
+*extends the existing `applyCliOverrides` semantics* rather than swapping the parser's
+opinions, and is structurally incapable of `process.exit` (fixes `-07`).
 
-**Why the current code crashes (`-07`):** `applyCliOverrides()` reads `program.args` and
-scans it for `--kebab` flags. This works because commander historically routes *unknown*
-options into the operands/`args` array when `allowUnknownOption(true)` is set. Under
-commander@15, an unknown long option is classified as an **excess argument** and
-`program.error()` → `process.exit(1)` fires **before** the flag ever reaches `program.args`.
-`allowUnknownOption(true)` alone does not cover this.
+**Why the current code crashes (`-07`):** `applyCliOverrides()` reads commander's
+`program.args`, relying on commander routing *unknown* options there. Under commander@15 an
+unknown long option is classified as an **excess argument** and `program.error()` →
+`process.exit(1)` fires before the flag is ever reachable — a library bootstrap calling
+`process.exit(1)` on caller/CLI/env-derived input is a crash/DoS hazard.
 
-**Fix — make `parseAsync` non-fatal AND let the flags reach `program.args`:**
+**The observable CLI contract the parser MUST reproduce exactly (the oracle):**
+- `-C <path>` / `--config <path>` / `--config=<path>` → external config path (consumed, not an override).
+- arbitrary `--kebab-case value` and `--kebab-case=value` → config overrides.
+- a bare trailing `--flag` with no following value → boolean `true`.
+- never call `process.exit`; on edge runtimes (no `process.argv`) → empty arg set.
+- a value that is the *next token starting with `-`* is NOT consumed as the flag's value
+  (matches the current loop, which only consumes a following non-flag token).
 
-```ts
-const program = new Command();
-program.exitOverride();                 // throw instead of process.exit()
-program.allowUnknownOption(true);       // already present
-program.allowExcessArguments(true);     // NEW: stop excess-argument errors
-program.helpOption(false);
-program.option("-C, --config <path>", "external config file or URL");
-try {
-  await program.parseAsync(argv, { from: "user" });
-} catch (e) {
-  // exitOverride turns commander's terminating errors into throwables; a parse
-  // hiccup must NOT crash a library bootstrap. Log + continue with whatever was
-  // parsed (config defaults still apply).
-  this.logError("CLI parse produced a non-fatal commander error", e);
-}
-```
-
-With `allowExcessArguments(true)`, unknown `--flag[=value]` entries land in `program.args`
-and the **existing** `applyCliOverrides(program)` logic applies them unchanged. The flipped
-probe (§7) is the oracle proving overrides actually flow through; if commander@15 is found
-to *not* populate `program.args` even when neutered, the contingency is to parse the
-override flags directly from the guarded `argv` slice (same parse logic, fed from `argv`
-instead of `program.args`) — commander then serves only `-C` extraction. The implementer
-picks the path the probe oracle validates; both satisfy the same observable contract.
-
-**Guard `process.argv` (`-08`):**
+**Guard `process.argv` (`-08`) — the single argv source:**
 
 ```ts
 const argv = args ?? (
@@ -133,6 +123,49 @@ const argv = args ?? (
     : []
 );
 ```
+
+**Parser shape (replaces commander + the current applyCliOverrides body):**
+
+```ts
+// 1. Extract -C / --config (consumed, removed from the override stream).
+let configPath: string | undefined;
+// 2. Collect arbitrary --kebab overrides into a flat dict.
+const overrides: Record<string, string | boolean> = {};
+
+for (let i = 0; i < argv.length; i++) {
+  const tok = argv[i];
+  if (tok === "-C" || tok === "--config") {
+    if (i + 1 < argv.length && !argv[i + 1].startsWith("-")) configPath = argv[++i];
+    continue;
+  }
+  if (tok.startsWith("--config=")) { configPath = tok.slice("--config=".length); continue; }
+  if (!tok.startsWith("--")) continue;        // ignore bare operands (current behavior)
+
+  let key = tok.slice(2);
+  let value: string | boolean;
+  const eq = key.indexOf("=");
+  if (eq > -1) { value = key.slice(eq + 1); key = key.slice(0, eq); }
+  else if (i + 1 < argv.length && !argv[i + 1].startsWith("-")) { value = argv[++i]; }
+  else { value = true; }                       // bare --flag → true
+  overrides[key] = value;
+}
+```
+
+**Prototype-pollution guard (defense-in-depth, fixes a latent `setPath` hazard).** Before a
+kebab key is mapped to a dot-path and written, reject any segment that is `__proto__`,
+`constructor`, or `prototype`:
+
+```ts
+const isSafeKey = (key: string): boolean =>
+  !key.split(/[.-]/).some(p => p === "__proto__" || p === "constructor" || p === "prototype");
+```
+
+**Coercion/assignment ordering is byte-identical to today** so values don't drift:
+extract → skip `config` → `isSafeKey(key)` (else drop + warn) → kebab→dot (`key.replace(/-/g,".")`)
+→ `parseValue(value)` (existing JSON/number/bool coercion) → `setPath(target, path, coerced)`.
+`-C` extraction now happens *before* the hierarchy load (§5.3) instead of via a parsed
+`program`, and `loadExternalConfig`'s stale "cache the parsed program" comment (`:215-216`)
+is removed.
 
 ---
 
@@ -272,7 +305,13 @@ and **flips to failing when fixed**. On the fix, update it to the fixed-contract
 `initialize(['--probeflag=hello'])` resolves, `get('probeflag') === 'hello'`, and
 `process.exit` is never called. This flip is the headline success signal for the epic.
 
-**New unit tests** (`vitest`, under `ts-core/tests/configs/`):
+**Existing colocated test (must stay green):** `ts-core/src/configs/ConfigManager.argv.test.ts`
+asserts `initialize([])` bypasses `process.argv` and resolves — still true under the
+hand-rolled parser. Update only its stale "bypass commander's argv scan" comment.
+
+**New unit tests** (`vitest`, **colocated** per repo convention as
+`ts-core/src/configs/ConfigManager.*.test.ts` — unit tests live next to source; only
+integration tests live under `ts-core/tests/integration/`):
 1. **single-flight idempotency:** `Promise.all([cm.initialize(a), cm.initialize(b)])` →
    resolves once; config internally consistent; no clobber.
 2. **failed-init eviction:** an `initialize()` whose external fetch rejects → promise
@@ -281,8 +320,10 @@ and **flips to failing when fixed**. On the fix, update it to the fixed-contract
    reference is `===` and observes the new values.
 4. **`clearAndFill`:** array-replace (not merge), key-prune, nested-object identity
    preserved, primitive overwrite.
-5. **CLI parse matrix:** `-C path`, `--config=path`, `--k v`, `--k=v`, and the
-   no-`process.argv` edge path (`args` omitted under a stubbed `process`).
+5. **CLI parse matrix:** `-C path`, `--config=path`, `--k v`, `--k=v`, bare trailing
+   `--flag` → `true`, a `--flag --next` pair (first flag → `true`, not consuming `--next`),
+   the no-`process.argv` edge path (`args` omitted under a stubbed `process`), and an
+   `isSafeKey` rejection (`--__proto__.x=1` dropped + warned, no pollution).
 6. **premature-read warning:** warns in dev, silent under `NODE_ENV=production`; `get()`
    returns seeded default either way.
 7. **detectRuntime:** memoized (second call cheap / stable), `__resetRuntimeCache()` works.
@@ -304,7 +345,8 @@ and **flips to failing when fixed**. On the fix, update it to the fixed-contract
 
 | Failure | Behavior |
 |---------|----------|
-| CLI parse error (commander) | caught, logged via `logError`, init continues with defaults |
+| Malformed CLI token | parser cannot throw/exit; unparseable tokens are ignored, init continues with defaults |
+| Unsafe override key (`__proto__`/`constructor`/`prototype`) | dropped + dev/test warning; never written to config |
 | External config fetch/parse/decrypt fails mid-`initialize` | throws before swap → `_config` untouched → `_initPromise` evicted → retryable |
 | External config fails in `loadExternalConfig` | throws after logging → live `_config` untouched (built on clone) |
 | Read before ready | returns seeded default; dev/test warning; never throws |
@@ -315,13 +357,18 @@ and **flips to failing when fixed**. On the fix, update it to the fixed-contract
 ## 9. Affected files
 
 - **`ts-core/src/configs/ConfigManager.ts`** — primary: constructor seeding, permanent
-  ref, single-flight `initialize`, `runInitSequence`, mutex, staged-build + `clearAndFill`,
-  neutered commander, guarded argv, readiness API, premature-read warning.
+  ref, single-flight `initialize`, `runInitSequence`, mutex + `_inFlightTempConfig`,
+  staged-build + `clearAndFill`, hand-rolled argv parser + `isSafeKey`, guarded argv,
+  readiness API, premature-read warning. Removes the `import { Command } from "commander"`.
 - **`ts-core/src/utils/runtime.ts`** — `detectRuntime` memoization + `__resetRuntimeCache`.
+- **`ts-core/package.json`** — remove `commander` from dependencies (if no other ts-core
+  source imports it — verify with a repo grep before removing; only ConfigManager uses it).
 - **`probes/js/configmanager-init-race.probe.test.ts`** — flip to fixed-contract oracle.
-- **`ts-core/tests/configs/*`** — new unit tests (§7).
+- **`ts-core/src/configs/ConfigManager.argv.test.ts`** — keep green; update stale commander comment.
+- **`ts-core/src/configs/ConfigManager.*.test.ts`** — new colocated unit tests (§7).
 - **`ts-core/README.md`** (+ root `README.md`) — readiness API + sub-section-cache anti-pattern note.
 - **`ROADMAP.md`** — mark the 7 findings resolved under Epic 1; carry-forward unchanged.
 
-No public API removed; `commander` dependency retained. `ignoreDeprecations "6.0"` and the
-lefthook gate are respected as-is (no new flags).
+No public API removed; `commander` dependency **dropped** from `ts-core` (replaced by the
+hand-rolled parser). `ignoreDeprecations "6.0"` and the lefthook gate are respected as-is
+(no new flags).
