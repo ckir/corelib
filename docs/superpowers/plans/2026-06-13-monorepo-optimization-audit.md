@@ -524,6 +524,12 @@ git commit -am "audit(A7): Phase-A checkpoint — partial dedup + agy relay fold
 
 # PHASE B — Concurrency & Native FFI
 
+> **Phase-B adjustments adopted at the A7 checkpoint (2026-06-13, user-approved, folding agy's divergent review):**
+> 1. **NEW Task B1.5 — edge-boot probe:** boot the built Cloudflare worker bundle under `wrangler dev` (programmatic `unstable_dev`) and observe whether it loads or throws a module-load error on the static `node:module`/`node:crypto` imports. This SETTLES the open dispute on `phase0-ts-core-node-module-*` / `facade-node-module-crypto-edge-bundle-01` severity empirically (boots clean ⇒ those stay conformance/medium; throws ⇒ upgrade to high/critical `confirmed-by-probe`).
+> 2. **B2 reordered:** lead with a **poisoned-config → Rust-panic FFI probe** (drive `undefined`/malformed config from the boot-layer races down the N-API bridge; oracle = no Rust `.unwrap()`/panic aborting the host process, which would bypass JS try/catch — exit 139/101). THEN the reconnect-under-GC re-entrancy/deadlock probe.
+> 3. **loom stays standalone** (B4 unchanged) — declined agy's suggestion to propagate a `loom` feature into `corelib-rust` (that is a production change; out of scope this cycle).
+> 4. **No-push constraint:** `gh workflow run` cannot fire without pushing, so B1 builds + dry-run-verifies the offload infra only; B3/B4 run LOCALLY (Windows) and record the cross-OS leg as `suspected`/`pending-ci` per spec §9.3.
+
 ### Task B1: CI heavy-probe offload (`heavy-probes.yml` + `ci-offload.mjs`)
 
 **Files:**
