@@ -75,8 +75,10 @@ describe("ConfigManager reference identity (finding -09)", () => {
 
 		// The live ref must observe the new value at nested dot-path (in-place
 		// mutation happened). cfg-ident-probe is mapped to cfg.ident.probe.
-		const nested = (ref["cfg"] as Record<string, unknown> | undefined)?.["ident"] as Record<string, unknown> | undefined;
-		expect(nested?.["probe"]).toBe("zzz");
+		const nested = (ref.cfg as Record<string, unknown> | undefined)?.ident as
+			| Record<string, unknown>
+			| undefined;
+		expect(nested?.probe).toBe("zzz");
 
 		// Confirm via the public API too
 		expect(cm.get("cfg.ident.probe")).toBe("zzz");
@@ -104,7 +106,7 @@ describe("ConfigManager seeded defaults before initialize (finding -02)", () => 
 		// meaningful) invariant: getConfig() is never empty and "markets" is present.
 		const config = cm.getConfig();
 		expect(Object.keys(config).length).toBeGreaterThan(0);
-		expect(config["markets"]).toBeDefined();
+		expect(config.markets).toBeDefined();
 	});
 
 	it("get() returns the bundled default value for a real key", () => {

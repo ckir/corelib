@@ -313,9 +313,10 @@ export class ConfigManager extends EventEmitter {
 		};
 		if (existsSync(this._defaultsPath)) {
 			try {
-				defaults = JSON.parse(
-					readTextFileSync(this._defaultsPath),
-				) as Record<string, unknown>;
+				defaults = JSON.parse(readTextFileSync(this._defaultsPath)) as Record<
+					string,
+					unknown
+				>;
 			} catch (e) {
 				this.logError("Failed to load defaults", e);
 			}
@@ -393,7 +394,10 @@ export class ConfigManager extends EventEmitter {
 	 * Processes the specific hierarchy:
 	 * commonAll -> [AppName].common -> [AppName].[platform] -> [AppName].[platform].[mode]
 	 */
-	private processHierarchy(data: Record<string, unknown>, target: Record<string, unknown>): void {
+	private processHierarchy(
+		data: Record<string, unknown>,
+		target: Record<string, unknown>,
+	): void {
 		if (!data) return;
 
 		const appName = this.getAppName();
@@ -435,10 +439,7 @@ export class ConfigManager extends EventEmitter {
 			}
 		}
 
-		const merged = leafMerger(target, layeredConfig) as Record<
-			string,
-			unknown
-		>;
+		const merged = leafMerger(target, layeredConfig) as Record<string, unknown>;
 		clearAndFill(target, merged);
 	}
 
@@ -465,7 +466,10 @@ export class ConfigManager extends EventEmitter {
 	 * Maps the parsed Kebab-case CLI overrides to the config structure.
 	 * Unsafe keys (__proto__/constructor/prototype segments) are dropped.
 	 */
-	private applyCliOverrides(overrides: Record<string, string | boolean>, target: Record<string, unknown>): void {
+	private applyCliOverrides(
+		overrides: Record<string, string | boolean>,
+		target: Record<string, unknown>,
+	): void {
 		Object.keys(overrides).forEach((key) => {
 			if (key === "config") return; // Skip -C/--config (consumed above)
 			if (!isSafeKey(key)) {
