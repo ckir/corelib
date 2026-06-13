@@ -477,7 +477,7 @@ describe("findUnscrubbedSecrets", () => {
 
 - [ ] **Step 2: Run — expect FAIL** (module missing).
 
-Run: `pnpm --filter @ckir/corelib exec vitest run ../tests/integration/_harness/scrubber.test.ts`
+Run: `pnpm --filter @ckir/corelib exec vitest run --root ../ tests/integration/_harness/scrubber.test.ts`
 Expected: FAIL (cannot find `./scrubber`).
 
 - [ ] **Step 3: Implement `tests/integration/_harness/scrubber.ts`:**
@@ -518,7 +518,9 @@ function scrubUrl(url: string): string {
         u.searchParams.set(key, REDACTED);
       }
     }
-    return u.toString();
+    // URLSearchParams percent-encodes the <> in the sentinel; restore the literal marker
+    // (targeted replace of the known-encoded sentinel only — safe for other query values).
+    return u.toString().replaceAll(encodeURIComponent(REDACTED), REDACTED);
   } catch {
     return url;
   }
@@ -591,7 +593,7 @@ function safeParse(s: string): unknown {
 
 - [ ] **Step 4: Run — expect PASS.**
 
-Run: `pnpm --filter @ckir/corelib exec vitest run ../tests/integration/_harness/scrubber.test.ts`
+Run: `pnpm --filter @ckir/corelib exec vitest run --root ../ tests/integration/_harness/scrubber.test.ts`
 Expected: PASS (6 tests).
 
 - [ ] **Step 5: Commit.**
@@ -809,7 +811,7 @@ export async function endItest(): Promise<void> {
 
 - [ ] **Step 4: Run the server tests — expect PASS.**
 
-Run: `pnpm --filter @ckir/corelib exec vitest run ../tests/integration/_harness/server.test.ts`
+Run: `pnpm --filter @ckir/corelib exec vitest run --root ../ tests/integration/_harness/server.test.ts`
 Expected: PASS (3 tests).
 
 - [ ] **Step 5: Add `msw` to ts-cloud? NO** — the worker project never imports the harness server. Confirm no change needed.
@@ -917,7 +919,7 @@ export async function cleanupAll(): Promise<void> {
 
 - [ ] **Step 4: Run — expect PASS.**
 
-Run: `pnpm --filter @ckir/corelib exec vitest run ../tests/integration/_harness/temp.test.ts`
+Run: `pnpm --filter @ckir/corelib exec vitest run --root ../ tests/integration/_harness/temp.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Finalize the harness setup file** now that `./server` (Task 5) and `./temp` exist — replace the skeleton `tests/integration/_harness/setup.ts` with the full lifecycle:
@@ -1136,7 +1138,7 @@ describe("coverage-validator", () => {
 
 - [ ] **Step 4: Verify validator logic.** Temporarily comment out the three `live-streaming` cells in `coverage.matrix.ts`, run the validator test (expect PASS — no external cells yet, no orphans), then restore the cells.
 
-Run: `pnpm --filter @ckir/corelib exec vitest run ../tests/integration/coverage-validator.test.ts`
+Run: `pnpm --filter @ckir/corelib exec vitest run --root ../ tests/integration/coverage-validator.test.ts`
 Expected: PASS with the live-streaming cells commented; FAIL (missing test files) with them restored — restore them and leave the test to go green in Task 15.
 
 - [ ] **Step 5: Commit.**
@@ -1740,7 +1742,7 @@ Expected: connects; passes (or loud-skips if creds missing).
 
 Run: `pnpm test:integration:validate`
 Expected: `✓ coverage matrix valid` (external + live-streaming all satisfied). Re-run the validator unit test:
-Run: `pnpm --filter @ckir/corelib exec vitest run ../tests/integration/coverage-validator.test.ts`
+Run: `pnpm --filter @ckir/corelib exec vitest run --root ../ tests/integration/coverage-validator.test.ts`
 Expected: PASS.
 
 - [ ] **Step 7: Commit.**
