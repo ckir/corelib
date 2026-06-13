@@ -2980,5 +2980,85 @@ We must address our most critical FFI blind spot before claiming victory on Rust
 *   **E: E1 is a pure validation probe (no custom Rust lock layers); E2 is a standard Option<String> mirroring Alpaca/Yahoo overrides.**
 *   **F: Sequence Tasks 4/5 first to unblock loopbacks, and ensure `--expose-gc` is explicitly set in host test runners for Task 6.**
 
+---
 
+## agy spec review — Epic 2 (2026-06-14)
 
+### 1. Pressure Test of Epic 2 Design Spec
+
+We have completed the divergent spec review (design-partner mode) for the committed safety-hardening design spec under [docs/superpowers/specs/2026-06-14-input-env-safety-hardening-design.md](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-70a913c3/docs/superpowers/specs/2026-06-14-input-env-safety-hardening-design.md). Below is our pressure-test assessment across all 8 dimensions.
+
+---
+
+### 1. Task 1 Correctness: redb Initialization and Error Variant
+- **Database::create vs. Database::open**: `Database::create` is the correct path for the streamer host setup. It automatically creates the redb file if it doesn't exist and opens it. `Database::open` would return an error if the database was not yet initialized on disk, breaking normal bootstrap.
+- **DatabaseError Locking Coverage**: In `redb` 4.1.0, `redb::DatabaseError` cleanly covers all lock-collision scenarios. Specifically, `redb::DatabaseError` contains `DatabaseAlreadyOpen` (which handles in-process same-path double-opens gracefully) and `Io(std::io::Error)` (which captures Windows mandatory locking conflicts or other filesystem permission blockers). 
+- **Type Checking**: Converting redb's error returns with `.map_err(HostError::DbOpen)?` typechecks perfectly since `Database::create` returns `Result<Database, redb::DatabaseError>`.
+
+---
+
+### 2. Enumeration and Reconnect Semantics (All 8 Call Sites)
+- **Call-Site Enumeration**: Standard search verified exactly 8 sites calling `WebsocketStreamerHost::new`. 
+  - **CLI binaries**: [alpaca_streamer.rs:L84](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-70a913c3/rust/src/bin/alpaca_streamer.rs#L84), [yahoo_streamer.rs:L65](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-70a913c3/rust/src/bin/yahoo_streamer.rs#L65).
+  - **FFI facades**: [alpaca_streamer.rs:L115](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-70a913c3/rust/src/markets/nasdaq/datafeeds/streaming/alpaca/alpaca_streamer.rs#L115), [finnhub_streamer.rs:L184](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-70a913c3/rust/src/markets/nasdaq/datafeeds/streaming/finnhub/finnhub_streamer.rs#L184), [yahoo_streamer.rs:L105](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-70a913c3/rust/src/markets/nasdaq/datafeeds/streaming/yahoo/yahoo_streamer.rs#L105).
+  - **Test helpers**: [host.rs:L278](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-70a913c3/rust/src/markets/nasdaq/datafeeds/streaming/core/host.rs#L278), [alpaca_streamer.rs:L308](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-70a913c3/rust/src/markets/nasdaq/datafeeds/streaming/alpaca/alpaca_streamer.rs#L308), [yahoo_streamer.rs:L252](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-70a913c3/rust/src/markets/nasdaq/datafeeds/streaming/yahoo/yahoo_streamer.rs#L252).
+- **Reconnect Semantics**: The `ReconnectPolicy` manages disconnections over the same physical transport/Websocket connection in memory. Reconnection does not reconstruct the native stream host or re-open the database file. Thus, Task 1 does not alter reconnect database error handling semantics.
+
+---
+
+### 3. Task 2 Seam Reality: Sync-vs-Async JS Error Catching
+- **FFI Signature & TS Facades**: The 3 `#[napi]` constructor signatures currently return standard infallible shapes (`Self`). Changing them to `napi::Result<Self>` maps to standard JS synchronous throw behavior inside `new`.
+- **Catch Point**: All three TS facades ([AlpacaStreaming.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-70a913c3/ts-markets/src/nasdaq/datafeeds/streaming/alpaca/AlpacaStreaming.ts), [YahooStreaming.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-70a913c3/ts-markets/src/nasdaq/datafeeds/streaming/yahoo/YahooStreaming.ts), [FinnhubStreaming.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-70a913c3/ts-markets/src/nasdaq/datafeeds/streaming/finnhub/FinnhubStreaming.ts)) construct the napi object directly inside their class `constructor()` (e.g., `this.rust = new RustAlpaca(...)`). This means FFI database open failures will bubble up immediately as a **synchronous** JS error in the TS constructor. JS callers must wrap class instantiation in a synchronous try/catch block (`new AlpacaStreaming()`) rather than catch it asynchronously in `.start()`.
+- **Mock Safety**: Existing mocks in `*Streaming.test.ts` (using `vi.mock("@ckir/corelib")`) do not instantiate real FFI binaries and are completely unaffected.
+
+---
+
+### 4. Task 5 Clamping & Jitter Semantics
+- **Ky Limit Behavior**: Setting `limit: 0` in `ky` is semantically correct for disabling retries entirely (0 retries). Thus, `min=0` is the correct clamping floor.
+- **Ky Delay Replacement**: Overriding ky's `delay` option completely replaces ky's internal exponential backoff algorithm. While ky's internal `backoffLimit` is bypassed, our custom formula `Math.min(backoffLimit, ...)` handles clamping manually and preserves backoff limit logic perfectly.
+- **Full Jitter Alignment**: The custom base formula `300 * 2 ** (attempt - 1)` is perfectly aligned with `ky`'s own default exponential backoff base, meaning our Full Jitter implementation randomizes attempts uniformly beneath this boundary without introducing unwanted timing drifts.
+- **Hook Interactions**: There are no negative interactions with `shouldRetry` or `beforeRetry` hooks; `shouldRetry` decides *if* to call delay, and `beforeRetry` emits logging telemetry normally.
+
+---
+
+### 5. Task 6 Feasibility: TSFN GC and Background Threads
+- **TSFN Exposure**: `WebsocketStreamerHost` is a pure-Rust FFI-agnostic streamer and does not expose `ThreadsafeFunction` objects. Task 6 must construct its own TSFN + background thread inside the modular, standalone `#[napi]` diagnostic function `napi_trigger_diagnostic_flood`.
+- **Vitest Config**: Setting `execArgv` to `["--expose-gc"]` is fully supported in package-specific vitest integration configs (e.g., inside [ts-markets/vitest.integration.config.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-70a913c3/ts-markets/vitest.integration.config.ts)) and does not need to affect unrelated suites.
+- **Raw std::thread Gotcha**: Spawning native OS background threads (`std::thread::spawn`) to deliver events via a TSFN poses a risk: if the JS event loop closes or the streamer is dropped mid-stress-test, calling `.call()` on the TSFN can yield `Status::Closing` or `Status::InvalidArg`. The Rust flood hook must gracefully handle these statuses without unwrapping or panicking.
+
+---
+
+### 6. Pipeline & Missing Gate Coverage Gap
+- **Critical Coverage Gap**: Our analysis of [.github/workflows/pipeline.yml](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-70a913c3/.github/workflows/pipeline.yml) reveals that normal pushes and PRs **never compile standard Rust CLI binaries** (`rust/src/bin/{alpaca,yahoo}_streamer.rs`). The CLI binary builds are quarantined inside the tag-gated `build-rust` job.
+- **The Issue**: Changes in Task 1 altering `WebsocketStreamerHost::new` to return a `Result` could easily break the standalone CLI binaries' compilation, which would pass PR CI undetected and only crash later on production tag release runs.
+- **Required Fix**: We must modify the PR gate to include standard binary checks, e.g., running `cargo check --bins` alongside existing checks inside the normal test job.
+
+---
+
+### 7. Missing Requirements & Ordering Hazards
+- **TS Config Mappings**: The TS type definition `FinnhubConfig` inside [FinnhubStreaming.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-70a913c3/ts-markets/src/nasdaq/datafeeds/streaming/finnhub/FinnhubStreaming.ts) must be updated with an optional `baseUrl?: string` to match the Rust-side configurations, and `init()` must map `baseUrl` down to the FFI payload.
+- **GC Safety**: For local development runs where `--expose-gc` is omitted, the Task 6 integration test must feature a standard `if (!global.gc)` guard to gracefully skip or print warnings instead of throwing.
+- **Harness Teardown**: The cross-process redb validation probe (Task 3) must include a clean teardown loop that deletes temporary databases on completion.
+
+---
+
+### 8. Bounded Generative Angle
+- **No Change**: The settled design forks are robust and elegant. Surrendering synchronous throw behavior for lazy async construction on `init`/`start` is unnecessary and adds complexity.
+
+---
+
+### 2. Headlines & Review Verdict
+
+- **Task 1: Code Correctness**: `Database::create` and `redb::DatabaseError` cover all lock variants; typecheck is solid. (FINE)
+- **Task 1: Call-Site Scope**: Exactly 8 call sites validated; CLI binaries separate; reconnect semantics unaffected. (FINE)
+- **Task 2: Seam Catching**: JS throws synchronously in TS constructors; catch blocks must wrap `new` instantiation. (FINE)
+- **Task 5: Clamp/Jitter**: `min=0` correct; custom `delay` overrides internal backoff perfectly; base formula matches ky's default base. (FINE)
+- **Task 6: TSFN Threading**: Standalone `#[napi]` fn correct; Vitest exposes GC per-package; raw threads must handle `Status::Closing` gracefully. (FINE)
+- **CI Gate Gap**: Normal pushes do not build/verify CLI binaries—introducing unsafe cargo drifts. (GAP - RESOLVED WITH FIX)
+- **Type Syncing**: TS `FinnhubConfig` is missing `baseUrl` property mapping. (GAP - RESOLVED WITH FIX)
+- **Generative Design**: No change to settled design forks. (FINE)
+
+#### OVERALL VERDICT: **SPEC-READY-WITH-FIXES**
+- **Fix 1:** Add `cargo check --bins` or `pnpm --filter corelib-rust build:bins` to normal PR CI jobs to prevent compilation drift on CLI binary files.
+- **Fix 2:** Update TS `FinnhubConfig` interface with `baseUrl?: string` and map it inside `FinnhubStreaming.ts::init`.
+- **Fix 3:** Add graceful fallback guard checking `if (!global.gc)` inside Task 6's stress tests to prevent crashing local developers executing tests without `--expose-gc`.
