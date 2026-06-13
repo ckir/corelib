@@ -1,0 +1,42 @@
+name: integration-live
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  live:
+    name: Integration Live (ubuntu)
+    runs-on: ubuntu-latest
+    env:
+      INTEGRATION_LIVE: "1"
+      APCA_API_KEY_ID: ${{ secrets.APCA_API_KEY_ID }}
+      APCA_API_SECRET_KEY: ${{ secrets.APCA_API_SECRET_KEY }}
+      FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 11.5.2
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: 'pnpm'
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build Rust FFI
+        shell: bash
+        run: |
+          cd rust
+          pnpm exec napi build --release
+          cp corelib-rust.node ../ts-core/corelib-rust.node
+
+      - name: Build TypeScript Packages
+        run: pnpm build-all
+
+      - name: Integration tests (live)
+        run: pnpm test:integration:live
