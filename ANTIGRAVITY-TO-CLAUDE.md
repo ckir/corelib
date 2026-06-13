@@ -2885,3 +2885,100 @@ We must address our most critical FFI blind spot before claiming victory on Rust
   - Create a vitest integration scenario running `global.gc()` in a tight loop during callback flood, validating `DELIVERED > 0` and zero deadlocks.
 
 
+## agy divergent — Epic 2 design forks (2026-06-14)
+
+### Fork A — redb-open failure behavior (Task 1)
+
+**User Lean**: (A1) Surface catchable error up the NAPI seam and let the caller decide.
+
+#### 1. Alternatives Not Listed
+*   **Alternative A4: Ephemeral Degradation (No-op Persistence)**: If database opening fails due to locks, the host could fall back to a "persistence-disabled" mode (streaming live events in memory with warnings), maintaining transport availability at the cost of durability.
+*   **Alternative A5: Pre-Lock Handle Probe**: Run a lightweight write-permission probe on the database directory before invoking redb initialization, catching permission-denied cases prior to file creation attempt.
+
+#### 2. Recommendation & Detailed Reasoning
+*   **Recommendation**: **A1 (Surface catchable error up the NAPI seam)**.
+*   **Reasoning**: Auto-recovery fallback (A2) to randomized paths silently defeats the developer's purpose when using `ALPACA_DB`/`FINNHUB_DB` shared volume bindings, potentially leading to untracked filesystem accumulation and silent data drift. Bounded retry-with-backoff (A3) creates blocking startup stalls if another process permanently retains the file lock. Raising a catchable JS exception on constructor invocation gives complete policy control to the JS-layer: consumers can decide to wait, abort, or dynamically generate alternative paths before executing subsequent streaming connections.
+*   **Lock Semantics**: redb uses standard OS file locks (`fs2` locker). On Windows, file locking is mandatory and strictly exclusive; a concurrent open attempt fails instantly with OS resource errors. On Linux, it is advisory, meaning redb processes will consistently observe and block each other, but non-redb external processes might conflict if they don't consult advisory flocks.
+
+---
+
+### Fork B — `WebsocketStreamerHost::new` signature + seam (Task 1/2)
+
+**User Options**: (B1) change `new` → `Result<Self, napi::Error>`; (B2) keep `new` infallible + add `try_new`; (B3) return `Result<Self, String>` internally, convert only at `#[napi]` boundary.
+
+#### 1. Alternatives Not Listed
+*   **Alternative B4: Domain-Specific HostError Enum**: Define `pub enum HostError { DbOpen(redb::DatabaseError), ... }` in the core module and implement `From<HostError> for napi::Error` to keep FFI exception translation elegant and strongly typed without leaking NAPI into pure-Rust files.
+
+#### 2. Recommendation & Detailed Reasoning
+*   **Recommendation**: **B3 (Return Result internally, convert to `napi::Error` at the `#[napi]` boundary)**.
+*   **Reasoning**: This is a critical compilation compilation constraint. Standalone Rust CLI binaries (`alpaca_streamer`, `yahoo_streamer` inside `rust/src/bin/`) depend directly on `WebsocketStreamerHost` and are built *without* the `napi` cargo feature. Returning `napi::Error` directly in `WebsocketStreamerHost::new` (B1) or leaking NAPI types into the core crate would break standalone CLI compilation. By returning `Result<Self, redb::DatabaseError>` (or a custom enum), the core Host remains pure, FFI-agnostic Rust. The NAPI constructors for `AlpacaStreaming`, `YahooStreaming`, and `FinnhubStreaming` can easily use `.map_err(|e| napi::Error::from_reason(...))` to bridge the standard Error wrapper and throw standard JS exceptions synchronously.
+*   **TS-Side Capture**: The capture should remain fully independent of the Epic 1 `ConfigManager` readiness/init state to maintain decoupled runtime boundaries; however, the consumer services should await `ConfigManager.getInstance().whenReady()` before beginning FFI construction.
+
+---
+
+### Fork C — http-retry clamp + jitter (Task 5)
+
+**User Options**: (C1) Clamp limit, timeout, backoffLimit. (C2) Jitter strategy. (C3) Location of clamp.
+
+#### 1. Alternatives Not Listed
+*   **Alternative C4: Config Schema-Level Sanitization**: Enforce strict range constraints directly inside `ConfigManager`'s recursive validation schemas, rejecting malformed limits before values ever propagate to the execution subsystems.
+
+#### 2. Recommendation & Detailed Reasoning
+*   **Recommendation**: **(C1) Clamp via Named Constants**, **(C2) Full Jitter**, and **(C3) Localized inside `RequestUnlimited.ts`**.
+*   **Reasoning**:
+    *   **Clamping**: Use explicit named constants (`MAX_RETRY_LIMIT = 10`, `MAX_TIMEOUT = 120000`, `MAX_BACKOFF_LIMIT = 60000`) instead of magic numbers. This handles out-of-bounds or poisoned inputs safely and prevents thread exhaustion.
+    *   **Jitter Strategy**: Adopt **Full Jitter** using a custom `retry.delay` function on the ky options array: `delay: (attempt) => Math.random() * Math.min(cfgBackoffLimit, 300 * Math.pow(2, attempt - 1))`. Full Jitter spreads retry attempts uniformly across the exponential spectrum. This mathematically guarantees the absolute minimum thundering herd contention on downstream brokers, dramatically outperforming Equal Jitter or Decorrelated Jitter.
+    *   **Location**: Clamp directly inside `RequestUnlimited.ts` on config-read. This ensures high local reasoning, maximizes self-containment, and completely avoids importing external validation schemas into sandboxed Cloudflare Worker edge runtimes.
+
+---
+
+### Fork D — Task 6 diagnostic hook gating
+
+**User Options**: (D1) cargo `#[cfg(feature="diagnostics")]`; (D2) always-compiled but env var no-op; (D3) other.
+
+#### 1. Alternatives Not Listed
+*   **Alternative D4: Secret-Token Verification Gate**: Require passing a secure, runtime-derived token payload to the native method to trigger execution, avoiding physical environment dependencies entirely.
+
+#### 2. Recommendation & Detailed Reasoning
+*   **Recommendation**: **D2 (Always-compiled but hard no-op unless `CORELIB_DIAG_FLOOD=1` env var is set)**.
+*   **Reasoning**: Conditional compilation of native FFI bindings via Cargo features (D1) alters the generated `index.d.ts` typescript definition output depending on the build environment. Compiling without the diagnostics feature completely drops the signature for `napi_trigger_diagnostic_flood` from `index.d.ts`, causing typescript typecheck steps in production CI pipelines to fail on tests referencing it. Placing a simple Rust-side env guard `if std::env::var("CORELIB_DIAG_FLOOD").unwrap_or_default() != "1" { return; }` yields a clean, zero-overhead production no-op while keeping the TS compilation interface fully static and robust.
+
+---
+
+### Fork E — cross-process redb probe (Task 3) & finnhub base_url (Task 4)
+
+**User Questions**: (E1) Is Task 3 purely validation or drive distinct production behavior? (E2) Any finnhub url overrides nuance?
+
+#### 1. Alternatives Not Listed
+*   **Alternative E3: Ephemeral Path Auto-Recovery on Locked Error**: On a locked error, rather than crashing, the JS-layer auto-switches to an ephemeral random path and fires a warning notification, maintaining streaming continuity.
+
+#### 2. Recommendation & Detailed Reasoning
+*   **Recommendation**:
+    *   **E1**: Purely a **validation probe** for Task 1's catchable napi errors, rather than custom production-grade Rust locking schemes. Let the JS-caller decide recovery paths.
+    *   **E2**: Formally expose `base_url?: string` inside `FinnhubConfig` and have `FinnhubDriver` format the websocket url cleanly, mirroring Alpaca/Yahoo stream configs and supporting simple loopback mocking.
+
+---
+
+### Fork F — intra-epic task sequencing & missing angles
+
+#### 1. Sequencing
+1.  **Task 4 (Finnhub base_url)** & **Task 5 (http-retry clamp + jitter)**: High isolation, simple, and immediately unblocks local testing loops and mock server bindings.
+2.  **Task 1 (redb ? -propagation)** & **Task 2 (TS FFI wrapper catch)**: Establishes structural exception handling across the Rust-to-JS boundary.
+3.  **Task 3 (Cross-process probe)**: Directly validates Task 1 & 2 fixes under multi-process races.
+4.  **Task 6 (TSFN GC-reentrancy validation)**: Test-only native flood helper and GC-churn test suite.
+
+#### 2. Missing Angles
+*   **Node GC Test Execution Flags**: For Task 6 to execute `global.gc()` without crashing, the Vitest configuration running the FFI integration tests must be explicitly configured with `execArgv: ["--expose-gc"]`. Without this, `global.gc` is undefined and will throw in CI.
+
+---
+
+### agy headlines
+*   **A: A1 is recommended because silent auto-recovery to random paths defeats configuration intent; let the JS caller decide.**
+*   **B: B3 is mandatory because B1 breaks Cargo CLI compilation; keep host-side error pure Rust and map to napi::Error only at the FFI boundary.**
+*   **C: Full Jitter inside RequestUnlimited.ts is recommended for peak thundering-herd resilience and zero-dependency edge compatibility.**
+*   **D: D2 is superior because napi-rs conditional compilation (D1) breaks static TS typescript definitions; gate with an explicit guard env var instead.**
+*   **E: E1 is a pure validation probe (no custom Rust lock layers); E2 is a standard Option<String> mirroring Alpaca/Yahoo overrides.**
+*   **F: Sequence Tasks 4/5 first to unblock loopbacks, and ensure `--expose-gc` is explicitly set in host test runners for Task 6.**
+
+
+
