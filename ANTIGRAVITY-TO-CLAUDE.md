@@ -1632,3 +1632,70 @@ Instead, build a simple **reference example script** inside `ts-markets/examples
 ### 4. Overall Recommendation & Action Plan
 
 **We recommend shifting Phase 3 away from any standalone background Rust binary server and redefining it as a "Unified In-Process Client Engine" (MarketStream) implemented completely in TypeScript within `@ckir/corelib-markets`. This class will encapsulate Alpaca, Yahoo, and Finnhub stream instances under the hood, presenting a single clean interface that supports automatic Symbol-to-Provider routing, unified connection state-machine tracking, normalized error propagation, and basic provider-redundancy fallback, fully respecting corelib's nature as an in-process library dependency. The standalone Rust WS server binary represents a premature, complex infrastructure burden and should be DROPPED entirely from the roadmap, with reference server functionality relegated to a simple, developer-friendly TypeScript example.**
+
+---
+
+## 2026-06-13 — (d) Phase 3 — finstream-on-corelib consolidation (advisory)
+
+### 1. Hard Cost/Benefit Tradeoff: Is Consolidation Worth It?
+*   **Verdict**: **Yes, but only under strategic long-term alignment.**
+*   **The Simpler Alternative (Unified TS `MarketStream` in `@ckir/corelib-markets`)**:
+    *   *Pros*: Extremely fast to market (shippable in days). Separation of runtime sandboxes. Node.js users get a seamless unified API wrapper with zero cross-repo build complications.
+    *   *Cons*: Creates an immediate maintenance bifurcated state—two independent engines implementing WebSocket connections, schemas, retry logic, and logging signatures in Rust. Upstream provider API changes, schema evolutions, or reconnection bugs must be duplicate-tested and manually back-ported across both repos.
+*   **The Consolidation (Finstream on Corelib)**:
+    *   *Pros*: Eliminates engine-level code rot. Guarantees that robustness updates (rate-limiting, dynamic symbol updates, thread coordination) directly empower both TypeScript library consumers and Standalone App Gateway deployment models.
+    *   *Cons*: Significant cross-repo refactoring cost, shifting binary configurations and decoupling Node/N-API dependencies from pure Rust loops.
+*   **Definitive Opinion**:
+    Consolidation is justified **only if finstream is treated as a core product target** (e.g., if it will be scaled as a multi-region deployment, or serve non-JS clients over a microservice mesh). If finstream is merely a "live test showcase", drop the consolidation and proceed with the TS fan-in. If finstream is a production API gateway, consolidation is critical to prevent code divergence.
+
+### 2. Core Engine Survival & Sharing: Selection & NAPI Hazard
+*   **The Survivor**: **Corelib's engine must survive.** Corelib features dual-mode endpoints, the full `MarketEvent` superset, generic custom thread panics containment, and a mature transactional persistence model using `redb` (offering in-stride crash-resume logic) that `finstream` does not have.
+*   **Options Analysis**:
+    *   **(i) Extract corelib's engine into a library crate `corelib-streaming`** (RECOMMENDED): Both `corelib-rust` (FFI node-addon builder) and `finstream` depend on it directly via standard cargo dependency blocks. Deletes `finstream-core`.
+    *   **(ii) Finstream depends on `corelib-rust` as an rlib** (REJECTED): `corelib-rust` compiles to a node-native library dynamic target (`cdylib`). Linking it into a pure-Rust application binary introduces compilation bloat, forces dependency resolution of Node/N-API symbols under system linker configurations, and pollutes standard Rust threads with platform hooks (uncompilable on bare-metal containers).
+    *   **(iii) Cargo re-export / shim over corelib** (REJECTED): Adds redundant dependency layers with no safety or maintainability advantages.
+*   **The NAPI-Coupling Hazard**:
+    The corelib's engine is currently entangled under `napi-derive` macros, exposing explicit `#[napi]` wrapper bindings and Node threadsafe callbacks like `ThreadsafeFunction` inside streamer structs. Running these inside a standalone Rust binary crashes the build due to unresolved external symbols.
+    *   *Decoupling Blueprint*: Lift all core drivers (`ProviderDriver` trait, reconnect schedules, internal data mpsc loops) into `corelib-streaming` with purely normal Rust. Let `corelib-rust` serve as an adapter that registers N-API closures and passes incoming telemetry across the boundary.
+
+### 3. Repository Topology: Workspace & Dependency Management
+We evaluate the integration architectures below:
+*   **Option (a) Git/Path Cargo Dependency** (REJECTED): Links repositories with branch pointers. It creates extreme friction under active development, causes CI version locks, prevents local multi-package atomic edits, and slows down local dev loops.
+*   **Option (b) Monorepo Integration** (RECOMMENDED): Relocate the `finstream` bin and configurations directly into the `corelib` cargo monorepo.
+*   **Option (c) Publish to Crates.io** (REJECTED): Adds massive release pipeline overhead for internal, closely-coupled packages.
+*   *Why Monorepo Integration Wins*:
+    By moving `finstream`'s gateway bin into `corelib`, a single git commit can safely modify the internal schema in `corelib-streaming`, adapt the Node facade in `corelib-rust`, update TypeScript types, and adapt the Axum gateway routing in `finstream` - guaranteeing that the entire system compiles together.
+
+### 4. Feature-Parity Gaps & Multi-Account Complexity
+To host the gateway app securely, corelib's engine must close three gaps:
+1.  **Multi-Account-per-Provider (Engine-Level)**:
+    *   *The Gap*: Corelib represents credentials/connections as a singleton per streamer type.
+    *   *The Refactor*: Modify constructors to take credential pairs and link states within the internal supervisor loop. Since `WebsocketStreamerHost` already dynamically resolves symbols by a generic `source` identifier, we can deploy multiple concurrent instances of the same provider driver and direct state outputs to unique, isolated files named `source.redb`. This is highly modular and takes approximately 2 days of engine refactoring.
+2.  **Flight-Recorder Logging (App-Level)**:
+    *   *The Gap*: Log rotation logic.
+    *   *The Solution*: Retain this purely in the gateway's `main.rs` using `tracing-appender` file-rotation plugins. The core engine simply emits standard programmatic `tracing` event frames.
+3.  **Live-Test Orchestration (App-Level)**:
+    *   *The Gap*: Real-time benchmark assertions.
+    *   *The Solution*: Retain in the app binary (`live_test.rs`), leaving the engine clean.
+
+### 5. Robust Gateway REST API Definition (finstream Axum)
+On top of the existing live WebSocket gateway, the Axum API should expose:
+*   **`GET /health`** (v1 / Critical): Returns structural JSON showing connection statuses and average latency indicators of all registered provider instances.
+*   **`GET /snapshot/:symbol`** (v1 / Critical): Returns the last cached trade/quote snapshot from `redb` state storage to support zero-latency REST polling dashboards.
+*   **`POST /config/reload`** (v2 / Future): Triggers runtime TOML re-parsing to update symbols without socket reconnections.
+
+### 6. Phase Sequencing & First Step
+We sequence the consolidation into 4 independently-shippable modules:
+```mermaid
+graph TD
+    PhaseA["Phase A: Extraction<br>Move core files to NAPI-free corelib-streaming crate"] --> PhaseB["Phase B: Multi-Account<br>Update WebsocketStreamerHost and redb files by source keys"]
+    PhaseB --> PhaseC["Phase C: App Merge<br>Move finstream app to corelib, point to corelib-streaming crate"]
+    PhaseC --> PhaseD["Phase D: REST Services<br>Implement GET /health and GET /snapshot APIs in Axum"]
+```
+*   **The First Concrete Step**: Create a new directories crate `/rust/corelib-streaming` under the corelib monorepo, migrate the files located in `rust/src/markets/nasdaq/datafeeds/streaming/core` and the provider drivers into it, stripping out all `#[napi]` macro wrappers, and verify that clean `cargo build --lib` succeeds in isolation.
+
+---
+
+### Final Recommendation
+
+**We strongly recommend executing the engine consolidation via Monorepo Integration paired with an Engine Boundary Split. Corelib's streamer engine is highly robust and must survive as a shared, 100% NAPI-free cargo library (`corelib-streaming`), serving as a common base for a thin N-API wrapper (`corelib-rust`) and the standalone microservice gateway (`finstream/bin`). Maintaining two parallel engines is a toxic technical debt vector that invites telemetry schema drifts, connection de-synchronization, and double-maintenance costs. Integrating these projects inside the same pnpm/cargo monorepo workspace allows for atomic cross-layer commits and compile-time correctness guarantees. The first phase must launch immediately with a non-breaking extraction of the NAPI-free core streaming library, paving a decoupled roadway for multi-account scaling and unified streaming.**
