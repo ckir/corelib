@@ -11,29 +11,10 @@ import { ConfigManager } from "./ConfigManager";
 // set of keys to avoid cross-test collisions.
 
 describe("ConfigManager hand-rolled argv parser", () => {
-	// 1. -C / --config / --config= are consumed as the external-config path and
-	//    are NOT stored as config overrides.
-	//
-	//    Strategy: pass --config=<value> alongside a unique override key; confirm
-	//    the override is applied but "config" itself is NOT set as a config key.
-	//    We don't fetch a real file — initialize will throw on fetch, so we only
-	//    test the override-stream exclusion by passing the --config= form with a
-	//    unique companion key and verifying "config" is never stored.
-	//
-	//    To avoid the fetch-throws-before-overrides-apply problem we test the
-	//    "config key is excluded from overrides" property by driving initialize()
-	//    with only the config flag (no companion, no file that exists) and
-	//    asserting "config" is never stored in the config tree even if the fetch
-	//    succeeds with defaults.
-	//
-	//    Simpler: pass ONLY --config= without a path that actually exists, catch
-	//    any error, then assert "config" key is still not in the config store.
-	//    The exclusion guard is in applyCliOverrides which skips "config" keys —
-	//    we can prove this by calling initialize with a mock: pass [] to bypass
-	//    config-path, and then separately call applyCliOverrides indirectly.
-	//
-	//    Cleanest oracle-aligned approach: confirm that after initialize(['--config=x']),
-	//    the key "config" is not set, regardless of fetch outcome.
+	// -C / --config / --config= are consumed as the external-config path and must
+	// never be stored as a config override. builtinDefaults has no top-level
+	// "config" key, so asserting get("config") === undefined after a config flag
+	// proves the override path excluded it (fetch outcome is irrelevant here).
 	it("--config= form is consumed as external-config path, not as an override key", async () => {
 		const cm = ConfigManager.getInstance();
 		// Attempt initialize; the fetch will likely fail (no real file), but
@@ -156,5 +137,13 @@ describe("ConfigManager hand-rolled argv parser", () => {
 		} finally {
 			process.argv = originalArgv;
 		}
+	});
+
+	// 8. Hardening: a lone "--" or "--=value" must not create an empty "" config
+	//    key, and a lone "--" must not consume the following token as its value.
+	it("lone '--' and '--=value' are ignored (no empty-string config key)", async () => {
+		const cm = ConfigManager.getInstance();
+		await cm.initialize(["--", "loneflag-operand", "--=ignored"]);
+		expect(cm.get("")).toBeUndefined();
 	});
 });

@@ -195,6 +195,9 @@ export class ConfigManager extends EventEmitter {
 			if (!tok.startsWith("--")) continue; // ignore bare operands
 
 			let key = tok.slice(2);
+			// Skip a lone "--" (empty key) or "--=value" (key before "=" is empty)
+			// so they neither create a "" config key nor consume the next token.
+			if (key === "" || key.startsWith("=")) continue;
 			let value: string | boolean;
 			const eq = key.indexOf("=");
 			if (eq > -1) {
