@@ -4,7 +4,13 @@ version = "0.0.0"
 edition = "2021"
 publish = false
 
-[dependencies]
+# NON-loom deps. corelib-rust transitively pulls reqwest/hyper/tokio-tungstenite,
+# all of which need `tokio::net` — which tokio gates OUT under `#![cfg(not(loom))]`.
+# `--cfg loom` is a GLOBAL rustflag, so linking corelib-rust under loom fails to
+# compile the whole graph. The loom probe does not use corelib-rust, so we gate the
+# path-dep (and tokio) to non-loom builds. This touches ONLY the probe crate; it does
+# NOT instrument or modify corelib-rust (audit spec §9.1: no production changes).
+[target.'cfg(not(loom))'.dependencies]
 corelib-rust = { path = "../../rust" }
 tokio = { version = "1.52.3", features = ["full"] }
 
@@ -13,3 +19,14 @@ loom = "0.7"
 
 [features]
 loom = []
+
+# `loom` is a custom cfg set via `RUSTFLAGS=--cfg loom` (not a Cargo feature in the
+# usual sense), so teach rustc's `unexpected_cfgs` lint it is expected.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
+
+# The probe header documents the modeled invariants with indented sub-bullets;
+# clippy's doc_lazy_continuation flags the indentation as "overindented". The layout
+# is intentional for readability of the audit notes.
+[lints.clippy]
+doc_overindented_list_items = "allow"

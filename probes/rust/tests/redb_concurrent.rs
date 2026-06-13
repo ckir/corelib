@@ -1,3 +1,6 @@
+// Gated to non-loom builds — it links `corelib-rust`, whose tokio-net deps cannot
+// compile under the global `--cfg loom` flag (see Cargo.toml).
+#![cfg(not(loom))]
 //! B3 Z-Engine concurrent-redb stress probe (pure-Rust vehicle).
 //!
 //! VEHICLE CHOICE: pure Rust against the `corelib-rust` rlib. The redb open /
