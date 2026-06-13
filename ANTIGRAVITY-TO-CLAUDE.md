@@ -2824,4 +2824,64 @@ To ensure byte-identical values and coercion, the hand-rolled execution sequence
 ### 4. 4th Option: Preprocessing Argv Rewrite
 We explored a 4th option: **Rewriting raw argv before parsing**. This preprocessor searches the raw `argv` array, locates space-separated options (e.g. `--key`, `value`), and merges them into a single inline assignment `"--key=value"` before transmitting them to standard parsers. While functional, the preprocessing loop itself is a hand-rolled parser with its own complex lookahead scanner. Directly implementing the clean ~25-line extraction loop of Rank 1 remains the most elegant, robust, and zero-drift technique.
 
+---
+
+## agy advisory — next-cycle priority (2026-06-14)
+
+### RECOMMENDATION
+**Execute Epic 2 (Rust-Native & FFI Boundary Safety) next to eliminate critical "poisoned-input/untrusted-environment → process-abort/DoS" vectors, resolving core availability risks before sweeping instrumentation.**
+
+---
+
+### 1. Track Priority: Sustain Momentum in Track B over Track A
+We strongly recommend sustaining Track B momentum via **Epic 2 (Rust-Native & FFI Boundary Safety)** over an immediate pivot to Track A's **(a) trace/flight-recording retro-instrumentation**. 
+- **Peak Developer Context**: The completion of Epic 1 establishes deep, fresh context regarding the configuration, bootstrap, and process boundary layers. Capitalizing on this directly to solve the remaining boundary-hardening defects is highly efficient.
+- **Do Not Instrument Sand**: Staging sweeping retro-instrumentation over legacy paths that contain known, unaddressed medium-severity crashes (like the redb database path clash or unvalidated input constraints) introduces immediate throwaway work. We must stabilize the runtime architecture and guarantee basic process structural safety before laying down heavy tracing.
+
+---
+
+### 2. Epic 2 Scope and Coherent Clustering
+We recommend clustering the following Medium and Low findings into a unified **"Input & Environmental Safety Hardening"** Epic:
+- `redb-double-open-process-abort` ([engine-redb-open-expect-abort-01](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-e3ea4ebf/docs/superpowers/audits/2026-06-13-monorepo-audit-findings.md#L97-L116) · Medium)
+- `http-retry-config-hazards` ([boot-RequestUnlimited-retry-limit-unbounded-03](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-e3ea4ebf/docs/superpowers/audits/2026-06-13-monorepo-audit-findings.md#L118-L144) / `boot-RequestUnlimited-backoff-no-jitter-04` · Medium/Low)
+- `finnhub-no-endpoint-override` ([engine-finnhub-no-endpoint-override-01](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-e3ea4ebf/docs/superpowers/audits/2026-06-13-monorepo-audit-findings.md#L357-L377) · Low)
+- **TSFN Inbound-Delivery GC Race** (Top Residual · FFI)
+
+#### Rationale for the Cluster:
+- **Common Failure Class**: These findings belong to the identical family of vulnerabilities as Epic 1: **unvalidated input or environmental conflicts turning into fatal, uncatchable process-level exceptions or denial-of-service loops (thundering herd/infinite retries).**
+- **The FFI Seam is a Unified Front**: Although `redb-double-open` is a Rust native issue and `http-retry` is a TypeScript Ky clamp, separating them on developer boundaries is an anti-pattern. To deliver an actual availability guarantee to consumers, the host process must be resilient across the entire FFI seam. By propagating napi-rs errors cleanly and verifying input ranges, we eliminate the entire class of native aborts and thundering herd loops in one cycle.
+- **Error Serialization is not Epic 2**: The `error-serialization-log-gaps` cluster is a straightforward, mechanical logging enrichment. It represents zero architectural risk. It should be deferred and executed concurrently with **(a) Trace/flight-recording retro-instrumentation**, as both are pure logging/observability enhancements.
+
+---
+
+### 3. Dependencies and Sequencing Risks
+- **Instrumentation (a) Blocked**: (a) must wait for Epic 2. Polishing and instrumenting the client pump and HTTP retrieves before resolving backoff-jitter and unhandled FFI panics means our logs will record buggy, unstable behaviors that we are immediately about to refactor.
+- **Edge-Compat imports (Epic 3) and CF Worker Bundling**: The `ts-core-node-imports-edge-compat` (Low) must be solved in conjunction with `worker-bundle-size-and-platform` (Medium). To change wrangler's tsup target platform to `"browser"`, `ts-core` must first cleanly encapsulate and dynamically load Node-native dependencies (like `node:module` and `node:crypto`). They are hard-coupled.
+
+---
+
+### 4. Divergent Angle: Carry-Forward Residuals as Success Criteria
+We must address our most critical FFI blind spot before claiming victory on Rust-native robustness:
+- **The GC-Reentrancy TSFN Race**: In current testing, the reconnect/GC-churn probes are green but recorded `DELIVERED = 0` callbacks. This means we have *never actually tested callback execution under active GC stress*, leaving a massive, suspected V8 native thread deadlock vector completely unvalidated.
+- **Agy Divergent Requirement**: We must implement a test-only `#[napi]` helper (`napi_trigger_diagnostic_flood`) to bombard the JS event loop with synthetic, high-volume pricing events on a native background thread while V8 aggressively runs garbage collection `global.gc()`. This isolates and proves that FFI-to-JS callback delivery is thread-safe and deadlock-free under extreme memory and reconnect stress.
+
+---
+
+### 5. Concrete Epic 2 Proposed Scope
+- **Task 1: Rust `?`-Propagation (`redb-double-open`)**
+  - Refactor `WebsocketStreamerHost::new` to return a `Result<Self, String>` (or `napi::Error`), propagating the database lock failure up the N-API FFI seam.
+  - Rust-side fallback: cleanly handle `DatabaseAlreadyOpen` rather than executing `.expect()`.
+- **Task 2: TS-Side FFI Exception Capture**
+  - Update `AlpacaDriver`/`YahooDriver`/`FinnhubDriver` startup sequences to catch FFI-propagated database open errors and bubble them as standard, catchable JS errors (leveraging the new Epic 1 `ready` / initialization state).
+- **Task 3: Cross-Process Locked redb File Probing**
+  - Create a probe simulating a rapid hot-reload/cold-start process race on Windows and Linux where process B opens an active redb folder while process A is performing teardown. Verify graceful fallback instead of process crash.
+- **Task 4: Dynamic Endpoint Overrides (`finnhub-no-endpoint-override`)**
+  - Extend `FinnhubConfig` to support `base_url?: string` matching Alpaca/Yahoo, removing hardcoded global websocket endpoints, and paving the way for offline loopback testing on the shared engine.
+- **Task 5: Secure Retrier Clamping (`http-retry`)**
+  - Intercept configuration parameters inside `RequestUnlimited.ts`. Clamp `retrieve.retry.limit` to a maximum ceiling (e.g., 10) and enforce runtime type safety.
+  - Implement randomization (Full Jitter) on the exponential backoff delay calculation passed to `ky` to mitigate production thundering herds.
+- **Task 6: TSFN GC-Reentrancy Stress Validation**
+  - Implement a dedicated native thread mock-event flood test utility directly exposed via napi.
+  - Create a vitest integration scenario running `global.gc()` in a tight loop during callback flood, validating `DELIVERED > 0` and zero deadlocks.
+
 
