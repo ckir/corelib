@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":["AlpacaConfig","AlpacaPricingData","AlpacaStreaming","AlpacaStreamingCore","NapiCallbacks"],"trait":["AlpacaCallbacks"]};
+window.SIDEBAR_ITEMS = {"struct":["AlpacaConfig","AlpacaStreaming","AlpacaSubscribeOpts"]};

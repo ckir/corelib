@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"mod":["yahoo_streamer","yahoo_streaming_proto_handler"]};
+window.SIDEBAR_ITEMS = {"mod":["yahoo_driver","yahoo_streamer","yahoo_streaming_proto_handler"]};

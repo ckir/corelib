@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"mod":["alpaca_streamer"]};
+window.SIDEBAR_ITEMS = {"mod":["alpaca_driver","alpaca_streamer"]};

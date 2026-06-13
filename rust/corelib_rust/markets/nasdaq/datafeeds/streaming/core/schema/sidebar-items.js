@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["MarketEvent","ProviderKind","ProviderStatus","QuoteExtras","TradeExtras"],"fn":["quote_type_label"],"struct":["AlpacaQuoteExtras","AlpacaTradeExtras","FinnhubTradeExtras","Quote","Trade","YahooOptionExtras","YahooQuoteExtras","YahooTradeExtras"]};
