@@ -15,4 +15,9 @@ export const COVERAGE_MATRIX: SeamCell[] = [
   { seam: "live-streaming", id: "stream.alpaca", testFilePath: "ts-markets/tests/integration/AlpacaStreaming.live.integration.test.ts" },
   { seam: "live-streaming", id: "stream.finnhub", testFilePath: "ts-markets/tests/integration/FinnhubStreaming.live.integration.test.ts" },
   { seam: "live-streaming", id: "stream.yahoo", testFilePath: "ts-markets/tests/integration/YahooStreaming.live.integration.test.ts" },
+  // ts-core seams (Task 10)
+  { seam: "external", id: "itestCore.endpoint.success", fixturePath: "itest-core/endpoint-success.json" },
+  { seam: "external", id: "itestCore.endpoint.retry", fixturePath: "itest-core/endpoint-retry.json" },
+  { seam: "cross-package", id: "itestCore.db.roundtrip" },
+  { seam: "cross-package", id: "itestCore.config.init" },
 ];

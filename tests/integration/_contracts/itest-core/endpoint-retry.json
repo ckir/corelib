@@ -1,0 +1,5 @@
+[
+  { "request": { "method": "GET", "url": "https://itest.local/core/flaky", "headers": {} }, "response": { "status": 504, "headers": {}, "body": null }, "recordedAt": "2026-06-13T00:00:00.000Z" },
+  { "request": { "method": "GET", "url": "https://itest.local/core/flaky", "headers": {} }, "response": { "status": 504, "headers": {}, "body": null }, "recordedAt": "2026-06-13T00:00:00.000Z" },
+  { "request": { "method": "GET", "url": "https://itest.local/core/flaky", "headers": {} }, "response": { "status": 200, "headers": {}, "body": { "ok": true } }, "recordedAt": "2026-06-13T00:00:00.000Z" }
+]
