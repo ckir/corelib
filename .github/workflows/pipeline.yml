@@ -88,6 +88,9 @@ jobs:
           pnpm exec napi build --release
           cp corelib-rust.node ../ts-core/corelib-rust.node
 
+      - name: Compile check Rust bins + tests
+        run: cargo check --manifest-path rust/Cargo.toml --bins --tests
+
       - name: Build TypeScript Packages
         run: pnpm build-all
 
