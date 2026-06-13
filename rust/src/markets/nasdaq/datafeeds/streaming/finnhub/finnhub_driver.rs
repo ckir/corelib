@@ -85,6 +85,14 @@ mod tests {
         assert!(parse_finnhub_frame(r#"{"type":"ping"}"#, "s").is_empty());
         assert!(parse_finnhub_frame("not json", "s").is_empty());
     }
+    #[test]
+    fn finnhub_base_url_default_and_override() {
+        assert_eq!(finnhub_ws_url(None, "TOK"), "wss://ws.finnhub.io?token=TOK");
+        assert_eq!(
+            finnhub_ws_url(Some("ws://127.0.0.1:9001"), "TOK"),
+            "ws://127.0.0.1:9001?token=TOK"
+        );
+    }
 }
 
 use crate::markets::nasdaq::datafeeds::streaming::core::driver::{
@@ -100,9 +108,17 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 const FINNHUB_WS: &str = "wss://ws.finnhub.io";
 
+/// Build the Finnhub websocket connect URL. Uses `base_url` when provided, else the default endpoint.
+/// Scheme/query formatting is byte-identical to the legacy hardcoded form when `base_url` is None.
+fn finnhub_ws_url(base_url: Option<&str>, token: &str) -> String {
+    let base = base_url.unwrap_or(FINNHUB_WS);
+    format!("{base}?token={token}")
+}
+
 pub struct FinnhubDriver {
     pub token: String,
     pub name: String,
+    pub base_url: Option<String>,
 }
 
 impl ProviderDriver for FinnhubDriver {
@@ -122,7 +138,7 @@ impl ProviderDriver for FinnhubDriver {
         stop_rx: &'a mut mpsc::Receiver<()>,
     ) -> BoxFuture<'a, AttemptOutcome> {
         async move {
-            let url = format!("{FINNHUB_WS}?token={}", self.token);
+            let url = finnhub_ws_url(self.base_url.as_deref(), &self.token);
             let (mut ws, _) = match connect_async(&url).await {
                 Ok(v) => v,
                 Err(_) => return AttemptOutcome::NeverConnected,

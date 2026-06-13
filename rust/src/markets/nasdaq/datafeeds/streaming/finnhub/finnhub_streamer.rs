@@ -133,6 +133,7 @@ use tokio::sync::Mutex;
 pub struct FinnhubConfig {
     pub token: Option<String>,
     pub name: Option<String>,
+    pub base_url: Option<String>,
 }
 
 impl std::fmt::Debug for FinnhubConfig {
@@ -140,6 +141,7 @@ impl std::fmt::Debug for FinnhubConfig {
         f.debug_struct("FinnhubConfig")
             .field("name", &self.name)
             .field("token", &self.token.as_ref().map(|_| "<redacted>"))
+            .field("base_url", &self.base_url)
             .finish()
     }
 }
@@ -149,6 +151,7 @@ struct FinnhubInner {
     host: WebsocketStreamerHost,
     token: String,
     name: String,
+    base_url: Option<String>,
     started: bool,
 }
 
@@ -191,6 +194,7 @@ impl FinnhubStreaming {
             host,
             token: String::new(),
             name: "finnhub".to_string(),
+            base_url: None,
             started: false,
         };
         Self {
@@ -213,6 +217,7 @@ impl FinnhubStreaming {
         if let Some(n) = config.name {
             g.name = n;
         }
+        g.base_url = config.base_url;
         Ok(())
     }
 
@@ -234,6 +239,7 @@ impl FinnhubStreaming {
         let driver = FinnhubDriver {
             token: g.token.clone(),
             name: g.name.clone(),
+            base_url: g.base_url.clone(),
         };
         let symbols = g.host.get_persisted_subscriptions(); // resume-on-restart (redb)
                                                             // Arc-clone the TSFNs so the pump closure can hold them (TSFN is Send+Sync, not Clone).

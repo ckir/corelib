@@ -16,6 +16,7 @@ export interface FinnhubPricingData {
 export interface FinnhubConfig {
 	token?: string;
 	name?: string;
+	baseUrl?: string;
 }
 
 /**
@@ -52,6 +53,7 @@ export class FinnhubStreaming extends EventEmitter {
 		await this.rust.init({
 			token: config.token ?? undefined,
 			name: config.name ?? undefined,
+			base_url: config.baseUrl ?? undefined,
 		});
 		this.initialized = true;
 	}
