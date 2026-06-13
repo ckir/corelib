@@ -2732,3 +2732,30 @@ In reviewing the 7-finding set integrated into Epic 1, we must address a high-co
 ### 5. Final Verdict and Correctness Guardrails
 Our divergent design review fully validates Epic 1's goal: consolidating the boot-hardening vectors into a unified, bulletproof module. By pairing **Defaults Seed-At-Constructor** (Option A) with **Zero-Dependency hand-parsing** (Option B) and **Staged-Assignment Atomic In-Place deep writes**, we eliminate all races, exit codes, and reference-loss defects in a single structural fix cycle.
 
+## 2026-06-13 — Epic 1 Boot-Hardening: convergent spec review
+
+### 1. §4 commander-neuter
+*   **Verdict**: **AGREE**
+*   **Reason**: Under commander@15, setting `allowUnknownOption(true)` bypasses validation errors on unrecognized options, while `allowExcessArguments(true)` prevents errors on positional/ignored tokens when zero positional parameters are declared. Together, they allow unrecognized `--flag[=value]` tokens to flow unmodified into `program.args`, preserving the function of the existing `applyCliOverrides` parsing loop without process termination.
+
+### 2. §5.3 staged swap
+*   **Verdict**: **AGREE**
+*   **Reason**: `structuredClone` is safe across Node 18+, Bun, Deno, and Cloudflare Workers (workerd). Because `_config` holds static config parsed from JSON/YAML/TOML/INI/Env, it contains only serializable data types (primitives, arrays, plain objects) and never holds non-serializeable values (functions, symbols, or class instances), making cloning risk-free.
+
+### 3. §5.4 clearAndFill
+*   **Verdict**: **CONCERN**
+*   **Reason**: While `clearAndFill` is structurally robust and deep, implementing the staged-build pattern requires `processHierarchy()`, `applyEnvOverrides()`, and `applyCliOverrides()` to be refactored to accept an explicit target config object parameter. If the implementation attempts to reuse these methods by temporarily swapping `this._config = tempConfig` during asynchronous execution, it will violate the core reference invariant and expose a race window where concurrent getters read half-formed states.
+
+### 4. §5.2 mutex
+*   **Verdict**: **CONCERN**
+*   **Reason**: If synchronous `updateValue()` writes directly to the live `_config` while an async `initialize()` or `loadExternalConfig()` is in-flight, the synchronous write will be silently overwritten and clobbered when the staged commit's `clearAndFill` eventually runs.
+*   **Lowest-risk fix**: Expose the staging reference as a `private _inFlightTempConfig: Record<string, unknown> | null` on the singleton. When `updateValue(path, value)` is called, synchronously update BOTH the live `this._config` and `this._inFlightTempConfig` (if non-null), preserving sync-read-after-write semantics without clobbering.
+
+### 5. §7 test matrix
+*   **Verdict**: **CONCERN**
+*   **Reason**: Most of the test matrix accurately represents behavioral oracles, though test (3) (reference identity) and test (7) (`__resetRuntimeCache`) assert structural/implementation details, which is acceptable given the strict reference invariants of this Epic.
+*   **Missing Critical Tests**:
+    1.  **Sync-to-Async Clobber Override**: Assert that a synchronous `updateValue` called while `loadExternalConfig` is mid-await is not lost on staged commit.
+    2.  **Array Leaf-Replacement Behavior**: Verify that nested arrays are cleanly replaced wholesale rather than merged or appended.
+    3.  **Non-Fatal CLI Parse Failure**: Verify that passing malformed text or CLI parser hiccups gracefully catches throwing exceptions, logs them, and continues bootstrap without process crash.
+
