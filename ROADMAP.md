@@ -63,9 +63,20 @@ sequencing of 4 subprojects"). Five subprojects, each its own spec → plan → 
      Alpaca/Finnhub behave on the shared engine; the old bespoke Yahoo streamer trace-logged them).
      Add a debug-level fallback log in the driver pump when the mapper returns `None` for plain text.
      Revive when diagnosing a Yahoo wire-protocol change.
-3. **(c) Integration / e2e tests** — implement the spec'd tier
-   (`docs/superpowers/specs/2026-06-12-integration-tests-design.md`) over the **final** provider set, so
-   no contract rework. *(Sequencing d-before-c resolves that spec's "new providers" Deferred risk.)*
+3. **(c) Integration / e2e tests — COMPLETE** (2026-06-13, merged to `main` commit `71ec1dd`, branch
+   `feat/integration-test-tier`): exhaustive CI-only integration tier from
+   `docs/superpowers/specs/2026-06-12-integration-tests-design.md` (PLAN-READY after 3 agy passes;
+   plan `docs/superpowers/plans/2026-06-13-integration-test-tier.md`, 16 tasks). Three seams
+   (cross-package unmocked · external REST via MSW record/replay with secret scrubbing · Rust FFI-scalar)
+   + a coverage matrix/validator that makes "exhaustive" statically enforceable; per-package
+   runtime-matched vitest configs (node + `workers-pool`); live-tier streaming suites
+   (skip unless `INTEGRATION_LIVE=1`); `ConfigManager.initialize(args?)` prerequisite; CI integration job +
+   nightly live workflow. Gates green: unit ts-core 120/ts-markets 130/ts-cloud 34; integration replay
+   green; validator green. agy plan-phase review (EXECUTE-WITH-FIXES) folded before execution.
+   - *Deferred follow-ups:* Yahoo `Historical` success fixture (epoch-timestamp URL — `TODO` in the
+     external-rest suite); `tsconfig.integration.json` `typeRoots`/`paths` hoisting workaround (functional,
+     non-gate — clean up by hoisting `@types/node`/`vitest` to root devDeps); the dist/`.tgz` black-box
+     smoke layer and deterministic streaming loopback harness remain deferred per the spec §12.
 4. **(a) Trace / flight-recording retro-instrumentation** — apply AGENTS.md §12 to legacy modules so
    `LOG_LEVEL=trace` lets an AI agent debug from logs alone. Done *after* (c) so the integration suite is
    the safety net for this large sweeping refactor (user-approved placement).
