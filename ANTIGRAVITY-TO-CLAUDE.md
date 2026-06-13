@@ -3062,3 +3062,104 @@ We have completed the divergent spec review (design-partner mode) for the commit
 - **Fix 1:** Add `cargo check --bins` or `pnpm --filter corelib-rust build:bins` to normal PR CI jobs to prevent compilation drift on CLI binary files.
 - **Fix 2:** Update TS `FinnhubConfig` interface with `baseUrl?: string` and map it inside `FinnhubStreaming.ts::init`.
 - **Fix 3:** Add graceful fallback guard checking `if (!global.gc)` inside Task 6's stress tests to prevent crashing local developers executing tests without `--expose-gc`.
+
+
+## agy plan review — Epic 2 (2026-06-14)
+
+### 1. Pressure Test of Epic 2 Implementation Plan
+
+We have completed a divergent, comprehensive plan review (design-partner mode) of the implementation plan under [docs/superpowers/plans/2026-06-14-input-env-safety-hardening.md](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-883f3ce0/docs/superpowers/plans/2026-06-14-input-env-safety-hardening.md). The spec and design forks are settled; below is our evaluation of correctness, task breakdown, sequencing, and risks.
+
+---
+
+### 1.1 Sequencing & TDD ordering
+- **Current Tree Status**: `cargo check --bins --tests` compiles green on the current unchanged tree, verifying that a compiling gate can be established immediately.
+- **RED Oracle Verification**: In Task 4 Step 1, flipping the Q3 probe's panic check first correctly produces a compile-time (RED) oracle before any changes to `WebsocketStreamerHost::new`, validating our TDD loop.
+- **Task Atomicity**: Committing task-2's Finnhub Rust and TS changes atomically in a unified commit is highly recommended and fully sound. The FFI schema boundaries are too tightly coupled to split across individual pushes.
+
+---
+
+### 1.2 Task 4 Call-Site Reality
+- **NAPI Constructability**: The 3 native provider constructors are annotated with `#[napi(constructor)]` and can cleanly return `napi::Result<Self>` in napi-rs, which perfectly exposes a standard synchronous JS exception throw.
+- **CLI Binary main**: The `main` functions of both `alpaca_streamer` and `yahoo_streamer` CLI binaries already return a `Result<(), Box<dyn std::error::Error>>`, meaning we can cleanly propagate database open mistakes using standard `?` operators without extra exit(1) boilerplate.
+- **Call-Site Mapping**: All 8 locations calling `WebsocketStreamerHost::new` are mapped accurately.
+
+---
+
+### 1.3 Task 7 TSFN Shape
+- **Critical Compilation Defect**: The `napi` dependency inside [Cargo.toml](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-883f3ce0/rust/Cargo.toml#L10) does NOT have the `serde-json` feature enabled. Thus, `ThreadsafeFunction<serde_json::Value>` will **fail to compile**. To avoid changing Cargo dependency flags, we must define the flood hook callback using `ThreadsafeFunction<String>` and pass serialized JSON strings, mirroring the existing `on_market_event` interface layout.
+- **Callback Style & JS Return**: The standalone `#[napi] fn` taking a `ThreadsafeFunction` argument is the standard napi-rs registration. Delivering `Ok(json)` via TSFN yields a standard error-first callback `(null, json)` shape in JavaScript, matching test expectations.
+
+---
+
+### 1.4 Task 3 Retry Test Realism
+- **Ky Delay Override**: Custom `delay` overrides are fully honored inside ky 2.0.x, bypassing ky's internal exponential backoff algorithm while still respecting our custom bounds.
+- **Private Scoping**: Exporting `clampNumber`/`fullJitterDelay` from `RequestUnlimited.ts` introduces zero package scope pollution since they are omitted from the named exports of [retrieve/index.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-883f3ce0/ts-core/src/retrieve/index.ts).
+- **Test Parity**: Existing tests inside `RequestUnlimited.test.ts` do not assert exact delay timing, meaning they remain 100% green with clamping and randomized backoffs.
+
+---
+
+### 1.5 Task 5 Mock Target
+- **Critical Mock Shell Defect**: In [AlpacaStreaming.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-883f3ce0/ts-markets/src/nasdaq/datafeeds/streaming/alpaca/AlpacaStreaming.ts#L9-L11), the FFI class is not a top-level export of `@ckir/corelib`. It is retrieved via `const RustAlpaca = (coreFFI as any)?.AlpacaStreaming;`.
+- **The Issue**: Setting `vi.mock("@ckir/corelib", () => ({ AlpacaStreaming }))` causes `coreFFI` to be undefined, prompting the facade constructor to throw "AlpacaStreaming (Native) is not supported..." instead of the mocked database lock panic.
+- **The Fix**: The mock must target the nested FFI path accurately:
+  ```ts
+  vi.mock("@ckir/corelib", () => ({
+    coreFFI: {
+      AlpacaStreaming: class {
+        constructor() { throw new Error("failed to open redb: DatabaseAlreadyOpen"); }
+      }
+    },
+    getMode: () => "production"
+  }));
+  ```
+
+---
+
+### 1.6 CI/Gate Feasibility
+- **Critical Pre-Flight Budget Failure**: Setting `cargo check --bins --tests` inside the `validate` job of [pipeline.yml](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-883f3ce0/.github/workflows/pipeline.yml#L21) will fail immediately because that environment lacks a Rust toolchain. Installing the toolchain in the lint/validator job triggers cold compiles over 3-5+ minutes, destroying our 1-minute pre-push budget.
+- **The Fix**: Place the compile checks inside the parallel Stage 2 `test` & `integration` jobs where the Rust toolchain is already set up and cached. Run it directly after the napi build step:
+  ```yaml
+        - name: Compile check bins
+          run: cargo check --manifest-path rust/Cargo.toml --bins --tests
+  ```
+
+---
+
+### 1.7 Missing Steps & Risks
+- **No-op Source Code Ignore**: Creating `diagnostics.rs` in `rust/src/.../streaming/` is ignored by the compiler unless registered under [lib.rs](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-883f3ce0/rust/src/lib.rs#L70). We MUST register the module in `lib.rs` inside the inline `mod streaming` block:
+  ```rust
+  pub mod diagnostics;
+  ```
+- **Finstream Build Mismatch**: In Task 7 Step 2, running `pnpm --filter @ckir/corelib build` does NOT trigger rust napi compilation. To compile the code and regenerate types, you must execute:
+  ```bash
+  cd rust && pnpm run build:local && cp corelib-rust.node ../ts-core/corelib-rust.node
+  ```
+- **Driver Argument Scope**: In Task 2, `FinnhubDriver` doesn't have access to the configuration block. We must add `pub base_url: Option<String>` to `FinnhubDriver`, store it on `FinnhubInner` in `init()`, and pass it to `FinnhubDriver` when instantiating it.
+
+---
+
+### 1.8 Generative Design Options
+- **No Change**: The settled design forks are correct and elegant.
+
+---
+
+### 2. Headlines & Plan Verdict
+
+- **1. sequencing / TDD check**: Current tree is fully ready; Q3 probe correctly serves as a compiler-gate oracle. (FINE)
+- **2. facade / call-site match**: Synch-thowing constructors typecheck cleanly; CLI main already returns Results. (FINE)
+- **3. Task-7 compilation block**: ThreadsafeFunction<serde_json::Value> fails compile; must use ThreadsafeFunction<String>. (GAP - RESOLVED WITH FIX)
+- **4. Task-3 Ky clamp verify**: Delay callbacks work cleanly in ky; no public API bloat or existing test breaks. (FINE)
+- **5. Task-5 target mismatch**: vi.mock of @ckir/corelib is mapped wrong; must mock nested coreFFI.AlpacaStreaming instead. (GAP - RESOLVED WITH FIX)
+- **6. Gate compile penalty**: Validate job has no cargo; must run cargo check in Stage-2 test jobs instead of pre-flight. (GAP - RESOLVED WITH FIX)
+- **7. Missing mod declarations**: diagnostics.rs is omitted from lib.rs mod path; FinnhubDriver has no access to config base_url. (GAP - RESOLVED WITH FIX)
+- **8. design-partner opinion**: Settled specs and forks are highly coherent and robust. (FINE)
+
+#### OVERALL PLAN VERDICT: **PLAN-READY-WITH-FIXES**
+
+- **Edit Step (Task 1, Step 1)**: Move `cargo check --bins --tests` validation from the Stage 1 `validate` workflow job into the Stage 2 multi-OS `test` and `integration` workflow jobs under `.github/workflows/pipeline.yml`.
+- **Edit Step (Task 2, Step 2)**: Add `base_url: Option<String>` to `FinnhubDriver`, store and map it inside `FinnhubInner::init()`, and pass it on construction.
+- **Edit Step (Task 5, Step 1)**: Correct the target module mock to nest the mock class under `coreFFI: { AlpacaStreaming: class { ... } }`.
+- **Edit Step (Task 7, Step 1)**: Use `ThreadsafeFunction<String>` and pass serialized strings; register `pub mod diagnostics;` inside `rust/src/lib.rs`'s inline streaming module hierarchy.
+- **Edit Step (Task 7, Step 2)**: Rebuild Rust binary using `cd rust && pnpm run build:local && cp corelib-rust.node ../ts-core/corelib-rust.node` before checking static type typings.
+
