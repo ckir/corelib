@@ -132,9 +132,17 @@ implements the wrong thing wastes far more time than one that pauses to verify.
 - **Escalate on API/type changes.** When a change touches a `types.ts`, a `*.d.ts`, or an exported
   signature in a package `index.ts`, run `pnpm verify:full` before pushing (the pre-commit
   `api-escalation` grep also warns).
-- **Line-bounded reading & editing.** Use ripgrep (`rg`) to find the exact lines, read only a ~50-line
-  window, and patch surgically with native edit tools. Never load a 500-line file to change one line;
-  never whole-file-rewrite what a patch can do. Prefer `rg` + native edits over AST tools.
+- **Line-bounded reading & editing — the two-step Recon→Range read.** `rtk read` is the #1
+  token-impact command yet compresses only ~17% (vs 64–100% for everything else) because reads default
+  to `--level none` (full content). For any file >~150 lines, **do not read it whole**. Instead:
+  1. **Locate** with a skeleton or search: `rtk read --level aggressive -n <file>` (imports + signatures
+     + line numbers, ~89% smaller), or `rg`/`rtk sg <pattern>`. Note the target line window.
+  2. **Isolate** with a *lossless* ranged read of only that window (+5/−5 line cushion): `rtk read <file>
+     -L <start>-<end>` (or the native Read tool's offset/limit). This is what you edit from.
+  **Lossless guardrail (non-negotiable):** never patch code seen only via a lossy skeleton
+  (`aggressive`/`ultra-compact`) — the edit target must be read in full fidelity (`none`/`minimal`)
+  first, or you risk a SHAPE-DIVERGENCE. Skeleton views are for navigation only. Never whole-file-rewrite
+  what a patch can do; prefer `rg` + native edits over AST tools. *(agy advisory 2026-06-14 — measured.)*
 - **Bounded discovery.** List directories at depth 2 (`rtk eza --tree --level=2`) and respect
   `.antigravityignore` / `.gitignore`. Never dump a deep recursive listing into context.
 - **Measure.** Run `node C:/Users/user/.claude/skills/token-discipline-installer/bin/token-report.mjs latest --skill-version=1`
