@@ -230,18 +230,21 @@ within a bounded time budget.
 - **Vitest:** append `'/probes/**'` (and the repo-root `probes/**`) to `exclude` in every package
   `vitest.config.*`, so `**/*.test.ts` collection cannot reach it. Probes run solely via a dedicated
   `vitest -c probes/vitest.config.ts`.
-- **Cargo:** register the probe crate in the workspace but keep it out of default runs using
-  `default-members` — this preserves rust-analyzer/IDE type resolution while making root `cargo test`
-  skip it:
-
-  ```toml
-  [workspace]
-  members = ["rust", "probes"]
-  default-members = ["rust"]
-  ```
-
-  Root `cargo test` ignores `/probes`; probes execute via `cargo test --package probes` (or a
-  `--features loom` build for the model-checked variants).
+- **Cargo:** the Rust probes live in a **standalone crate `probes/rust/` that is NOT part of any Cargo
+  workspace** (the repo has no workspace today — `rust/` is a standalone `[package]`). It depends on the
+  core crate by path — `corelib-rust = { path = "../../rust" }`; the `rlib` target links cleanly for a
+  plain Rust test binary, and the `#[napi]`/`cdylib` surface resolves its host symbols only at runtime,
+  so no Node host is required to build it as a dependency. Isolation is automatic: root cargo commands
+  run inside `rust/` and never see the probe crate; **no root workspace is created, so the Rust target
+  dir stays at `rust/target` and the release workflow's `rust/target/release/...` paths are untouched.**
+  Probes execute via `cargo test --manifest-path probes/rust/Cargo.toml`. (Chosen over a root-workspace
+  `default-members` layout — agy "Standalone Vs. Workspace Probes", RECOMMEND-A — to avoid relocating
+  `rust/target` and breaking the tag-release paths; honors §9.1's isolation intent.)
+- **loom variant:** loom model-checks run against **standalone models of the concurrency pattern placed
+  in `probes/rust/`** (re-modelling the lock / channel / teardown logic), **not** by adding
+  `#[cfg(loom)]` shims into `corelib-rust` — instrumenting the production crate is itself a change
+  deferred to a fix cycle (no-fixes-this-cycle). If a fault genuinely cannot be modelled without in-situ
+  loom instrumentation, that is recorded as a finding, not implemented here.
 
 ### 9.2 `/probes/_harness/` — deterministic loopback (highest-value infra)
 
