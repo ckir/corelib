@@ -14,8 +14,9 @@ export default defineConfig({
 	test: {
 		environment: "node",
 		include: [
-			"tests/integration/**/*.integration.test.ts",
+			"ts-core/tests/integration/**/*.integration.test.ts",
 			"tests/integration/_harness/**/*.test.ts",
+			"tests/integration/coverage-validator.test.ts",
 		],
 		setupFiles: [resolve(root, "tests/integration/_harness/setup.ts")],
 		hookTimeout: 20000,
