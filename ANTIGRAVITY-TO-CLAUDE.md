@@ -3233,3 +3233,55 @@ This markdown block is ready to be dropped into the system guidelines to enforce
 **Transition the agent file-reading pipeline from lazy full-file ingestion to a two-step "Skeleton-to-Targeted-Range" pattern for an immediate 80%+ token cost reduction at zero correctness risk.**
 
 
+## Epic-2 Task-3 stale-artifact-shadow advisory (2026-06-14)
+
+### 1. Remove stale `.js`/`.d.ts` (vs. restore and regenerate)
+* **Recommendation**: **Remove (execute `git rm`) the stale files** `ts-core/src/retrieve/RequestUnlimited.js` and `ts-core/src/retrieve/RequestUnlimited.d.ts`.
+* **Rationale**: These are un-tracked-by-intent compilation artifacts mistakenly committed to the source directory (`ts-core/src`). Keeping them creates modular shadow layers that pollute tests and type-checking, masking issues with newer TS source logic. Monorepo builds publish strictly from the built `dist/` directory, so source-resident compiled artifacts are purely accidental clutter.
+* **Risks Claude Missed & Sweeping Results**:
+  1. Our sweep using workspace search confirms that **`RequestUnlimited.js` is the ONLY compiled `.js` artifact residing in any source directory** across `ts-core/src`, `ts-markets/src`, and `ts-cloud/src` (the only other `.js` files are a pre/post-install helper script, one native rust entry, and a workspace simulation/example script). 
+  2. **Explicit Cross-Package Relative Imports**: We found an explicit relative ESM import traversing package boundaries in [MarketMonitor.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-902a2095/ts-markets/src/nasdaq/MarketMonitor.ts#L15):
+     `import { endPoint } from "../../../ts-core/src/retrieve/RequestUnlimited.js";`
+     and its corresponding test [MarketMonitor.test.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-902a2095/ts-markets/src/nasdaq/MarketMonitor.test.ts#L18):
+     `import { endPoint } from "../../../ts-core/src/retrieve/RequestUnlimited";`
+     Because these are relative imports pointing directly to specific paths, deleting `RequestUnlimited.js` from `ts-core` could cause module resolution issues depending on the build loader or workspace resolution.
+     * **Mitigation**: Rather than keeping the stale compiled files on disk to support this cross-package import anti-pattern, both files should be refactored to use clean package-boundary imports:
+       `import { endPoint } from "@ckir/corelib";`
+       This leverages the configured `tsconfig` paths and `dist` outputs, aligning with clean monorepo architecture.
+
+### 2. Fix the tests (vs. regress `.ts` logger)
+* **Recommendation**: **Fix the tests to match the new `.ts` structured log signature.**
+* **Rationale**: The new `.ts` structured child logger (`requestUnlimitedLogger = logger.child({ section: "RequestUnlimited" })`) provides unified JSON metadata tracing metadata, which is production best practice. Regressing the source code back to `globalThis.logger` just to accommodate an antiquated mock assertion in test files is a severe regression. Tests should adapt to cover production specifications, not compromise them.
+
+### 3. Fold into Task 3 vs. separate commit
+* **Recommendation**: **Split the cleanup into a dedicated preceding/standalone `fix:` or `chore:` commit.**
+* **Rationale**: Decoupling the general source cleanup (`git rm RequestUnlimited.{js,d.ts}` and correcting stale logger tests) from the functional feature edits of Task 3 keeps commits focused and atomic. This ensures ease of rollback if packaging nuances surface, and makes the git graph more readable. If branch workflow restrictions make this complex, folding is acceptable *only* if the commit message clearly signals the scope expansion to maintain traceability.
+
+### 4. Landmines in `vi.mock("../loggers")` with Top-Level Await
+* **Critical Warning & Hooking Gaps**:
+  1. **Top-Level Await Bypassing**: The `../loggers` entry utilizes a top-level `await loadLogger()` which evaluates automatically at import and binds config properties and Platform-specific implementations to `globalThis.logger`. If `vi.mock("../loggers")` is declared inside `RequestUnlimited.test.ts`, Vitest hoists it, bypassing the real `../loggers` module execution. Thus, `globalThis.logger` won't be initialized by the system's runtime layer during imports.
+  2. **Timing of child() Binding**: Since `RequestUnlimited.ts` calls `logger.child()` *immediately at module evaluation scope* (line 17), mocks installed inside `beforeAll` (which execute *after* imports are loaded) are instantiated too late to intercept the child-logger creation.
+  3. **The Cleanest Path Mock Pattern**: To avoid global scope leaking or missing child-methods, use `vi.hoisted` to declare high-fidelity mocks, then map them directly in `vi.mock`:
+     ```typescript
+     const { mockTrace, mockChild } = vi.hoisted(() => {
+         const trace = vi.fn();
+         const child = vi.fn().mockReturnValue({
+             trace,
+             warn: vi.fn(),
+             error: vi.fn(),
+             debug: vi.fn(),
+         });
+         return { mockTrace: trace, mockChild: child };
+     });
+
+     vi.mock("../loggers", () => ({
+         default: {
+             child: mockChild,
+             trace: mockTrace,
+         }
+     }));
+     ```
+     This structure ensures the child logger cleanly gets a spyable trace handler that intercepts module-scope exports at evaluation time, without relying on `globalThis` mutations.
+
+
+
