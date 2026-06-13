@@ -51,7 +51,7 @@ fn parse_ts(o: &serde_json::Value) -> DateTime<Utc> {
 pub fn parse_alpaca_obj(
     o: &serde_json::Value,
     source: &str,
-) -> Option<(AlpacaPricingData, Option<MarketEvent>)> {
+) -> Option<(AlpacaPricingData, Vec<MarketEvent>)> {
     let ticker = s(o, "S");
     let ts_str = s(o, "t");
     match o.get("T").and_then(|t| t.as_str()).unwrap_or("") {
@@ -85,7 +85,7 @@ pub fn parse_alpaca_obj(
                     raw: Some(o.to_string()),
                 },
             };
-            Some((raw, Some(uni)))
+            Some((raw, vec![uni]))
         }
         "t" => {
             let price = f(o, "p");
@@ -114,7 +114,7 @@ pub fn parse_alpaca_obj(
                     raw: Some(o.to_string()),
                 },
             };
-            Some((raw, Some(uni)))
+            Some((raw, vec![uni]))
         }
         "b" => {
             let raw = AlpacaPricingData {
@@ -126,7 +126,7 @@ pub fn parse_alpaca_obj(
                 volume: f(o, "v"),
                 timestamp: ts_str,
             };
-            Some((raw, None)) // bars raw-only
+            Some((raw, vec![])) // bars raw-only
         }
         _ => None,
     }
@@ -329,7 +329,7 @@ mod parse_tests {
         assert_eq!(raw.message_type, "quote");
         assert_eq!(raw.bid_price, 191.0);
         assert_eq!(raw.ask_price, 192.0);
-        let v = serde_json::to_value(&uni.unwrap()).unwrap();
+        let v = serde_json::to_value(&uni[0]).unwrap();
         assert_eq!(v["type"], "quote");
         assert_eq!(v["price"], 191.5); // mid
         assert_eq!(v["alpaca"]["bid"], 191.0);
@@ -341,7 +341,7 @@ mod parse_tests {
         let (raw, uni) = parse_alpaca_obj(&obj, "alpaca_main").unwrap();
         assert_eq!(raw.message_type, "trade");
         assert_eq!(raw.price, 420.0);
-        let v = serde_json::to_value(&uni.unwrap()).unwrap();
+        let v = serde_json::to_value(&uni[0]).unwrap();
         assert_eq!(v["type"], "trade");
         assert_eq!(v["alpaca"]["size"], 50.0);
     }
@@ -354,7 +354,7 @@ mod parse_tests {
         let (raw, uni) = parse_alpaca_obj(&obj, "alpaca_main").unwrap();
         assert_eq!(raw.message_type, "bar");
         assert_eq!(raw.price, 250.0);
-        assert!(uni.is_none()); // bars are raw-only
+        assert!(uni.is_empty()); // bars are raw-only
     }
     #[test]
     fn non_pricing_returns_none() {

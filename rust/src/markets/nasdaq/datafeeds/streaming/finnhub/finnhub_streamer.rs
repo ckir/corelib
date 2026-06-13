@@ -254,9 +254,11 @@ impl FinnhubStreaming {
                     uni,
                 } => {
                     let _ = on_pricing.call(Ok(p), ThreadsafeFunctionCallMode::NonBlocking);
-                    if let (Some(cb), Some(u)) = (on_market_event.as_ref(), uni) {
-                        if let Ok(j) = serde_json::to_string(&u) {
-                            let _ = cb.call(Ok(j), ThreadsafeFunctionCallMode::NonBlocking);
+                    if let Some(cb) = on_market_event.as_ref() {
+                        for u in &uni {
+                            if let Ok(j) = serde_json::to_string(u) {
+                                let _ = cb.call(Ok(j), ThreadsafeFunctionCallMode::NonBlocking);
+                            }
                         }
                     }
                 }

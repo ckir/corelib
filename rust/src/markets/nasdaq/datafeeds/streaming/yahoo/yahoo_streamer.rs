@@ -1,42 +1,41 @@
 // =============================================
 // FILE: rust/src/markets/nasdaq/datafeeds/streaming/yahoo/yahoo_streamer.rs
-// PURPOSE: Long-running Yahoo Finance price stream handler.
-// DESCRIPTION: This module provides a robust, supervised price streamer using
-// Yahoo Finance's WebSocket API. It decodes protobuf-encoded pricing messages,
-// persists subscriptions in a local `redb` database, and handles network
-// instability with silence detection and exponential backoff reconnection.
+// PURPOSE: Thin N-API facade for the Yahoo Finance real-time data stream.
+// DESCRIPTION: Delegates all websocket/reconnect/persistence work to the shared
+// `WebsocketStreamerHost` + `YahooDriver`. Dual-mode: emits the byte-identical raw
+// `JsPricingData` via `on_pricing` AND the unified (finstream-superset) `MarketEvent`
+// as JSON via the optional `on_market_event` callback. Single-channel (bare-symbol)
+// subscriptions persisted in redb (the single source of truth for resume).
 // =============================================
 
-use base64::Engine;
-use futures_util::{SinkExt, StreamExt};
+use crate::markets::nasdaq::datafeeds::streaming::core::host::{
+    unique_db_path, WebsocketStreamerHost,
+};
+use crate::markets::nasdaq::datafeeds::streaming::core::reconnect::ReconnectPolicy;
+use crate::markets::nasdaq::datafeeds::streaming::core::schema::{ProviderKind, ProviderStatus};
+use crate::markets::nasdaq::datafeeds::streaming::core::types::{CoreEvent, RawPricing};
+use crate::markets::nasdaq::datafeeds::streaming::yahoo::yahoo_driver::YahooDriver;
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
-use prost::Message as ProstMessage;
-use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
-use serde_json;
-use std::sync::atomic::{AtomicU64, Ordering};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio::sync::Mutex;
 
-use super::yahoo_streaming_proto_handler::{JsPricingData, PricingData};
+pub use crate::markets::nasdaq::datafeeds::streaming::yahoo::yahoo_streaming_proto_handler::JsPricingData;
 
-/// The production WebSocket URL for the Yahoo Finance streamer.
-const WS_URL: &str = "wss://streamer.finance.yahoo.com/?version=2";
-/// Interval in seconds for sending WebSocket ping frames to keep the connection alive.
-const PING_INTERVAL: u64 = 30;
-/// The `redb` table definition used to persist symbol subscriptions.
-const SUBSCRIPTIONS_TABLE: TableDefinition<&str, bool> = TableDefinition::new("subscriptions");
-
-/// Configuration parameters for the Yahoo price streamer.
+/// Configuration parameters for the Yahoo price streamer. Yahoo has no credentials; `db_path`
+/// and `base_url` are retained for API/back-compat and test injection.
 #[napi(object)]
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct YahooConfig {
-    /// Optional path to the `redb` database file. Defaults to a temporary directory.
+    /// Legacy no-op: the redb path is derived per-instance by the host (or via the `YAHOO_DB`
+    /// env override). Retained for back-compat; ignored.
     pub db_path: Option<String>,
-    /// Threshold in seconds for silence detection before triggering a reconnect.
+    /// Threshold in seconds for silence detection before triggering a reconnect (default 60).
     pub silence_seconds: Option<u32>,
+    /// Optional override for the WebSocket URL (defaults to the Yahoo v2 streamer).
+    pub base_url: Option<String>,
 }
 
 /// Represents a single log entry formatted for the Corelib StrictLogger.
@@ -61,627 +60,217 @@ pub struct EventRecord {
     pub data: Option<String>,
 }
 
-/// A generic trait for handling streamer callbacks, supporting both FFI and native Rust.
-pub trait YahooCallbacks: Send + Sync + 'static {
-    /// Called when the streamer emits a log message.
-    fn on_log(&self, record: LogRecord);
-    /// Called when a new price update is successfully decoded.
-    fn on_pricing(&self, data: JsPricingData);
-    /// Called when a lifecycle event occurs (connection state changes).
-    fn on_event(&self, event: EventRecord);
+/// Interior mutable state for `YahooStreaming`.
+struct YahooInner {
+    host: WebsocketStreamerHost,
+    config: YahooConfig,
+    started: bool,
 }
 
-/// An N-API compatible implementation of `YahooCallbacks` for Node.js integration.
-pub struct NapiCallbacks {
-    /// JavaScript callback for logging.
-    pub on_log: ThreadsafeFunction<LogRecord>,
-    /// JavaScript callback for price updates.
-    pub on_pricing: ThreadsafeFunction<JsPricingData>,
-    /// JavaScript callback for lifecycle events.
-    pub on_event: ThreadsafeFunction<EventRecord>,
-}
-
-impl YahooCallbacks for NapiCallbacks {
-    fn on_log(&self, record: LogRecord) {
-        // Trigger the JS log callback in a non-blocking way
-        let _ = self
-            .on_log
-            .call(Ok(record), ThreadsafeFunctionCallMode::NonBlocking);
-    }
-    fn on_pricing(&self, data: JsPricingData) {
-        // Trigger the JS pricing callback
-        let _ = self
-            .on_pricing
-            .call(Ok(data), ThreadsafeFunctionCallMode::NonBlocking);
-    }
-    fn on_event(&self, event: EventRecord) {
-        // Trigger the JS event callback
-        let _ = self
-            .on_event
-            .call(Ok(event), ThreadsafeFunctionCallMode::NonBlocking);
-    }
-}
-
-/// A native Rust implementation of `YahooCallbacks` for use in CLI or standalone apps.
-pub struct RustCallbacks {
-    /// closure for handling logs.
-    pub on_log: Box<dyn Fn(LogRecord) + Send + Sync>,
-    /// closure for handling price updates.
-    pub on_pricing: Box<dyn Fn(JsPricingData) + Send + Sync>,
-    /// closure for handling events.
-    pub on_event: Box<dyn Fn(EventRecord) + Send + Sync>,
-}
-
-impl YahooCallbacks for RustCallbacks {
-    fn on_log(&self, record: LogRecord) {
-        // Execute the log closure
-        (self.on_log)(record);
-    }
-    fn on_pricing(&self, data: JsPricingData) {
-        // Execute the pricing closure
-        (self.on_pricing)(data);
-    }
-    fn on_event(&self, event: EventRecord) {
-        // Execute the event closure
-        (self.on_event)(event);
-    }
-}
-
-/// Internal state holder for the streamer logic.
-struct Inner<C: YahooCallbacks> {
-    /// The persistent local database instance.
-    db: Option<Database>,
-    /// List of current symbol subscriptions.
-    subscriptions: Vec<String>,
-    /// Configured silence threshold for reconnections.
-    silence_seconds: u32,
-    /// The callback implementation (N-API or Rust).
-    callbacks: C,
-    /// Channel for sending a stop signal to the background task.
-    stop_tx: Option<mpsc::Sender<()>>,
-    /// Channel for sending new symbol subscriptions to the active stream.
-    sub_tx: Option<mpsc::Sender<Vec<String>>>,
-    /// Join handle for the active WebSocket task.
-    ws_task: Option<tokio::task::JoinHandle<()>>,
-}
-
-/// The core price streamer implementation, generic over its callback mechanism.
-pub struct YahooStreamingCore<C: YahooCallbacks> {
-    /// Shared, thread-safe access to the internal state.
-    inner: Arc<Mutex<Inner<C>>>,
-}
-
-impl<C: YahooCallbacks> YahooStreamingCore<C> {
-    /// Creates a new `YahooStreamingCore` and optionally initializes the local database.
-    pub fn new(callbacks: C) -> Self {
-        // Fix 3: per-instance unique counter so concurrent instances never collide on the DB file.
-        static INSTANCE_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-        // Determine the database path from environment
-        let db_env = std::env::var("YAHOO_DB").unwrap_or_else(|_| {
-            let temp = std::env::temp_dir();
-            let pid = std::process::id();
-            let seq = INSTANCE_COUNTER.fetch_add(1, Ordering::Relaxed);
-            let nanos = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .subsec_nanos();
-            temp.join(format!("yahoo_streaming_{pid}_{seq}_{nanos}.redb"))
-                .to_string_lossy()
-                .to_string()
-        });
-
-        let (db, subscriptions) = if db_env == "NOT_SET" {
-            (None, Vec::new())
-        } else {
-            // Open or create the redb database
-            let db = Database::create(&db_env).expect("Failed to open redb");
-
-            // Ensure the subscriptions table exists in the database
-            {
-                let write_txn = db.begin_write().unwrap();
-                {
-                    let _ = write_txn.open_table(SUBSCRIPTIONS_TABLE).unwrap();
-                }
-                write_txn.commit().unwrap();
-            }
-
-            // Load existing subscriptions from the database into memory
-            let read_txn = db.begin_read().unwrap();
-            let table = read_txn.open_table(SUBSCRIPTIONS_TABLE).unwrap();
-            let loaded_subscriptions = table
-                .iter()
-                .unwrap()
-                .map(|item| {
-                    let (k, _) = item.unwrap();
-                    k.value().to_string()
-                })
-                .collect();
-            (Some(db), loaded_subscriptions)
-        };
-
+impl YahooConfig {
+    fn default_empty() -> Self {
         Self {
-            inner: Arc::new(Mutex::new(Inner {
-                db,
-                subscriptions,
-                silence_seconds: 60, // Default to 60s silence check
-                callbacks,
-                stop_tx: None,
-                sub_tx: None,
-                ws_task: None,
-            })),
-        }
-    }
-
-    /// Initializes the streamer with the provided configuration.
-    pub async fn init(&self, config: YahooConfig) {
-        let mut inner = self.inner.lock().await;
-        // Override the silence threshold if provided
-        if let Some(s) = config.silence_seconds {
-            inner.silence_seconds = s;
-        }
-    }
-
-    /// Spawns the supervisor loop and starts the price stream.
-    pub async fn start(&self) {
-        let inner = Arc::clone(&self.inner);
-        let mut guard = inner.lock().await;
-
-        // Prevent multiple concurrent tasks from running
-        if guard.ws_task.is_some() {
-            return;
-        }
-
-        // Initialize communication channels
-        let (stop_tx, stop_rx) = mpsc::channel(1);
-        let (sub_tx, sub_rx) = mpsc::channel(10);
-        guard.stop_tx = Some(stop_tx);
-        guard.sub_tx = Some(sub_tx);
-
-        // Spawn the main supervisor task
-        let task = tokio::spawn(Self::run_loop(Arc::clone(&inner), stop_rx, sub_rx));
-
-        // Fix 5: Spawn a lightweight monitor that awaits the supervisor task.
-        // If the supervisor panics, tokio catches it as a JoinError::is_panic() and we
-        // surface that to JS via the existing on_event("error") callback.
-        let monitor_inner = Arc::clone(&inner);
-        let monitor_task = tokio::spawn(async move {
-            match task.await {
-                Ok(()) => { /* normal completion */ }
-                Err(join_err) if join_err.is_panic() => {
-                    monitor_inner.lock().await.callbacks.on_event(EventRecord {
-                        r#type: "error".to_string(),
-                        data: Some("Streamer supervisor panicked; stream is dead".to_string()),
-                    });
-                }
-                Err(_) => { /* task was cancelled/aborted, nothing to do */ }
-            }
-        });
-        guard.ws_task = Some(monitor_task);
-    }
-
-    /// Background loop that handles reconnections with exponential backoff.
-    async fn run_loop(
-        inner: Arc<Mutex<Inner<C>>>,
-        mut stop_rx: mpsc::Receiver<()>,
-        mut sub_rx: mpsc::Receiver<Vec<String>>,
-    ) {
-        // Initial backoff duration in seconds
-        const BASE_BACKOFF: u64 = 5;
-        let mut backoff = BASE_BACKOFF;
-        loop {
-            let inner_clone = Arc::clone(&inner);
-
-            // Execute the actual WebSocket logic
-            let res = Self::ws_loop(inner_clone, &mut sub_rx, &mut stop_rx).await;
-
-            // Fix 2: Track whether this was a pure connection failure (Err) vs a successful
-            // connection that later dropped (Ok(false)).  Only grow backoff on Err.
-            let was_failure = matches!(res, Err(()));
-
-            match res {
-                Ok(true) => {
-                    // Stream stopped gracefully via stop() call
-                    break;
-                }
-                Ok(false) => {
-                    // Connection succeeded but then dropped — emit reconnecting event.
-                    inner.lock().await.callbacks.on_event(EventRecord {
-                        r#type: "reconnecting".to_string(),
-                        data: None,
-                    });
-                }
-                Err(()) => {
-                    // Connection failed entirely — emit reconnecting event.
-                    inner.lock().await.callbacks.on_event(EventRecord {
-                        r#type: "reconnecting".to_string(),
-                        data: None,
-                    });
-                }
-            }
-
-            // Fix 2: Reset backoff to base after a successful connection; only grow on failures.
-            if was_failure {
-                backoff = (backoff * 2).min(3600);
-            } else {
-                backoff = BASE_BACKOFF;
-            }
-
-            // Fix 6: Add jitter derived from SystemTime nanos (no extra crate needed).
-            // Jitter range: 0 .. backoff*500 ms (up to half the backoff in milliseconds).
-            let nanos = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .subsec_nanos() as u64;
-            let jitter_ms = nanos % (backoff * 500).max(1);
-            let sleep_dur = tokio::time::Duration::from_secs(backoff)
-                + tokio::time::Duration::from_millis(jitter_ms);
-
-            // Sleep for backoff + jitter before the next reconnect attempt
-            tokio::time::sleep(sleep_dur).await;
-        }
-    }
-
-    /// Handles the active WebSocket connection and message dispatching.
-    async fn ws_loop(
-        inner: Arc<Mutex<Inner<C>>>,
-        sub_rx: &mut mpsc::Receiver<Vec<String>>,
-        stop_rx: &mut mpsc::Receiver<()>,
-    ) -> std::result::Result<bool, ()> {
-        // Attempt to connect to the Yahoo Finance WebSocket server
-        let (ws_stream, _) = match connect_async(WS_URL).await {
-            Ok(v) => v,
-            Err(e) => {
-                // Log connection failure and return to the supervisor for backoff
-                inner.lock().await.callbacks.on_log(LogRecord {
-                    level: "error".to_string(),
-                    msg: "WS connect failed".to_string(),
-                    extras: Some(e.to_string()),
-                });
-                return Err(());
-            }
-        };
-
-        // Notify that the connection has been established
-        inner.lock().await.callbacks.on_event(EventRecord {
-            r#type: "connected".to_string(),
-            data: None,
-        });
-
-        // Split the stream into a writer and a reader
-        let (mut write, mut read) = ws_stream.split();
-
-        // Send the initial subscription payload for all currently tracked symbols
-        {
-            let guard = inner.lock().await;
-            if !guard.subscriptions.is_empty() {
-                let payload = serde_json::json!({ "subscribe": guard.subscriptions }).to_string();
-                let _ = write.send(Message::Text(payload.into())).await;
-            }
-        }
-
-        // Initialize timers for silence detection and WebSocket pings
-        let mut silence_timer = tokio::time::interval(tokio::time::Duration::from_secs(60));
-        let mut ping_timer = tokio::time::interval(tokio::time::Duration::from_secs(PING_INTERVAL));
-
-        // Consume the immediate first ticks of the intervals
-        let _ = silence_timer.tick().await;
-        let _ = ping_timer.tick().await;
-
-        loop {
-            // Select over various input sources
-            tokio::select! {
-                // Handle graceful stop signal
-                _ = stop_rx.recv() => {
-                    inner.lock().await.callbacks.on_event(EventRecord { r#type: "disconnected".to_string(), data: None });
-                    return Ok(true);
-                }
-                // Handle incoming WebSocket messages
-                msg = read.next() => {
-                    match msg {
-                        Some(Ok(Message::Text(text))) => {
-                            // Parse the envelope JSON from Yahoo
-                            let obj: serde_json::Value = match serde_json::from_str(&text) {
-                                Ok(v) => v,
-                                Err(_) => continue,
-                            };
-
-                            // Only process messages typed as "pricing"
-                            if obj["type"].as_str() != Some("pricing") {
-                                // Log unexpected message types at trace level
-                                inner.lock().await.callbacks.on_log(LogRecord {
-                                    level: "trace".to_string(),
-                                    msg: text.to_string(),
-                                    extras: None,
-                                });
-                                continue;
-                            }
-
-                            // Pricing data received, reset the silence timer
-                            silence_timer.reset();
-
-                            // Decode the base64 pricing message and then the protobuf payload
-                            if let Some(b64) = obj["message"].as_str() {
-                                if let Ok(decoded) = base64::prelude::BASE64_STANDARD.decode(b64) {
-                                    match PricingData::decode(&decoded[..]) {
-                                        Ok(pricing) => {
-                                            // Trigger the pricing callback with the decoded struct
-                                            inner.lock().await.callbacks.on_pricing(pricing.into());
-                                        }
-                                        Err(e) => {
-                                            // Log decoding failures
-                                            inner.lock().await.callbacks.on_log(LogRecord {
-                                                level: "error".to_string(),
-                                                msg: "Protobuf decode failed".to_string(),
-                                                extras: Some(format!("{}: {}", e, b64)),
-                                            });
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        // Handle WebSocket close frames
-                        Some(Ok(Message::Close(c))) => {
-                            let data = c.map(|frame| frame.reason.to_string());
-                            inner.lock().await.callbacks.on_event(EventRecord { r#type: "disconnected".to_string(), data });
-                            return Ok(false);
-                        }
-                        // Handle unexpected end of stream
-                        None => {
-                            inner.lock().await.callbacks.on_event(EventRecord { r#type: "disconnected".to_string(), data: Some("Stream ended".to_string()) });
-                            return Ok(false);
-                        }
-                        // Handle WebSocket errors
-                        Some(Err(e)) => {
-                            let err_msg = e.to_string();
-                            inner.lock().await.callbacks.on_log(LogRecord { level: "error".to_string(), msg: "WS read error".to_string(), extras: Some(err_msg.clone()) });
-                            inner.lock().await.callbacks.on_event(EventRecord { r#type: "error".to_string(), data: Some(err_msg) });
-                            return Ok(false);
-                        }
-                        _ => continue,
-                    }
-                }
-                // Handle new symbol subscriptions added while the stream is active
-                new_subs = sub_rx.recv() => {
-                    if let Some(subs) = new_subs {
-                        if !subs.is_empty() {
-                            // Construct and send the subscription message to Yahoo
-                            let payload = serde_json::json!({ "subscribe": subs }).to_string();
-                            let _ = write.send(Message::Text(payload.into())).await;
-                        }
-                    }
-                }
-                // Send periodic ping frames to the server
-                _ = ping_timer.tick() => {
-                    let _ = write.send(Message::Ping(vec![].into())).await;
-                }
-                // Reconnect if no data has been received for the silence threshold
-                _ = silence_timer.tick() => {
-                    inner.lock().await.callbacks.on_event(EventRecord { r#type: "silence-reconnect".to_string(), data: None });
-                    return Ok(false);
-                }
-            }
-        }
-    }
-
-    /// Subscribes to a list of symbols and persists them in the database.
-    pub async fn subscribe(&self, symbols: Vec<String>) {
-        let mut guard = self.inner.lock().await;
-        let mut to_send = Vec::new();
-        for s in &symbols {
-            // Only add and persist if not already subscribed
-            if !guard.subscriptions.contains(s) {
-                guard.subscriptions.push(s.clone());
-                to_send.push(s.clone());
-
-                // Persist the new subscription in redb if database is active
-                if let Some(ref db) = guard.db {
-                    let write_txn = db.begin_write().unwrap();
-                    {
-                        let mut table = write_txn.open_table(SUBSCRIPTIONS_TABLE).unwrap();
-                        table.insert(s.as_str(), true).unwrap();
-                    }
-                    write_txn.commit().unwrap();
-                }
-            }
-        }
-        // If the background task is running, send the new symbols via the channel
-        if let Some(tx) = &guard.sub_tx {
-            let _ = tx.send(to_send).await;
-        }
-    }
-
-    /// Unsubscribes from a list of symbols and removes them from the database.
-    pub async fn unsubscribe(&self, symbols: Vec<String>) {
-        let mut guard = self.inner.lock().await;
-        // Remove symbols from memory
-        guard.subscriptions.retain(|s| !symbols.contains(s));
-
-        // Remove symbols from the persistent database if active
-        if let Some(ref db) = guard.db {
-            let write_txn = db.begin_write().unwrap();
-            {
-                let mut table = write_txn.open_table(SUBSCRIPTIONS_TABLE).unwrap();
-                for s in &symbols {
-                    table.remove(s.as_str()).unwrap();
-                }
-            }
-            write_txn.commit().unwrap();
-        }
-        // NOTE: Yahoo does not currently support an explicit 'unsubscribe' message via WebSocket.
-    }
-
-    /// Clears all subscriptions and stops the streamer.
-    pub async fn clean(&self) {
-        let mut guard = self.inner.lock().await;
-        // Delete the entire subscriptions table if database is active
-        if let Some(ref db) = guard.db {
-            let write_txn = db.begin_write().unwrap();
-            let _ = write_txn.delete_table(SUBSCRIPTIONS_TABLE);
-            write_txn.commit().unwrap();
-        }
-
-        // Reset in-memory state
-        guard.subscriptions.clear();
-        // Stop the active task
-        if let Some(tx) = guard.stop_tx.take() {
-            let _ = tx.send(()).await;
-        }
-    }
-
-    /// Stops the background task without clearing persistent subscriptions.
-    pub async fn stop(&self) {
-        let mut guard = self.inner.lock().await;
-        // Signal the task to stop
-        if let Some(tx) = guard.stop_tx.take() {
-            let _ = tx.send(()).await;
-        }
-        // Force abort the task if it doesn't respond to the signal
-        if let Some(task) = guard.ws_task.take() {
-            task.abort();
+            db_path: None,
+            silence_seconds: None,
+            base_url: None,
         }
     }
 }
 
-/// N-API wrapper for the price streamer, enabling its use in JavaScript environments.
+/// N-API facade for Yahoo real-time streaming (dual-mode: raw + unified).
+///
+/// `ThreadsafeFunction` is not `Clone`; each is wrapped in `Arc` so the pump closure can hold a
+/// cheap reference-counted copy. `on_market_event` is optional (absent ⇒ raw-only consumers).
 #[napi]
 pub struct YahooStreaming {
-    /// The core implementation using N-API callbacks.
-    core: YahooStreamingCore<NapiCallbacks>,
+    inner: Arc<Mutex<YahooInner>>,
+    on_log: Arc<ThreadsafeFunction<LogRecord>>,
+    on_pricing: Arc<ThreadsafeFunction<JsPricingData>>,
+    on_event: Arc<ThreadsafeFunction<EventRecord>>,
+    on_market_event: Option<Arc<ThreadsafeFunction<String>>>,
 }
 
 #[napi]
 impl YahooStreaming {
-    /// Constructs a new `YahooStreaming` instance with the provided JavaScript callback functions.
+    /// Constructs a new `YahooStreaming` with the JS callback functions.
+    /// Order: (on_log, on_pricing, on_event, [on_market_event]). `on_market_event` is optional —
+    /// pass it to also receive the unified `"market"` stream.
     #[napi(constructor)]
     pub fn new(
         on_log: ThreadsafeFunction<LogRecord>,
         on_pricing: ThreadsafeFunction<JsPricingData>,
         on_event: ThreadsafeFunction<EventRecord>,
+        on_market_event: Option<ThreadsafeFunction<String>>,
     ) -> Self {
+        let host = WebsocketStreamerHost::new(
+            unique_db_path("yahoo_streaming", "YAHOO_DB"),
+            "yahoo_subscriptions",
+            "yahoo".into(),
+            ProviderKind::Yahoo,
+        );
         Self {
-            core: YahooStreamingCore::new(NapiCallbacks {
-                on_log,
-                on_pricing,
-                on_event,
-            }),
+            inner: Arc::new(Mutex::new(YahooInner {
+                host,
+                config: YahooConfig::default_empty(),
+                started: false,
+            })),
+            on_log: Arc::new(on_log),
+            on_pricing: Arc::new(on_pricing),
+            on_event: Arc::new(on_event),
+            on_market_event: on_market_event.map(Arc::new),
         }
     }
 
-    /// Initializes the streamer with configuration parameters.
+    /// Set config (silence threshold / optional base_url override).
     #[napi]
     pub async fn init(&self, config: YahooConfig) -> Result<()> {
-        self.core.init(config).await;
+        self.inner.lock().await.config = config;
         Ok(())
     }
 
-    /// Starts the long-running streaming task.
+    /// Start streaming; the driver resumes persisted subscriptions (redb) on every (re)connect.
     #[napi]
     pub async fn start(&self) -> Result<()> {
-        self.core.start().await;
+        let mut g = self.inner.lock().await;
+        if g.started {
+            return Ok(());
+        }
+        let driver = YahooDriver {
+            name: "yahoo".into(),
+            base_url: g.config.base_url.clone(),
+            silence_seconds: g.config.silence_seconds.unwrap_or(60),
+            db: g.host.db_handle(),
+            table: g.host.table_name(),
+        };
+        let on_pricing = Arc::clone(&self.on_pricing);
+        let on_event = Arc::clone(&self.on_event);
+        let on_market = self.on_market_event.clone();
+        g.host.start(
+            driver,
+            Vec::new(),
+            ReconnectPolicy {
+                jitter: true,
+                ..Default::default()
+            },
+            move |ev: CoreEvent| match ev {
+                CoreEvent::Pricing {
+                    raw: RawPricing::Yahoo(p),
+                    uni,
+                } => {
+                    let _ = on_pricing.call(Ok(p), ThreadsafeFunctionCallMode::NonBlocking);
+                    if let Some(cb) = on_market.as_ref() {
+                        for u in &uni {
+                            if let Ok(j) = serde_json::to_string(u) {
+                                let _ = cb.call(Ok(j), ThreadsafeFunctionCallMode::NonBlocking);
+                            }
+                        }
+                    }
+                }
+                CoreEvent::Status(status) => {
+                    let (t, d) = match status {
+                        ProviderStatus::Connected { .. } => ("connected".to_string(), None),
+                        ProviderStatus::Disconnected { reason, .. } => {
+                            ("disconnected".to_string(), Some(reason))
+                        }
+                        ProviderStatus::Reconnecting {
+                            attempt, delay_ms, ..
+                        } => (
+                            "reconnecting".to_string(),
+                            Some(format!("attempt {attempt}, {delay_ms}ms")),
+                        ),
+                        ProviderStatus::Error { message, .. } => {
+                            ("error".to_string(), Some(message))
+                        }
+                    };
+                    let _ = on_event.call(
+                        Ok(EventRecord { r#type: t, data: d }),
+                        ThreadsafeFunctionCallMode::NonBlocking,
+                    );
+                }
+                // RawPricing::Alpaca / ::Finnhub never reach the Yahoo pump.
+                _ => {}
+            },
+        );
+        let _ = self.on_log.call(
+            Ok(LogRecord {
+                level: "debug".into(),
+                msg: "yahoo start".into(),
+                extras: None,
+            }),
+            ThreadsafeFunctionCallMode::NonBlocking,
+        );
+        g.started = true;
         Ok(())
     }
 
-    /// Adds a list of symbols to the active stream.
+    /// Subscribe to additional symbols (bare list; persisted to redb + sent live to the driver).
     #[napi]
     pub async fn subscribe(&self, symbols: Vec<String>) -> Result<()> {
-        self.core.subscribe(symbols).await;
+        self.inner.lock().await.host.subscribe(symbols).await;
         Ok(())
     }
 
-    /// Removes a list of symbols from the active stream.
+    /// Remove `symbols` from the persisted set (so they don't resume on restart).
     #[napi]
     pub async fn unsubscribe(&self, symbols: Vec<String>) -> Result<()> {
-        self.core.unsubscribe(symbols).await;
+        self.inner.lock().await.host.unsubscribe(symbols).await;
         Ok(())
     }
 
-    /// Clears all subscriptions and stops the stream.
+    /// Clears all persisted subscriptions and stops the stream.
     #[napi]
     pub async fn clean(&self) -> Result<()> {
-        self.core.clean().await;
+        let mut g = self.inner.lock().await;
+        let _ = g.host.delete_subscriptions_table();
+        if let Some(tx) = g.host.stop_tx.take() {
+            let _ = tx.try_send(());
+        }
+        g.started = false;
         Ok(())
     }
 
-    /// Gracefully stops the streaming task.
+    /// Gracefully stops the streaming supervisor (keeps persisted subscriptions for resume).
     #[napi]
     pub async fn stop(&self) -> Result<()> {
-        self.core.stop().await;
-        Ok(())
-    }
-}
-
-/// Fix 1: Drop impl for YahooStreaming so GC-driven cleanup stops the supervisor loop.
-/// Sends on the stop channel (same path as .stop()), then aborts the task.
-/// Idempotent: stop_tx is taken so a second trigger is a no-op.
-impl Drop for YahooStreaming {
-    fn drop(&mut self) {
-        // We are in a sync context; use try_lock to avoid blocking.
-        if let Ok(mut guard) = self.core.inner.try_lock() {
-            if let Some(tx) = guard.stop_tx.take() {
-                let _ = tx.try_send(());
-            }
-            if let Some(task) = guard.ws_task.take() {
-                task.abort();
-            }
+        let mut g = self.inner.lock().await;
+        if let Some(tx) = g.host.stop_tx.take() {
+            let _ = tx.try_send(());
         }
-        // If try_lock fails, the task will naturally stop when the Arc<Mutex<Inner>> drops
-        // (stop_tx Sender drop closes the channel).
+        g.started = false;
+        Ok(())
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+mod facade_tests {
+    use crate::markets::nasdaq::datafeeds::streaming::core::host::{
+        unique_db_path, WebsocketStreamerHost,
+    };
+    use crate::markets::nasdaq::datafeeds::streaming::core::schema::ProviderKind;
 
-    /*
-    struct MockCallbacks;
-    impl YahooCallbacks for MockCallbacks {
-        fn on_log(&self, _: LogRecord) {}
-        fn on_pricing(&self, _: JsPricingData) {}
-        fn on_event(&self, _: EventRecord) {}
-    }
-    */
-
-    #[tokio::test]
-    async fn test_load_subscriptions_empty() {
-        let db_path = std::env::temp_dir().join(format!(
-            "test_empty_yahoo_{}_{}.redb",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let _ = std::fs::remove_file(&db_path);
-        let db = Database::create(&db_path).unwrap();
-        {
-            let write_txn = db.begin_write().unwrap();
-            {
-                let _ = write_txn.open_table(SUBSCRIPTIONS_TABLE).unwrap();
-            }
-            write_txn.commit().unwrap();
-        }
-
-        let read_txn = db.begin_read().unwrap();
-        let table = read_txn.open_table(SUBSCRIPTIONS_TABLE).unwrap();
-        let loaded: Vec<String> = table
-            .iter()
-            .unwrap()
-            .map(|item| {
-                let (k, _) = item.unwrap();
-                k.value().to_string()
-            })
-            .collect();
-        assert_eq!(loaded.len(), 0);
+    fn fresh_host() -> WebsocketStreamerHost {
+        WebsocketStreamerHost::new(
+            unique_db_path("yahoo_streaming", "YAHOO_DB_TEST_UNSET"),
+            "yahoo_subscriptions",
+            "yahoo".into(),
+            ProviderKind::Yahoo,
+        )
     }
 
     #[tokio::test]
-    async fn test_decode_pricing_message() {
-        let b64 = "CgRUU0xBFYG9y0MYgM6B7JtnKgNOTVMwCDgCRbV+qr1lANStvtgBBA==";
-        let decoded = base64::prelude::BASE64_STANDARD.decode(b64).unwrap();
-        let pricing = PricingData::decode(&decoded[..]).unwrap();
-        assert_eq!(pricing.id, "TSLA");
-        assert!(pricing.price > 0.0);
+    async fn subscribe_persists_bare_keys_and_resumes() {
+        let host = fresh_host();
+        host.subscribe(vec!["AAPL".into(), "BTC-USD".into()]).await;
+        let mut got = host.get_persisted_subscriptions();
+        got.sort();
+        assert_eq!(got, vec!["AAPL".to_string(), "BTC-USD".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn unsubscribe_removes_persisted_key() {
+        let host = fresh_host();
+        host.subscribe(vec!["AAPL".into(), "MSFT".into()]).await;
+        host.unsubscribe(vec!["AAPL".into()]).await;
+        assert_eq!(host.get_persisted_subscriptions(), vec!["MSFT".to_string()]);
     }
 }

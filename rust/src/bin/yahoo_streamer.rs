@@ -1,17 +1,23 @@
 // =============================================
 // FILE: rust/src/bin/yahoo_streamer.rs
 // PURPOSE: CLI entry point for the Yahoo Finance price streamer.
-// DESCRIPTION: This binary allows running the Yahoo price streamer from the
-// command line. It supports symbol subscription, persistence via a local database,
-// and outputs real-time pricing data as JSON to stdout.
+// DESCRIPTION: Drives a YahooDriver on the shared WebsocketStreamerHost. Outputs
+// raw decoded pricing data as JSON lines to stdout; lifecycle status to stderr.
 // =============================================
 
 use clap::Parser;
-use corelib_rust::{RustCallbacks, YahooConfig, YahooStreamingCore};
+use corelib_rust::markets::nasdaq::datafeeds::streaming::core::host::{
+    unique_db_path, WebsocketStreamerHost,
+};
+use corelib_rust::markets::nasdaq::datafeeds::streaming::core::reconnect::ReconnectPolicy;
+use corelib_rust::markets::nasdaq::datafeeds::streaming::core::schema::ProviderKind;
+use corelib_rust::markets::nasdaq::datafeeds::streaming::core::types::{CoreEvent, RawPricing};
+use corelib_rust::markets::nasdaq::datafeeds::streaming::yahoo::yahoo_driver::YahooDriver;
 use std::io::{self, Write};
 
 /// Command-line arguments for the Yahoo streamer CLI.
 #[derive(Parser)]
+#[command(author, version, about, long_about = None)]
 struct Args {
     /// Comma-separated list of symbols to subscribe to (e.g., "AAPL,MSFT,TSLA").
     #[arg(short, long)]
@@ -22,89 +28,99 @@ struct Args {
     /// If set, clears all existing persistent subscriptions before starting.
     #[arg(long)]
     clean: bool,
-    /// Optional path to the persistence database.
+    /// Optional path to the persistence database (maps to the YAHOO_DB env override).
     #[arg(long)]
     db: Option<String>,
-    /// If set, skips database persistence entirely.
+    /// If set, skips stable persistence (uses an ephemeral per-run db file).
     #[arg(long = "noPersist")]
     no_persist: bool,
 }
 
 #[tokio::main]
-async fn main() {
-    // Parse command-line arguments using clap
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    // Determine the database path: CLI flag overrides environment variable
-    let db_path = if args.no_persist {
-        "NOT_SET".to_string()
-    } else {
-        args.db.unwrap_or_else(|| {
-            let mut path = std::env::temp_dir();
-            path.push("yahoo_streamer.db");
-            path.to_string_lossy().to_string()
+    // Resolve the redb path the host will use (via the YAHOO_DB override read by unique_db_path).
+    if let Some(db) = &args.db {
+        std::env::set_var("YAHOO_DB", db);
+    } else if !args.no_persist {
+        let mut p = std::env::temp_dir();
+        p.push("yahoo_streamer.db");
+        std::env::set_var("YAHOO_DB", p.to_string_lossy().to_string());
+    }
+
+    let symbols: Vec<String> = args
+        .symbols
+        .clone()
+        .map(|s| {
+            s.split(',')
+                .map(|item| item.trim().to_string())
+                .filter(|x| !x.is_empty())
+                .collect()
         })
-    };
-    // Set the environment variable used by YahooStreamingCore
-    std::env::set_var("YAHOO_DB", &db_path);
+        .unwrap_or_default();
 
-    // Define the native Rust callbacks for handling logs, pricing data, and events
-    let callbacks = RustCallbacks {
-        on_log: Box::new(|log| {
-            // Log messages to stderr to keep stdout clean for data piping
-            let extras = log.extras.unwrap_or_else(|| "{}".to_string());
-            eprintln!("[LOG] {}: {} {}", log.level, log.msg, extras);
-        }),
-        on_pricing: Box::new(|pricing| {
-            // Output successfully decoded pricing updates as JSON to stdout
-            if let Ok(json) = serde_json::to_string(&pricing) {
-                println!("{}", json);
-                // Ensure the output is flushed immediately
-                let _ = io::stdout().flush();
-            }
-        }),
-        on_event: Box::new(|event| {
-            // Log lifecycle events to stderr
-            let data = event.data.unwrap_or_else(|| "null".to_string());
-            eprintln!("[EVENT] {} {}", event.r#type, data);
-        }),
-    };
+    eprintln!("Initializing Yahoo Streamer binary...");
 
-    // Create the streamer core with the defined callbacks
-    let streamer = YahooStreamingCore::new(callbacks);
+    let mut host = WebsocketStreamerHost::new(
+        unique_db_path("yahoo_streaming", "YAHOO_DB"),
+        "yahoo_subscriptions",
+        "yahoo".into(),
+        ProviderKind::Yahoo,
+    );
 
-    // Initialize the streamer with CLI-provided configuration
-    streamer
-        .init(YahooConfig {
-            db_path: None, // Use default database path
-            silence_seconds: Some(args.silence),
-        })
-        .await;
-
-    // Handle the --clean flag if provided
     if args.clean {
         eprintln!("Cleaning subscriptions...");
-        streamer.clean().await;
-        // If no new symbols were provided, exit after cleaning
+        let _ = host.delete_subscriptions_table();
         if args.symbols.is_none() {
             eprintln!("Done.");
-            return;
+            return Ok(());
         }
     }
 
-    // Subscribe to new symbols provided via the --symbols argument
-    if let Some(s) = args.symbols {
-        let symbols: Vec<String> = s.split(',').map(|s| s.trim().to_string()).collect();
-        streamer.subscribe(symbols).await;
+    // Pre-seed persisted subscriptions (the driver resumes these from redb on connect).
+    if !symbols.is_empty() {
+        host.subscribe(symbols.clone()).await;
     }
 
-    // Start the background streaming task
-    streamer.start().await;
+    let driver = YahooDriver {
+        name: "yahoo".into(),
+        base_url: None,
+        silence_seconds: args.silence,
+        db: host.db_handle(),
+        table: host.table_name(),
+    };
 
+    host.start(
+        driver,
+        Vec::new(),
+        ReconnectPolicy {
+            jitter: true,
+            ..Default::default()
+        },
+        |ev: CoreEvent| match ev {
+            CoreEvent::Pricing {
+                raw: RawPricing::Yahoo(p),
+                ..
+            } => {
+                if let Ok(json) = serde_json::to_string(&p) {
+                    println!("{json}");
+                    let _ = io::stdout().flush();
+                }
+            }
+            CoreEvent::Status(s) => eprintln!("[EVENT] {s:?}"),
+            _ => {}
+        },
+    );
+
+    if symbols.is_empty() {
+        eprintln!(
+            "Warning: No symbols provided. Streamer is running but idle. Use --symbols=AAPL,MSFT"
+        );
+    }
     eprintln!("Streaming started. Press Ctrl+C to stop.");
-    // Wait for a termination signal (Ctrl+C)
     tokio::signal::ctrl_c().await.unwrap();
     eprintln!("Stopping...");
-    // Gracefully stop the streamer before exiting
-    streamer.stop().await;
+    // `host` drops here → supervisor stops (stop_tx) and monitor/pump tasks abort.
+    Ok(())
 }

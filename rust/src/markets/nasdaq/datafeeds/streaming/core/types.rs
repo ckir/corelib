@@ -1,5 +1,6 @@
 //! Engine channel payload + single-definition raw FFI pricing structs.
 use crate::markets::nasdaq::datafeeds::streaming::core::schema::{MarketEvent, ProviderStatus};
+use crate::markets::nasdaq::datafeeds::streaming::yahoo::yahoo_streaming_proto_handler::JsPricingData;
 use napi_derive::napi;
 use serde::{Deserialize, Serialize};
 
@@ -37,21 +38,23 @@ pub struct FinnhubPricingData {
 }
 
 /// Lossless raw pricing payload carried on the engine channel (one variant per provider).
-#[allow(dead_code)] // Yahoo variant added in Phase 2b; Alpaca produced from Task 7 on
+#[allow(dead_code)] // not every variant is produced in every build configuration
+#[allow(clippy::large_enum_variant)] // Yahoo(JsPricingData) is intentionally large; boxing deferred
 pub enum RawPricing {
     Alpaca(AlpacaPricingData),
     Finnhub(FinnhubPricingData),
+    Yahoo(JsPricingData),
 }
 
 /// The shared engine channel item: a lifecycle status, or a pricing tick with the raw
-/// payload plus an optional unified MarketEvent (None ⇒ raw-only, e.g. Alpaca bars).
+/// payload plus zero or more unified MarketEvents (empty ⇒ raw-only, e.g. Alpaca bars / Yahoo heartbeats).
 #[allow(dead_code)]
-#[allow(clippy::large_enum_variant)] // ProviderStatus carries string fields; boxing deferred to Phase 2b
+#[allow(clippy::large_enum_variant)] // ProviderStatus carries string fields; boxing deferred
 pub enum CoreEvent {
     Status(ProviderStatus),
     Pricing {
         raw: RawPricing,
-        uni: Option<MarketEvent>,
+        uni: Vec<MarketEvent>,
     },
 }
 
@@ -71,7 +74,7 @@ mod tests {
         };
         let ev = CoreEvent::Pricing {
             raw: RawPricing::Alpaca(raw.clone()),
-            uni: None,
+            uni: vec![],
         };
         match ev {
             CoreEvent::Pricing {
@@ -79,7 +82,7 @@ mod tests {
                 uni,
             } => {
                 assert_eq!(p.symbol, "AAPL");
-                assert!(uni.is_none());
+                assert!(uni.is_empty());
             }
             _ => panic!(),
         }

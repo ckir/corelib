@@ -62,21 +62,30 @@ export declare class FinnhubStreaming {
   clean(): Promise<void>
 }
 
-/** N-API wrapper for the price streamer, enabling its use in JavaScript environments. */
+/**
+ * N-API facade for Yahoo real-time streaming (dual-mode: raw + unified).
+ *
+ * `ThreadsafeFunction` is not `Clone`; each is wrapped in `Arc` so the pump closure can hold a
+ * cheap reference-counted copy. `on_market_event` is optional (absent ⇒ raw-only consumers).
+ */
 export declare class YahooStreaming {
-  /** Constructs a new `YahooStreaming` instance with the provided JavaScript callback functions. */
-  constructor(onLog: ((err: Error | null, arg: LogRecord) => any), onPricing: ((err: Error | null, arg: JsPricingData) => any), onEvent: ((err: Error | null, arg: EventRecord) => any))
-  /** Initializes the streamer with configuration parameters. */
+  /**
+   * Constructs a new `YahooStreaming` with the JS callback functions.
+   * Order: (on_log, on_pricing, on_event, [on_market_event]). `on_market_event` is optional —
+   * pass it to also receive the unified `"market"` stream.
+   */
+  constructor(onLog: ((err: Error | null, arg: LogRecord) => any), onPricing: ((err: Error | null, arg: JsPricingData) => any), onEvent: ((err: Error | null, arg: EventRecord) => any), onMarketEvent?: (((err: Error | null, arg: string) => any)) | undefined | null)
+  /** Set config (silence threshold / optional base_url override). */
   init(config: YahooConfig): Promise<void>
-  /** Starts the long-running streaming task. */
+  /** Start streaming; the driver resumes persisted subscriptions (redb) on every (re)connect. */
   start(): Promise<void>
-  /** Adds a list of symbols to the active stream. */
+  /** Subscribe to additional symbols (bare list; persisted to redb + sent live to the driver). */
   subscribe(symbols: Array<string>): Promise<void>
-  /** Removes a list of symbols from the active stream. */
+  /** Remove `symbols` from the persisted set (so they don't resume on restart). */
   unsubscribe(symbols: Array<string>): Promise<void>
-  /** Clears all subscriptions and stops the stream. */
+  /** Clears all persisted subscriptions and stops the stream. */
   clean(): Promise<void>
-  /** Gracefully stops the streaming task. */
+  /** Gracefully stops the streaming supervisor (keeps persisted subscriptions for resume). */
   stop(): Promise<void>
 }
 
@@ -308,10 +317,18 @@ export declare const enum QuoteType {
   Industry = 1000
 }
 
-/** Configuration parameters for the Yahoo price streamer. */
+/**
+ * Configuration parameters for the Yahoo price streamer. Yahoo has no credentials; `db_path`
+ * and `base_url` are retained for API/back-compat and test injection.
+ */
 export interface YahooConfig {
-  /** Optional path to the `redb` database file. Defaults to a temporary directory. */
+  /**
+   * Legacy no-op: the redb path is derived per-instance by the host (or via the `YAHOO_DB`
+   * env override). Retained for back-compat; ignored.
+   */
   dbPath?: string
-  /** Threshold in seconds for silence detection before triggering a reconnect. */
+  /** Threshold in seconds for silence detection before triggering a reconnect (default 60). */
   silenceSeconds?: number
+  /** Optional override for the WebSocket URL (defaults to the Yahoo v2 streamer). */
+  baseUrl?: string
 }

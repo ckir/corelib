@@ -81,15 +81,14 @@ pub mod markets {
                 }
                 /// Yahoo-specific streaming implementation.
                 pub mod yahoo {
+                    /// Pure Yahoo proto-decode mapper + YahooDriver (shared engine).
+                    pub mod yahoo_driver;
                     /// Main Yahoo price streamer logic.
                     pub mod yahoo_streamer;
                     /// Protobuf handler for Yahoo Finance websocket messages.
                     pub mod yahoo_streaming_proto_handler;
                     /// Re-export Yahoo streaming components for convenience.
-                    pub use yahoo_streamer::{
-                        EventRecord, LogRecord, RustCallbacks, YahooConfig, YahooStreaming,
-                        YahooStreamingCore,
-                    };
+                    pub use yahoo_streamer::{EventRecord, LogRecord, YahooConfig, YahooStreaming};
                 }
                 /// Shared trait-backed streaming engine (driver trait, schema, reconnect, supervisor, host).
                 pub mod core;
@@ -124,7 +123,7 @@ pub use markets::nasdaq::datafeeds::streaming::alpaca::{
 
 /// Re-export Yahoo streaming components.
 pub use markets::nasdaq::datafeeds::streaming::yahoo::{
-    EventRecord, LogRecord, RustCallbacks, YahooConfig, YahooStreaming, YahooStreamingCore,
+    EventRecord, LogRecord, YahooConfig, YahooStreaming,
 };
 
 #[cfg(feature = "finnhub")]
