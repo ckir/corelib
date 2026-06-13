@@ -439,6 +439,9 @@ export class ConfigManager extends EventEmitter {
 			}
 		}
 
+		// `merged` may share nested refs with `target` for keys absent from
+		// layeredConfig (deepmerge passes them through); clearAndFill(x, x) on
+		// those is a safe no-op (prune deletes nothing, fill self-assigns).
 		const merged = leafMerger(target, layeredConfig) as Record<string, unknown>;
 		clearAndFill(target, merged);
 	}

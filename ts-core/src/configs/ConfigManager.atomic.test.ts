@@ -36,6 +36,19 @@ describe("clearAndFill", () => {
 		expect((target.x as Record<string, unknown>).z).toBe(30);
 	});
 
+	it("nested-prune: within a preserved nested object, prunes stale keys and adds new ones", () => {
+		const inner: Record<string, unknown> = { a: 1, old: 99 };
+		const target: Record<string, unknown> = { x: inner };
+		const source: Record<string, unknown> = { x: { a: 2, added: 3 } };
+		clearAndFill(target, source);
+		// Same nested reference, mutated in place...
+		expect(target.x).toBe(inner);
+		// ...with the stale key pruned, the surviving key updated, the new key added.
+		expect("old" in (target.x as Record<string, unknown>)).toBe(false);
+		expect((target.x as Record<string, unknown>).a).toBe(2);
+		expect((target.x as Record<string, unknown>).added).toBe(3);
+	});
+
 	it("primitive overwrite: updates primitive values in target", () => {
 		const target: Record<string, unknown> = { n: 1 };
 		const source: Record<string, unknown> = { n: 2 };
