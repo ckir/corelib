@@ -1572,3 +1572,63 @@ To elevate this port from "functional" to "production-grade," the implementation
 **My preferred Phase 3 gateway is a single-binary, high-performance web gateway integrated cleanly inside the corelib-rust crate under the CLI bin `corelib_gateway` and gated by the `gateway` cargo feature. It manages Alpaca, Yahoo, and Finnhub instances simultaneously by spinning up their respective [WebsocketStreamerHost](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0ad911ee/rust/src/markets/nasdaq/datafeeds/streaming/core/host.rs#L36) coordinates, combining their emitted unified events into a central Tokio `mpsc` channel. Merged telemetry is fanned out using a unified `tokio::sync::broadcast` stream to Axum WebSocket handlers serving `/` (aggregated) and `/ws/:provider` (per-source dynamic filtering), utilizing a standard config file for static symbols and environment overrides for sensitive credentials. Slow WS clients are protected with immediate disconnects upon lagging thresholds, and a clean REST health probe validates the aggregate connectivity of all underlying hosts.**
 
 
+## 2026-06-13 — (d) Phase 3 — shape RECONSIDERED for library-consumption (advisory)
+
+### 1. Honest Re-evaluation of the Standalone WS-Server Binary
+The user's objection is incredibly sharp and architecturally valid. `finstream` is a standalone, cohesive deployment application, meaning an outbound network WebSocket gateway (using Axum) matches its deployment topography perfectly. However, `corelib` is explicitly designed and consumed as an **in-process runtime library** across TS/Node and Rust.
+Forcing an out-of-process, network-level server binary onto downstream library users introduces severe friction:
+1. **DevOps and Operational Complexity**: Instead of importing a package via `pnpm add` and running it inside their existing Node.js or edge processes, consuming developers must now spin up, configure, scale, monitor, and pay the networking/port overhead for a standalone Rust binary sidecar or microservice.
+2. **Serialization and Loopback Latency**: In-process streaming transfers decoded raw structs directly across the fast Rust N-API/Node event boundary. A loopback network gateway introduces TCP stack routing, JSON serialization/deserialization cycles, buffering latency, and the risk of network disconnects—all within the same host machine.
+3. **Rigid Configuration**: A compiled Rust binary restricts the consumer's ability to easily extend or configure routing logic dynamically at runtime in TypeScript.
+
+Therefore, we must honestly shift away from the "Standalone WS Server Binary" as the default Phase 3 deliverable and transition to a design that aligns tightly with corelib's library identity.
+
+---
+
+### 2. Candidate Layouts & Comparative Analysis
+
+We evaluate the proposed shapes below through the strict lens of library consumption:
+
+| Candidate Shape | Who Consumes It | Library Integration Alignment | Verdict |
+| :--- | :--- | :--- | :--- |
+| **(A) IN-PROCESS UNIFIED NODE/TS API** | TS/JS projects importing `@ckir/corelib-markets` looking for multi-provider streams. | **PERFECT**. Standard dynamic package import, runs in the same V8 execution context, zero local port allocation, zero network loopback overhead. | **BUILD** (Primary Path) |
+| **(B) RUST IN-PROCESS SINGLE-FFI AGGREGATOR** | Same TS/JS projects, but with aggregation shifted below the FFI boundary. | **PROBABLE**. While in-process, it forces significant N-API code duplication, rigid callback mappings, and heavy Rust compilation times without latency gains. | **DROP** (Over-engineered) |
+| **(C) THE WS-SERVER BINARY** | External non-Node environments or distributed microservice-mesh consumers. | **POOR**. Imposes standalone operational overhead for downstream teams who just want a local library dependency. | **DROP** (Under YAGNI rule) |
+
+#### Rationale for Drop vs Build Decisions:
+*   **Why (A) is the clear winner**: In-process TS code handles routing, fallback, and status merging with trivial resource footprints. Emitting events through safe, standard `EventEmitter` loops is highly performant and offers great developer ergonomics.
+*   **Why (B) is rejected**: Merging inside Rust and pushing across FFI under a single interface locks routing configuration in native code, which hurts user-extensibility and increases FFI boilerplate for little to no performance benefit (since JS garbage collection and N-API TSFN channel scheduling remain the primary bottlenecks).
+*   **Why (C) is dropped**: As a library target, a production-grade Axum binary is an architectural mismatch. However, instead of building a production-hardened binary with slow-consumer protection and rate-limiting, we can provide a **simple, optional reference example** (e.g. `examples/streaming-gateway-server.ts` or a lightweight `corelib_gateway` showcase binary under a separate test folder) showing how an application developer can boot an HTTP server themselves in 50 lines of JS using the (A) class.
+
+---
+
+### 3. Critical Questions & Structural Answers
+
+#### Q1: Which shape actually delivers value to CONSUMING projects, given corelib is a library? Rank them.
+1. **(A) IN-PROCESS UNIFIED NODE/TS API** (Rank 1): Offers supreme developer ergonomics, native monorepo workspace alignment, instant in-process execution, extreme performance, and 0 standalone operational cost.
+2. **(B) RUST IN-PROCESS SINGLE-FFI AGGREGATOR** (Rank 2): Retains in-process execution but introduces high engineering friction and low customization flex.
+3. **(C) THE WS-SERVER BINARY** (Rank 3): Highly complex, poor library affinity, forces heavy containerization management on users.
+
+#### Q2: Is Phase 3 even substantial enough to be its own phase, or is "unification" mostly trivial re-emit? What is the REAL cross-provider value?
+Unification is **absolutely not** a trivial re-emit if implemented as a proper, high-value **Unified MarketStream Engine**. Real cross-provider values worth building include:
+*   **Symbol-to-Provider Dynamic Routing**: Consuming projects subscribe to code vectors (e.g., `["AAPL", "^IXIC", "BTC-USD"]`). The client-side class automatically routes equities (e.g. `AAPL`) to Alpaca, indices (e.g. `^IXIC`) to Yahoo, and crypto to Finnhub, masking all provider-specific connections transparently.
+*   **Aggregate Connection-Health Tracking**: Emitting a single, normalized `health` event representing the combined state machine (e.g., `{ status: "degraded", details: { alpaca: "connected", yahoo: "reconnecting" } }`), saving clients from managing three separate event pools.
+*   **Provider Fallback & Redundancy**: If Alpaca's websocket throws rate-limiting errors or disconnects repeatedly, automatically fallback to Finnhub as an alternative pricing provider for requested indices/equities on the fly.
+*   **Dynamic Lifecycle Coordination**: Running thread-safe synchronized setup and teardown loops. Managing all three under-the-hood Rust-FFI connections as a cohesive, single-handle consumer class.
+
+Conversely, complex deduplication logic across different providers should be avoided as **YAGNI fluff**: because timestamps of raw trades/quotes vary across brokers and networks, true clock-level deduplication is technically non-deterministic and fragile.
+
+#### Q3: If (A) is mostly a thin TS fan-in, does it belong as a Phase at all, or folded into existing ts-markets exports? Does (B) earn its new-Rust-and-FFI cost over (A)?
+If (A) wraps routing, fallback, and health state machines as outlined above, it is a **substantial, highly useful engine** that easily earns its place as a Phase 3 deliverable.
+However, because it is client-side TypeScript, it can be seamlessly compiled and distributed inside the existing `@ckir/corelib-markets` package without creating a fourth packaging project.
+*(B) absolutely does not earn its cost.* A single Rust aggregator object is extremely difficult to debug, restricts user-defined routing, and doubles N-API marshalling code.
+
+#### Q4: Should the WS binary (C) survive in any form, or be dropped entirely under YAGNI?
+**Drop the standalone production Axum binary completely under YAGNI.**
+Instead, build a simple **reference example script** inside `ts-markets/examples/gateway.ts` that instantiates (A) and starts a mini HTTP/WebSocket server in Node.js. This gives polyglot/wire consumers a ready-to-run template without bloating the library's release binaries, unit tests, or dependencies with Axum/Hyper/Tower modules.
+
+---
+
+### 4. Overall Recommendation & Action Plan
+
+**We recommend shifting Phase 3 away from any standalone background Rust binary server and redefining it as a "Unified In-Process Client Engine" (MarketStream) implemented completely in TypeScript within `@ckir/corelib-markets`. This class will encapsulate Alpaca, Yahoo, and Finnhub stream instances under the hood, presenting a single clean interface that supports automatic Symbol-to-Provider routing, unified connection state-machine tracking, normalized error propagation, and basic provider-redundancy fallback, fully respecting corelib's nature as an in-process library dependency. The standalone Rust WS server binary represents a premature, complex infrastructure burden and should be DROPPED entirely from the roadmap, with reference server functionality relegated to a simple, developer-friendly TypeScript example.**
