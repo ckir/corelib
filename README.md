@@ -103,7 +103,9 @@ const proxiedResult = await client.endPoint("https://target.com");
 
 // 3. Configuration Management
 const config = ConfigManager.getInstance();
-await config.initialize();
+await config.initialize();              // single-flight; safe under concurrency
+if (!config.isInitialized) await config.whenReady();
+const port = config.get("database.port"); // read at the use site, don't cache slices
 ```
 
 ### 2. Market Data (`@ckir/corelib-markets`)

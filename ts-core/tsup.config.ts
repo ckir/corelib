@@ -13,7 +13,6 @@ export default defineConfig({
 		"luxon",
 		"deepmerge-ts",
 		"confbox",
-		"commander",
 		"croner",
 		"ky",
 		"@libsql/client",

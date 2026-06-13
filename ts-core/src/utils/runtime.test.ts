@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { detectRuntime } from "./runtime";
+import { __resetRuntimeCache, detectRuntime } from "./runtime";
 
 describe("detectRuntime", () => {
 	const originalProcess = globalThis.process;
@@ -18,6 +18,9 @@ describe("detectRuntime", () => {
 		if (globalThis.process) {
 			globalThis.process.env = {};
 		}
+
+		// Reset the memoization cache so each test starts fresh
+		__resetRuntimeCache();
 	});
 
 	afterEach(() => {
@@ -30,9 +33,11 @@ describe("detectRuntime", () => {
 		expect(detectRuntime()).toBe("bun");
 
 		process.env.RUNTIME = "DENO";
+		__resetRuntimeCache();
 		expect(detectRuntime()).toBe("deno");
 
 		process.env.RUNTIME = "cloudflare";
+		__resetRuntimeCache();
 		expect(detectRuntime()).toBe("cloudflare");
 	});
 
@@ -47,14 +52,17 @@ describe("detectRuntime", () => {
 		vi.stubGlobal("cloudflare", undefined);
 
 		vi.stubGlobal("caches", {});
+		__resetRuntimeCache();
 		expect(detectRuntime()).toBe("cloudflare");
 		vi.stubGlobal("caches", undefined);
 
 		vi.stubGlobal("WebSocketPair", {});
+		__resetRuntimeCache();
 		expect(detectRuntime()).toBe("cloudflare");
 		vi.stubGlobal("WebSocketPair", undefined);
 
 		vi.stubGlobal("__CFW__", {});
+		__resetRuntimeCache();
 		expect(detectRuntime()).toBe("cloudflare");
 	});
 
@@ -74,10 +82,12 @@ describe("detectRuntime", () => {
 		delete process.env.K_SERVICE;
 
 		process.env.K_REVISION = "my-revision";
+		__resetRuntimeCache();
 		expect(detectRuntime()).toBe("gcp-cloudrun");
 		delete process.env.K_REVISION;
 
 		process.env.GOOGLE_CLOUD_PROJECT = "my-project";
+		__resetRuntimeCache();
 		expect(detectRuntime()).toBe("gcp-cloudrun");
 	});
 
@@ -97,5 +107,36 @@ describe("detectRuntime", () => {
 
 	it("should default to node", () => {
 		expect(detectRuntime()).toBe("node");
+	});
+
+	describe("memoization cache contract", () => {
+		it("should return cached result on second call without re-running the ladder", () => {
+			// First call with no env overrides → "node"
+			expect(detectRuntime()).toBe("node");
+
+			// Mutate env — without resetting cache, result must stay "node" (cached)
+			process.env.RUNTIME = "bun";
+			expect(detectRuntime()).toBe("node");
+
+			// Now reset cache and re-run — ladder picks up the new env → "bun"
+			__resetRuntimeCache();
+			expect(detectRuntime()).toBe("bun");
+
+			// Clean up so this test doesn't pollute siblings
+			__resetRuntimeCache();
+		});
+
+		it("__resetRuntimeCache allows the ladder to re-run", () => {
+			// Establish a cached "node" result
+			expect(detectRuntime()).toBe("node");
+
+			// Reset then set env to "bun"
+			__resetRuntimeCache();
+			process.env.RUNTIME = "bun";
+			expect(detectRuntime()).toBe("bun");
+
+			// Clean up
+			__resetRuntimeCache();
+		});
 	});
 });

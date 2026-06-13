@@ -31,12 +31,9 @@ import { describe, expect, it } from "vitest";
 import { ConfigManager } from "../../ts-core/src/configs/ConfigManager";
 
 describe("ConfigManager CLI-override bootstrap contract", () => {
-	// This probe REPRODUCES the defect: it passes while the bug is present
-	// (initialize() exits the process on a documented override flag) and will
-	// start FAILING once the bug is fixed (initialize resolves + applies the
-	// flag). Treat a future failure of this test as "the bug got fixed — update
-	// the oracle to the fixed contract below."
-	it("REPRO: initialize() with an override flag triggers process.exit(1) instead of applying it", async () => {
+	// This probe is a regression guard for the fix: initialize() must resolve
+	// and apply the override flag without ever calling process.exit.
+	it("initialize() with an override flag applies it and never calls process.exit", async () => {
 		const cm = ConfigManager.getInstance();
 
 		// Trap process.exit so a library-triggered exit surfaces as a test failure
@@ -62,25 +59,11 @@ describe("ConfigManager CLI-override bootstrap contract", () => {
 			process.exit = realExit;
 		}
 
-		// REPRODUCTION ORACLE (bug present): initialize() must NOT have resolved,
-		// must have triggered process.exit(1), and must not have applied the flag.
-		// When the bug is fixed these three assertions will start failing — that
-		// failure is the signal to flip this to the fixed-contract oracle:
-		//   expect(exitCalledWith).toBeUndefined();
-		//   expect(resolved).toBe(true);
-		//   expect(liveValue).toBe("hello");
+		// FIXED-CONTRACT ORACLE (regression guard): initialize() must resolve,
+		// must NOT have triggered process.exit, and must have applied the flag.
 		void threw;
-		expect(
-			exitCalledWith,
-			"bug fixed? initialize() no longer exits on an override flag — flip oracle",
-		).toBe(1);
-		expect(
-			resolved,
-			"bug fixed? initialize() resolved instead of crashing — flip oracle",
-		).toBe(false);
-		expect(
-			liveValue,
-			"bug fixed? override flag was applied — flip oracle",
-		).toBeUndefined();
+		expect(exitCalledWith).toBeUndefined();
+		expect(resolved).toBe(true);
+		expect(liveValue).toBe("hello");
 	});
 });

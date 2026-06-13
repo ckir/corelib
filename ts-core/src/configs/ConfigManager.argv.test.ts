@@ -12,7 +12,7 @@ describe("ConfigManager.initialize(args)", () => {
 			"vitest.integration.config.ts",
 		];
 		try {
-			// Passing [] must bypass commander's argv scan and not throw.
+			// Passing [] must yield an empty arg set and not throw.
 			await expect(
 				ConfigManager.getInstance().initialize([]),
 			).resolves.toBeUndefined();
