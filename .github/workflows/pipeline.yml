@@ -40,6 +40,12 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck-all
 
+      # Build the TS packages so the workers-pool integration config can resolve
+      # @ckir/corelib via its package.json exports (dist). Pure tsup (no Rust/napi,
+      # offline); the .node addon is prebuilt/committed. ~20-40s, still gates the matrix.
+      - name: Build TypeScript packages
+        run: pnpm build-all
+
       - name: Integration (replay, offline)
         run: pnpm test:integration && pnpm test:integration:validate
 
