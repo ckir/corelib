@@ -20,4 +20,9 @@ export const COVERAGE_MATRIX: SeamCell[] = [
   { seam: "external", id: "itestCore.endpoint.retry", fixturePath: "itest-core/endpoint-retry.json" },
   { seam: "cross-package", id: "itestCore.db.roundtrip" },
   { seam: "cross-package", id: "itestCore.config.init" },
+  // ts-markets cross-package seam (Task 11)
+  { seam: "cross-package", id: "xpkg.logger.child" },
+  { seam: "cross-package", id: "xpkg.getTempDir" },
+  { seam: "cross-package", id: "xpkg.getMode" },
+  { seam: "cross-package", id: "xpkg.config" },
 ];
