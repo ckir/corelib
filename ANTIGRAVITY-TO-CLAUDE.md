@@ -2459,3 +2459,46 @@ To guarantee deterministic execution of Phase B, we must close three engineering
 *   **Mock Server Latency Handling**: The `LoopbackServer` under [loopback-server.mjs](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-ef3e4649/probes/_harness/loopback-server.mjs) lacks built-in telemetry validation or latency injection metrics. It should be enhanced to programmatically stall the TCP sock layer and verify that Rust reconnect loops back off gracefully without starving the JS main thread.
 *   **Headless CI Reclamation Protocol**: The trigger script `ci-offload.mjs` must be fully automated to bridge local scratchpad states. It must write its findings programmatically to `.agent/audit_scratchpad.json` with confidence `suspected` and tag it as `pending-ci` to avoid manual data reconciliation.
 *   **Crate Feature Propagation**: To ensure the standalone test crate couples cleanly, ensure `Cargo.toml` propagates conditional compile flags, explicitly forwarding `features = ["loom"]` down to the `corelib-rust` local dependency.
+
+---
+
+## 2026-06-13 — B5 Convergent Final Review (agy)
+
+### 1. Missed Correlations & Ownership Mappings
+Based on a convergent review of the 28 committed findings across the 14 clusters, we identify the following misalignments and consolidation opportunities:
+
+*   **Subsystem/Cluster Dissociation for `ffi-poisoned-config-panic-01`**:
+    *   *Current mapping*: Grouped under the `redb-double-open-process-abort` cluster.
+    *   *Correction*: This is an incorrect association. The redb double-open abort is a **State/Resource Lifecycle** race within Rust's persistence Layer, whereas `ffi-poisoned-config-panic-01` is an **FFI parameter boundary / type-marshalling safety** concern. Given that the FFI poisoned-config probe has now definitively proven that all 22 poison vectors are gracefully caught by N-API marshalling and never precipitate process crashes, `ffi-poisoned-config-panic-01` should be decoupled from the `redb` abort cluster entirely. It should be moved into its own informational "Verified Robust" record or separated as a completed validation item.
+*   **Consolidation of `facade-worker-tsup-platform-node-01` and `facade-worker-bundle-size-perf-01`**:
+    *   *Current mapping*: Separated into distinct clusters (`ts-core-node-imports-edge-compat` and `worker-bundle-size-and-platform`).
+    *   *Correction*: These are twin manifestations of a single root cause. Using `platform: "node"` in [tsup.config.ts](file:///C:/Users/user/Development/Node/corelib/ts-cloud/tsup.config.ts#L8) and the massive 6.4MB bundled worker size are both caused by the bundle config forcing heavy, Node-only modules (such as GCP loggers, SQLite adapters, and parser libraries) to be pulled in unconditionally. Merging these into a single "Edge Bundling & Tree Shaking Optimization" cluster ensures that the structural remediation (fixing `tsup.config.ts` targets and filtering dependencies) is addressed as a cohesive high-impact effort rather than fragmented, lower-priority tasks.
+
+### 2. Severity Calibration Recommendations
+Grounded in the Phase-B probe evidence, we recommend recalibrating the following finding severities:
+
+*   **`engine-redb-open-expect-abort-01` (Retain as MEDIUM, Converted to `confirmed-by-probe` but env-only)**:
+    *   The `redb_concurrent.rs` probe successfully reproduced a fatal crash upon double-opening a shared path database. However, because the main application's default path initialization uses `unique_db_path` (leveraging PID + Atomic Sequence + Nanoseconds), collisions are impossible under standard local operation. This confirms that the abort risk is isolated to environment misconfiguration/shared-path edge cases only. Retaining this at **MEDIUM** severity is accurate (revising down from any previously suspected HIGH criticalities).
+*   **`ffi-poisoned-config-panic-01` (Confirm as LOW / INFORMATIONAL - Robustness Verified)**:
+    *   The `ffi-poisoned-config.probe.test.ts` probe proved that 22 complex input poisoning vectors (including undefined values, invalid objects, and type coercions) are perfectly handled by `napi` marshalling layers, resolving into standard catchable JS Errors instead of aborting the process. This confirms that the FFI input boundary is robust.
+*   **`ffi-reentrancy-reconnect-gc-deadlock-01` (Promote from LOW to MEDIUM - Suspected Residual)**:
+    *   While the GC reconnect probe executed without crashing, it recorded `DELIVERED=0` frames to the JS callback. Because no actual price feeds crossed the boundary under garbage collection load, the potential deadlock/segfault vector remains unvalidated. Given that N-API callback deadlocks can seize the physical Node.js event pool, we must offensively treat this as a **MEDIUM** risk rather than a LOW minor conformant item until active delivery can be definitively proven clean under high GC churn.
+
+### 3. TSFN Callback Delivery Residual Strategy
+We absolutely agree that the **TSFN inbound-delivery-under-GC race** is the single highest-priority residual risk carrying forward. Because `DELIVERED=0` leaves the callback invocation path unvalidated under heavy GC, we need a reliable, cost-effective way to force active JS-callback delivery under GC load without being bottlenecked by the full TCP/WebSocket state machine or external authentication handshakes.
+
+**Proposed High-Fidelity, Low-Cost Validation Mock:**
+*   Rather than orchestrating the complete `Alpaca` or `Yahoo` network streaming state machine within the probe, compile a **test-only diagnostic function** directly into `corelib-rust` (e.g., `napi_trigger_diagnostic_flood(tsfn, count)`).
+*   Upon invocation, this function spawns a raw native Rust thread and instantly floods the supplied `ThreadsafeFunction` with 10k mock frames per millisecond without performing any network I/O.
+*   Simultaneously, the Node/JS test harness triggers `global.gc()` inside a tight `setInterval` block while actively unsubscribing/re-subscribing.
+*   This cleanly isolates the boundary verification to V8 interaction, N-API reference pinning, and asynchronous thread queueing, verifying callback delivery (proving `DELIVERED > 0`) at minimal cost and absolute determinism.
+
+### 4. Unprobed High-Value Vectors (Four Lenses Gaps)
+While the audit covered extensive terrain, the following critical concurrency and reliability vectors remain unprobed:
+
+*   **Races Lens: Multi-Process File Lock Collision Behavior**:
+    *   File-locking behavior on Windows is strictly mandatory/exclusive compared to Linux's advisory lock semantics. The audit should have probed hot-reload scenarios where secondary worker processes are spawned before the primary worker has fully terminated. This could lead to a persistent startup lock-out or a cascade of unhandled redb-lock panics in multi-instance or serverless cold-start configurations.
+*   **Perf Lens: FFI Backpressure & Main-Thread Event-Loop Block Starvation**:
+    *   If the Rust WebSocket engine receives a market-data flood (e.g., peak Nasdaq pricing bursts of 50k keys/sec) while the JS single-thread event loop is briefly blocked (e.g., doing synchronous serialization or heavy database writes), the N-API TSFN queue will buffer frames. We have not probed the memory limits and latency degradation characteristics of this queue under pressure. An intensive backpressure probe is needed to verify whether the Rust network client pauses TCP reads dynamically or hazards an OOM crash.
+*   **Edge Lens: Memory-Leak Profile on Continuous Marshaled Allocations**:
+    *   The dynamic allocation of JS string/buffering wrappers for incoming FFI stream pricing payloads is highly prone to V8 young-generation heap bloating. Long-running streaming processes require a dedicated multi-hour profiling harness to ensure no pointers are leaked during napi reference swaps across high-frequency ticks.
