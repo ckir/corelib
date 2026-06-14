@@ -3466,6 +3466,76 @@ const getRequire = () => {
 ```
 This guarantees flawless Edge-compilation safety at absolutely zero runtime performance cost.
 
+## Epic-3 plan review (2026-06-14)
+
+### 1. The Task-4 PLAN-vs-SPEC Correction & Edge Import Breakage
+*   **Verification**: [VERIFIED]
+*   **The Issue**: The implementation plan claims that because the three `createRequire` locations—[core/index.ts:L8](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0c580746/ts-core/src/core/index.ts#L8), [SysInfo.ts:L11](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0c580746/ts-core/src/utils/SysInfo.ts#L11), and [utils/index.ts:L10](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0c580746/ts-core/src/utils/index.ts#L10)—wrap their actual `createRequire()` invocations inside runtime or fallback checks, they need no source changes and can be made "edge-safe" by simply externalizing `node:*` in Task 5. **This is incorrect.**
+*   **The Problem**: ES module static imports—such as `import { createRequire } from "node:module";`—are fully resolved and processed at **module loading/evaluation time**, long before any synchronous guards or runtime functions can execute. 
+    *   Marking `node:*` as external in `ts-cloud/tsup.config.ts` preserves `import { createRequire } from "node:module"` verbatim in the compiled `worker.js` file.
+    *   Cloudflare's `nodejs_compat` sandbox does **not** support or provide `"node:module"` (it provides a specific restricted subset, including `node:events` and `node:stream`, but excludes the ESM require shim).
+    *   Therefore, during worker loading, workerd will immediately throw a fatal, uncatchable module resolution error (`No such module 'node:module'`) and crash at startup. "Guarded execution paths" do not protect against static-import failures.
+*   **Correction/Mitigation**:
+    1.  **`core/index.ts`**: Since `loadFFI()` (line 44) is `async`, dynamically lazy-load `node:module` inside its body: `const { createRequire } = await import("node:module")`. This completely removes the static import at line 8.
+    2.  **`SysInfo.ts` & `utils/index.ts`**: Since these utility files use the loader in synchronous functions, we can declare a dynamic, conditional `await import` at the file top level, guarded by a build-time compiler define: `if (typeof __EDGE_RUNTIME__ === "undefined" || !__EDGE_RUNTIME__) { ... }`. Tree-shaking during esbuild compilation will completely strip the dynamic import block from the Cloudflare Worker bundle, resolving the load-time crash while maintaining synchronous compatibility with Node/Bun.
+
+### 2. Task 5 Externalize List Completeness
+*   **Verification**: [VERIFIED]
+*   **The Issue**: The proposed external configuration in the plan:
+    `external: [/^node:/, "@google-cloud/pino-logging-gcp-config", "@libsql/client", "pino-pretty"]`
+    is missing critical, heavy transitive dependencies imported inside `@ckir/corelib`.
+*   **The Problem**: Since `@ckir/corelib` is bundled (`noExternal: [/.*/]`), esbuild compiles all sub-modules reachable from it.
+    -   [lambda.ts:L3](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0c580746/ts-core/src/loggers/implementations/lambda.ts#L3) imports `"pino-lambda"` statically. Because `"pino-lambda"` is not in the `external` list, esbuild will try to bundle it, dragging in heavy server-only packages and inflating the worker bundle.
+    -   [postgres-driver.ts:L15](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0c580746/ts-core/src/database/postgres/postgres-driver.ts#L15) dynamically imports `"postgres"`. To avoid compiler warning attempts and potential runtime bundling issues under `"neutral"`, it should be marked external.
+    -   `"pino-socket"` resides in `ts-core`'s dependencies list and remains un-externalized.
+*   **Correction/Mitigation**: Mark all environment/runtime-specific transitive dependencies as external:
+    ```typescript
+    external: [
+        /^node:/,
+        "@google-cloud/pino-logging-gcp-config",
+        "@libsql/client",
+        "pino-pretty",
+        "pino-lambda",
+        "pino-socket",
+        "postgres",
+    ]
+    ```
+*   **Runtime Resolution**: Once these are externalized, standard `node:*` modules that are genuinely used (like `node:events` inside [ConfigManager.ts:L9](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0c580746/ts-core/src/configs/ConfigManager.ts#L9) or `node:stream` inside logger adapters) are correctly satisfied by Cloudflare's `nodejs_compat` layer at load-time, and they are never executed on edge paths.
+
+### 3. Edge-Boot Probe as the Phase-3 Oracle
+*   **Verification**: [VERIFIED]
+*   **The Issue**: The boot probe [probes/_harness/edge-boot.mjs:L107](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0c580746/probes/_harness/edge-boot.mjs#L107) spawns wrangler's programmatic harness pointing directly to the TypeScript source file:
+    `worker = await unstable_dev("src/platform/cloudflare/worker.ts", { config: wranglerConfig })`
+*   **The Problem**: Because wrangler is pointed directly to `worker.ts` source, wrangler's internal esbuild compiler builds the worker on-the-fly, completely **bypassing** the compiled tsup asset `dist/cloudflare/worker.js`. 
+    *   If the `tsup` configuration in [ts-cloud/tsup.config.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0c580746/ts-cloud/tsup.config.ts) has packaging mistakes, incorrect external targets, or missing export mappings, `edge-boot.mjs` will **never** catch them.
+    *   Wrangler's default dynamic compilation succeeds while the real deployed bundle remains corrupted.
+*   **Correction/Mitigation**: Modify [edge-boot.mjs:L107](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0c580746/probes/_harness/edge-boot.mjs#L107) to load the compiled asset of our build:
+    `worker = await unstable_dev("dist/cloudflare/worker.js", { config: wranglerConfig })`
+    This guarantees that the actual, minified bundle generated by tsup is the exact code executing under the workerd isolate, serving as a genuine, infallible oracle.
+
+### 4. Task Ordering & Commit Boundaries
+*   **Verification**: [APPROVED]
+*   **The Verdict**: The 1→5 logical sequence is correct and optimal.
+    *   Observability (1, 2) and routing fixes (3) represent low-risk, decoupled updates.
+    *   Task 4 (edge-safe imports) is a strict compile prerequisite for Task 5's platform-neutral bundle switch. Reversing them would lead to compile errors midway.
+    *   The atomic, per-task commit granularity is highly recommended. It keeps changes isolated, makes git logs highly legible, and simplifies potential rollbacks.
+
+### 5. Missed-Sites Sweep & Generative Suggestion
+*   **Missed-Sites Sweep**:
+    -   **Stray Transitive Logger site**: `ts-core/src/loggers/implementations/lambda.ts:L3`'s static import of `"pino-lambda"`.
+    -   **Static `node:*` import**: [ConfigManager.ts:L9](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0c580746/ts-core/src/configs/ConfigManager.ts#L9) statically imports `node:events`, which must stay externalized under `nodejs_compat`.
+*   **Exactly ONE Bounded Generative Suggestion**:
+    To dynamically handle compilation environments, pass a build-time constant `__EDGE_RUNTIME__: "true"` inside [ts-cloud/tsup.config.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0c580746/ts-cloud/tsup.config.ts#L4-L14) under the worker config block. Guard the synchronous loader within [SysInfo.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0c580746/ts-core/src/utils/SysInfo.ts) and [utils/index.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0c580746/ts-core/src/utils/index.ts):
+    ```typescript
+    let createRequire: any;
+    if (typeof __EDGE_RUNTIME__ === "undefined" || !__EDGE_RUNTIME__) {
+        const mod = await import("node:module");
+        createRequire = mod.createRequire;
+    }
+    ```
+    This triggers dead-code-elimination, completely stripping out the `"node:module"` import block during the edge compilation, avoiding any load-time sandbox crashes with 100% guarantee, while leaving Node-compatible platforms fully functional.
+
+
 
 
 
