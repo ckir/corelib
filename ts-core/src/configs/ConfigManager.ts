@@ -245,6 +245,7 @@ export class ConfigManager extends EventEmitter {
 	 * 1. Load Defaults 2. Detect CLI -C 3. Process Hierarchy 4. Env 5. CLI overrides.
 	 */
 	private async runInitSequence(args?: string[]): Promise<void> {
+		ConfigManager._logger.debug("initialize: start");
 		// 2. Parse argv with a dedicated parser (no commander): extract the
 		// external-config path (-C/--config) and collect arbitrary --kebab
 		// overrides. Guarded so edge runtimes without process.argv yield [].
@@ -287,6 +288,10 @@ export class ConfigManager extends EventEmitter {
 			overrides[key] = value;
 		}
 
+		ConfigManager._logger.debug("initialize: resolved", {
+			hasConfigPath: configPath != null,
+			overrideCount: Object.keys(overrides).length,
+		});
 		// Staged build; publish the staging object so a sync updateValue between
 		// awaits dual-writes into it and survives the commit.
 		const tempConfig: Record<string, unknown> = {};
@@ -300,6 +305,9 @@ export class ConfigManager extends EventEmitter {
 			this.applyEnvOverrides(tempConfig);
 			this.applyCliOverrides(overrides, tempConfig);
 			clearAndFill(this._config, tempConfig);
+			ConfigManager._logger.debug("initialize: committed", {
+				keys: Object.keys(this._config ?? {}).length,
+			});
 			this.emit("initialized", this._config);
 		} finally {
 			this._inFlightTempConfig = null;
@@ -414,6 +422,9 @@ export class ConfigManager extends EventEmitter {
 	private async fetchExternalConfig(
 		source: string,
 	): Promise<Record<string, unknown>> {
+		ConfigManager._logger.debug("external config", {
+			source: source.startsWith("http") ? "http" : "file",
+		});
 		let content: string;
 
 		if (source.startsWith("http")) {
@@ -430,7 +441,13 @@ export class ConfigManager extends EventEmitter {
 		const lowerSource = source.toLowerCase();
 
 		if (lowerSource.endsWith(".enc")) {
-			return this.validateConfigObject(await decryptConfig(content), source);
+			ConfigManager._logger.debug("decrypting .enc config");
+			const decrypted = this.validateConfigObject(
+				await decryptConfig(content),
+				source,
+			);
+			ConfigManager._logger.debug("decryption ok");
+			return decrypted;
 		}
 
 		// Tree-shakable dynamic import for confbox
@@ -542,6 +559,7 @@ export class ConfigManager extends EventEmitter {
 					.slice(prefix.length)
 					.toLowerCase()
 					.replace(/_/g, ".");
+				ConfigManager._logger.trace("env override", { key: configPath });
 				const value = this.parseValue(env[envKey]);
 				this.setPath(target, configPath, value);
 			}
@@ -565,6 +583,7 @@ export class ConfigManager extends EventEmitter {
 				return;
 			}
 			const configPath = key.replace(/-/g, ".");
+			ConfigManager._logger.trace("cli override", { key: configPath });
 			const value = this.parseValue(overrides[key]);
 			this.setPath(target, configPath, value);
 		});
