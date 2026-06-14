@@ -6,6 +6,7 @@
 import type { SqliteConfig } from "@ckir/corelib";
 import { createDatabase } from "@ckir/corelib";
 import { Hono } from "hono";
+import { serializeError } from "serialize-error";
 import type { AppEnv } from "../core/types";
 
 /**
@@ -65,7 +66,7 @@ sqlRouter.post("/", async (c: any) => {
 		return c.json(result);
 	} catch (error) {
 		const logger = c.get("logger") as AppEnv["Variables"]["logger"];
-		logger?.error("SQL Sub-Router Error", { error });
+		logger?.error("SQL Sub-Router Error", { error: serializeError(error) });
 		return c.json(
 			{ status: "error", reason: { message: "Internal SQL Error" } },
 			500,

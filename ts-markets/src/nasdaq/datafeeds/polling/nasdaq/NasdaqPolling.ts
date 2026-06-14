@@ -154,7 +154,7 @@ export class NasdaqPolling extends EventEmitter {
 					validResults.push(result.value);
 				} else if (result.status === "error") {
 					nasdaqPollingLogger.error("Error fetching quote", {
-						error: result.reason,
+						error: serializeError(result.reason),
 					});
 					this.emit("error", result.reason);
 				}
