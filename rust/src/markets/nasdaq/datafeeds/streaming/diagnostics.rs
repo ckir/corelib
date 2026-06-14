@@ -1,6 +1,8 @@
 //! Diagnostics: env-gated native-thread flood hook to VALIDATE TSFN inbound delivery under
 //! GC reentrancy (the top audit residual). Production no-op unless CORELIB_DIAG_FLOOD=1.
+use napi::bindgen_prelude::Unknown;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
+use napi::Status;
 use napi_derive::napi;
 
 /// Floods `on_event` with `count` synthetic JSON-string events from a dedicated native thread.
@@ -40,7 +42,7 @@ pub fn napi_load_generator(
     rate_per_sec: u32,
     duration_ms: u32,
     bursty: bool, // false = steady; true = recurrent spike→idle→gc-window cycles
-    on_event: ThreadsafeFunction<String>,
+    on_event: ThreadsafeFunction<String, Unknown<'static>, String, Status, true, false, 4096>,
 ) -> napi::Result<()> {
     if !loadgen_enabled() {
         return Ok(()); // production no-op
