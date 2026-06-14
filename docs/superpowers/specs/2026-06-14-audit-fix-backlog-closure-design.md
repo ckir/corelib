@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-14
 **Epic:** 3 (third fix cycle from the 2026-06-13 monorepo optimization audit; follows Epic 1 boot-hardening and Epic 2 input/env-safety)
-**Status:** design — production changes IN scope this cycle
+**Status:** IMPLEMENTED (Epic 3, 2026-06-14) — all 5 findings RESOLVED on branch `epic3/audit-fix-closure`. Two plan-corrections folded during execution (both caught by the real edge-boot oracle): (1) Task 6 keeps `noExternal` for the edge-safe workspace packages and externalizes the dynamic-only server deps **including `pino`** + node builtins, plus a wrangler `[alias]`→edge-stub for those specifiers (the plan's "replace noExternal" alone left bare specifiers workerd can't resolve); (2) `__EDGE_RUNTIME__` moved from an ambient `.d.ts` to an import-graph-travelling module global so dependent packages' typechecks pass. Result: worker.js 6.29 MB → ~133 KB gzip, edge-boot BOOTS_CLEAN, all typechecks + suites green, lint 0 fixes.
 **Owner files:** `ts-core/src/{loggers,database,utils,configs,core}/**`, `ts-cloud/src/{markets,core,platform}/**`, `ts-markets/src/nasdaq/groups/Top100.ts`, `ts-cloud/tsup.config.ts`
 
 ---

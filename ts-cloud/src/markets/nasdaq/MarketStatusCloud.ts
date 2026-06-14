@@ -51,6 +51,6 @@ marketStatusRouter.get("/", async (c) => {
 			status: "error",
 			reason: { message: "Internal Edge Proxy Error" },
 		};
-		return c.json(fatalResult, 200);
+		return c.json(fatalResult, 500);
 	}
 });

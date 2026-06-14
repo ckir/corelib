@@ -8,8 +8,13 @@
 // - Works on Node, Bun, Deno, and fallback
 // =============================================
 
-import { createRequire } from "node:module";
+import "../types/edge-runtime";
 import { detectRuntime } from "./runtime";
+
+let _createRequire: ((id: string) => unknown) | undefined;
+if (typeof __EDGE_RUNTIME__ === "undefined" || !__EDGE_RUNTIME__) {
+	_createRequire = (await import("node:module")).createRequire;
+}
 
 // CJS require returns an untyped module — any on the return is intentional
 type RequireFn = (id: string) => any;
@@ -19,9 +24,13 @@ const getRequire = () => {
 		const runtime = detectRuntime();
 
 		// 1. Try createRequire from node:module (Standard ESM way)
-		if (typeof import.meta !== "undefined" && import.meta.url) {
+		if (
+			_createRequire &&
+			typeof import.meta !== "undefined" &&
+			import.meta.url
+		) {
 			try {
-				_require = createRequire(import.meta.url);
+				_require = _createRequire(import.meta.url) as RequireFn;
 			} catch (_e) {
 				// Ignore and try fallback
 			}

@@ -1,3 +1,4 @@
+import { serializeError } from "serialize-error";
 import { type DatabaseResult, wrapError } from "../core/result";
 import {
 	getActiveTransaction,
@@ -46,7 +47,7 @@ export class SqliteDb {
 		} catch (e) {
 			this.config.logger?.error("Query catastrophic failure", {
 				sql,
-				error: e,
+				error: serializeError(e),
 			});
 			return wrapError(e);
 		} finally {
@@ -111,7 +112,7 @@ export class SqliteDb {
 			});
 		} catch (e) {
 			this.config.logger?.error("Transaction failed due to exception", {
-				error: e,
+				error: serializeError(e),
 				isNested,
 			});
 			try {
@@ -122,7 +123,7 @@ export class SqliteDb {
 				}
 			} catch (rollbackErr) {
 				this.config.logger?.error("Failed to rollback transaction", {
-					error: rollbackErr,
+					error: serializeError(rollbackErr),
 				});
 			}
 			return wrapError(e);

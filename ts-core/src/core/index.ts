@@ -5,10 +5,15 @@
 // FIXED (2026-03-07): Replaced 'any' type for ffi with 'unknown' to avoid noExplicitAny lint error (safer than any while maintaining dynamic nature). Organized imports alphabetically per Biome assist/source/organizeImports. Added type guards for coreFFI accesses to fix 'unknown' type errors. All unrelated features (e.g., runtime detection, FFI loading logic) remain fully maintained and unchanged.
 // =============================================
 
-import { createRequire } from "node:module";
+import "../types/edge-runtime";
 import { serializeError } from "serialize-error";
 import logger from "../loggers";
 import { detectRuntime } from "../utils/runtime";
+
+let _createRequire: ((id: string) => unknown) | undefined;
+if (typeof __EDGE_RUNTIME__ === "undefined" || !__EDGE_RUNTIME__) {
+	_createRequire = (await import("node:module")).createRequire;
+}
 
 const coreLogger = logger.child({ section: "Core" });
 
@@ -28,8 +33,13 @@ const getRequire = () => {
 		].includes(runtime);
 
 		// createRequire(import.meta.url) crashes in Cloudflare Workers if import.meta.url is undefined
-		if (isNodeLike && typeof import.meta !== "undefined" && import.meta.url) {
-			_require = createRequire(import.meta.url);
+		if (
+			_createRequire &&
+			isNodeLike &&
+			typeof import.meta !== "undefined" &&
+			import.meta.url
+		) {
+			_require = _createRequire(import.meta.url) as RequireFn;
 		} else {
 			_require = (path: string) => {
 				throw new Error(
