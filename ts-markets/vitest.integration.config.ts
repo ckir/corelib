@@ -17,5 +17,11 @@ export default defineConfig({
 		setupFiles: [resolve(root, "tests/integration/_harness/setup.ts")],
 		hookTimeout: 20000,
 		testTimeout: 20000,
+		pool: "forks",
+		poolOptions: {
+			forks: {
+				execArgv: ["--expose-gc"],
+			},
+		},
 	},
 });

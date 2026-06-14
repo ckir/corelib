@@ -92,6 +92,8 @@ pub mod markets {
                 }
                 /// Shared trait-backed streaming engine (driver trait, schema, reconnect, supervisor, host).
                 pub mod core;
+                /// Env-gated TSFN-under-GC flood validation hook (diagnostics).
+                pub mod diagnostics;
                 /// Finnhub streaming provider (pilot for the shared engine).
                 #[cfg(feature = "finnhub")]
                 pub mod finnhub {
