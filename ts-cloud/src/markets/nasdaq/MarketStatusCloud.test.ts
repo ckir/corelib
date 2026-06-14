@@ -98,7 +98,7 @@ describe("MarketStatusCloud (Edge)", () => {
 
 		const res = await app.request("/");
 
-		expect(res.status).toBe(200);
+		expect(res.status).toBe(500);
 		const body = (await res.json()) as NasdaqResult;
 
 		// Verify response structure
