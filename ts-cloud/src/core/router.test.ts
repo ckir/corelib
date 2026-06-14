@@ -24,6 +24,7 @@ describe("Router", () => {
 			info: vi.fn(),
 			warn: vi.fn(),
 			error: vi.fn(),
+			debug: vi.fn(),
 			child: vi.fn().mockReturnThis(),
 			bindings: vi.fn().mockReturnValue({}),
 		};
@@ -47,6 +48,13 @@ describe("Router", () => {
 		expect(logger.error).toHaveBeenCalledWith(
 			expect.stringContaining("Error level"),
 			expect.any(Object),
+		);
+		expect(logger.debug).toHaveBeenCalledWith(
+			"router: request",
+			expect.objectContaining({
+				method: expect.any(String),
+				path: expect.any(String),
+			}),
 		);
 	});
 

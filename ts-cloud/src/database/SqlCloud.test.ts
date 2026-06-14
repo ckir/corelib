@@ -45,6 +45,10 @@ describe("SqlCloud Router", () => {
 		const body = (await res.json()) as any;
 		expect(body.status).toBe("error");
 		expect(body.reason.message).toBe("Missing SQL query");
+		expect(mockLogger.debug).toHaveBeenCalledWith(
+			"sql: rejected",
+			expect.objectContaining({ reason: expect.any(String) }),
+		);
 	});
 
 	it("should return 400 if the body is invalid or empty", async () => {
@@ -76,6 +80,19 @@ describe("SqlCloud Router", () => {
 				url: "test-url",
 				authToken: "test-token",
 			}),
+		);
+		expect(mockLogger.debug).toHaveBeenCalledWith(
+			"sql: request",
+			expect.objectContaining({ hasSql: true }),
+		);
+		expect(mockLogger.debug).toHaveBeenCalledWith(
+			"sql: ok",
+			expect.objectContaining({ status: expect.any(String) }),
+		);
+		// REDACTION: sql text / params values must never be logged
+		expect(mockLogger.debug).not.toHaveBeenCalledWith(
+			"sql: request",
+			expect.objectContaining({ sql: expect.anything() }),
 		);
 	});
 

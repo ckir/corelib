@@ -51,11 +51,22 @@ describe("MarketStatusCloud (Edge)", () => {
 		};
 		vi.mocked(MarketStatus.getStatus).mockResolvedValueOnce(mockSuccess);
 
-		const res = await marketStatusRouter.request("/");
+		const app = new Hono<AppEnv>();
+		app.use("*", async (c, next) => {
+			c.set("logger", mockLogger as any);
+			await next();
+		});
+		app.route("/", marketStatusRouter);
+
+		const res = await app.request("/");
 
 		expect(res.status).toBe(200);
 		const body = await res.json();
 		expect(body).toEqual(mockSuccess);
+		expect(mockLogger.debug).toHaveBeenCalledWith(
+			"market-status: ok",
+			expect.objectContaining({ status: "success" }),
+		);
 	});
 
 	/**
@@ -86,7 +97,7 @@ describe("MarketStatusCloud (Edge)", () => {
 		vi.mocked(MarketStatus.getStatus).mockRejectedValueOnce(testError);
 
 		const app = new Hono<AppEnv>();
-		const mockLogger = { error: vi.fn() };
+		const mockLogger = { error: vi.fn(), debug: vi.fn() };
 
 		app.use("*", async (c, next) => {
 			// Rule 'noExplicitAny' is off in biome.json; no suppression comment needed.

@@ -38,7 +38,9 @@ marketStatusRouter.use("*", async (c, next) => {
  */
 marketStatusRouter.get("/", async (c) => {
 	try {
+		c.get("logger")?.debug("market-status: request");
 		const result = await MarketStatus.getStatus();
+		c.get("logger")?.debug("market-status: ok", { status: result.status });
 		return c.json(result, 200);
 	} catch (error) {
 		// Log the error using serialize-error for structured reporting
