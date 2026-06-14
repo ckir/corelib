@@ -3284,4 +3284,75 @@ This markdown block is ready to be dropped into the system guidelines to enforce
      This structure ensures the child logger cleanly gets a spyable trace handler that intercepts module-scope exports at evaluation time, without relying on `globalThis` mutations.
 
 
+## Epic-2 convergent review (2026-06-14)
+
+### 1. Critical Review & Safety Analysis
+
+This review analyzes the implementation of Epic 2 ("Input & Environmental Safety Hardening") based on the completed code changes and design parameters, diagnosing latent correctness risks, edge cases, and architectural gaps that should be addressed before merging into `main`.
+
+#### 🟡 Correctness Risk — NAPI-Error String-Only Bridge Diagnostic Loss
+* **Design Area**: Native N-API facade mapping (`napi::Error::from_reason(e.to_string())`)
+* **Impact**: Robustness / Inspectability
+* **Issue**: Mapping the newly polished, pure-Rust `HostError::DbOpen(redb::DatabaseError)` to a JS error using `from_reason(e.to_string())` flattens a rich Error structure into a raw string. 
+    * Consumers attempting to inspect or programmatically handle database errors are forced to use brittle regex/string matches (e.g. searching for `/Database open/i`).
+    * If `redb` alters its diagnostic strings in a minor library update, downstream exception-handling routines will silently break.
+* **Mitigation**: Introduce a simple key-value/code mapping on `napi::Error` (or a custom error object) mapping standard Rust failures to robust FFI error codes (e.g. `ERR_DB_LOCK_HELD`, `ERR_DB_CORRUPTED`).
+
+#### 🟡 Correctness Risk — `Blocking` TSFN Call Mode and Tokio Thread Pool Starvation
+* **Design Area**: `diagnostics.rs` — `ThreadsafeFunctionCallMode::Blocking`
+* **Impact**: Threading Safety / Resource Exhaustion
+* **Issue**: The diagnostic flood test utilizes a thread calling `napi_trigger_diagnostic_flood` that pushes event payloads via a `Blocking` TSFN call to the JS layer. While the integration suite proved deadlock-free under GC stress, utilizing standard N-API `Blocking` call mode is highly dangerous under real production loads.
+    * If local high-frequency surges (e.g., thousands of simultaneous trades/quotes) occur while the JS event loop is stalled (e.g., executing synchronous serialization or experiencing a GC/V8 pause), the N-API queue will fill up and the Rust caller threads will block.
+    * In production, blocking raw streaming connection or parser threads can exhaust Tokio's pool worker threads, causing missed Websocket heartbeat pings/pongs and triggering unintended connection recycling loops.
+* **Mitigation**: Modify the integration stream engine to use `ThreadsafeFunctionCallMode::NonBlocking`, handling queue-overflow results (`Status::QueueFull`) gracefully via backpressure, message coalescing, or message dropping based on priority.
+
+#### 🟡 Safety Concern — Timeout Clamping of `min = 0` Bypasses Ceilings
+* **Design Area**: `RequestUnlimited.ts` — `clampNumber(cfgTimeout, 0, MAX_TIMEOUT_MS, 50000)`
+* **Impact**: Availability / Hang risk
+* **Issue**: The clamping logic maps any parsed configuration timeout to `[0, MAX_TIMEOUT_MS]`. However, passing a timeout of `0` to most modern HTTP fetch clients (including `ky` and standard Node `http`) is interpreted as **infinite/no timeout**.
+    * A faulty configuration setting `retrieve.timeout = 0` or negative/NaN values (which get bound or clamped) could inadvertently allow requests to hang indefinitely on slow connections, bypassing the `MAX_TIMEOUT_MS` protection ceiling and causing long-lived connection leaks.
+* **Mitigation**: Adjust the clamping minimum for request timeouts to a sane non-zero value (e.g., `min = 1000` representing 1 second) so that a zero/near-zero value cannot bypass the failure safeguards.
+
+#### 🟢 Safety Concern — Cross-Process Probe Cleanup and Process Leakage
+* **Design Area**: `probes/rust/tests/redb_cross_process.rs` process spawning
+* **Impact**: Build Environment Stability
+* **Issue**: The cross-process probe spawns a secondary process that holds a mock lock on the database for 30 seconds.
+    * If the parent Vitest or cargo test execution aborts abruptly (due to a test timeout, SIGTERM, runner cancellation, or unhandled parent panics), the secondary process can become orphaned, continuing to run in the background.
+    * An orphaned process holding the temp-file lock will cause consecutive CI test builds on the same host agent to fail due to file lock collisions, demanding manual intervention.
+* **Mitigation**: Implement a dual-safety kill mechanism: ensure the child process regularly checks if its parent process has terminated (using parent-PID heartbeats or standard sub-process tracking APIs) and immediately exits if orphaned.
+
+---
+
+### 2. Generative Forward-Looking Suggestion
+
+#### 💡 Unified Structured Exception JSON Serialization over FFI
+To eliminate string-based parsing across the FFI seam and fully bridge Rust's expressive types with TypeScript, introduce a standardized JSON-serialized FFI envelope:
+
+* **Concept**:
+  Instead of compiling custom native error structures or raw `.to_string()` dumps, wrap the fallible Rust-FFI operations in a serialization bridge. Any failure returns a serialized JSON string containing:
+  1. A structural error categorization code (`code`).
+  2. A fully descriptive message for debugging (`message`).
+  3. A key-value context payload (`context`) preserving specific file paths, error codes, and system parameters.
+  
+* **Rust Side**:
+  ```rust
+  #[derive(Serialize)]
+  struct FfiErrorPayload {
+      code: String,
+      message: String,
+      context: Option<HashMap<String, String>>,
+  }
+  ```
+* **TypeScript Side**:
+  ```typescript
+  try {
+      this.rust = new RustStreaming();
+  } catch (rawError: any) {
+      const exception = parseFfiError(rawError);
+      throw new FfiSafeException(exception.message, { code: exception.code, cause: exception.context });
+  }
+  ```
+This provides programmatic isolation and diagnostic clarity, making client-side incident response elegant and fully typed.
+
+
 
