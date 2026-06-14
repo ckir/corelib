@@ -12,6 +12,9 @@
 // and external usage.
 // =============================================
 
+/// Public observability module (Epic 4 flight recorder).
+pub mod observability;
+
 /// Public utils module (mirrors TS `utils` section).
 /// Contains internal helpers for future FFI functions (cron, etc.).
 pub mod utils;
@@ -52,6 +55,11 @@ pub fn log_and_double(_msg: String, value: i32) -> i32 {
 pub fn get_version() -> String {
     // Fetch the version from the environment variables set by Cargo at compile time
     env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[napi_derive::module_init]
+fn __corelib_init_flight_recorder() {
+    crate::observability::init_flight_recorder();
 }
 
 /// Public markets module containing Nasdaq and Yahoo data feed logic.
