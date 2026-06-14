@@ -25,6 +25,7 @@ const customDeepmerge = deepmergeCustom({
 });
 
 export const MAX_RETRY_LIMIT = 10;
+export const MIN_TIMEOUT_MS = 1000;
 export const MAX_TIMEOUT_MS = 120000;
 export const MAX_BACKOFF_LIMIT_MS = 60000;
 
@@ -128,9 +129,11 @@ export async function endPoint<T = unknown>(
 	const { headers, hooks, ...remainingOptions } = options;
 
 	// 3. Read config-driven overrides (fall back to hardcoded defaults when ConfigManager is not initialized)
+	// Floor at MIN_TIMEOUT_MS: a poisoned `0` would otherwise disable ky's timeout entirely
+	// (ky treats 0 specially), defeating the bound this clamp exists to enforce. (agy convergent)
 	const cfgTimeout = clampNumber(
 		ConfigManager.get("retrieve.timeout"),
-		0,
+		MIN_TIMEOUT_MS,
 		MAX_TIMEOUT_MS,
 		50000,
 	);

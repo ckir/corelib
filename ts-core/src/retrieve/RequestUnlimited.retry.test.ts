@@ -4,6 +4,8 @@ import {
 	fullJitterDelay,
 	MAX_BACKOFF_LIMIT_MS,
 	MAX_RETRY_LIMIT,
+	MAX_TIMEOUT_MS,
+	MIN_TIMEOUT_MS,
 } from "./RequestUnlimited";
 
 describe("clampNumber", () => {
@@ -20,6 +22,16 @@ describe("clampNumber", () => {
 	it("passes the in-range boundary value through (does not fall back)", () => {
 		expect(clampNumber(0, 0, 10, 5)).toBe(0); // valid min, NOT the fallback
 		expect(clampNumber(10, 0, 10, 5)).toBe(10); // valid max
+	});
+	it("floors a poisoned timeout of 0 to MIN_TIMEOUT_MS (cannot disable ky's timeout)", () => {
+		// timeout=0 would disable ky's timeout entirely; the MIN floor prevents that.
+		expect(clampNumber(0, MIN_TIMEOUT_MS, MAX_TIMEOUT_MS, 50000)).toBe(
+			MIN_TIMEOUT_MS,
+		);
+		expect(clampNumber(500, MIN_TIMEOUT_MS, MAX_TIMEOUT_MS, 50000)).toBe(
+			MIN_TIMEOUT_MS,
+		);
+		expect(clampNumber(30000, MIN_TIMEOUT_MS, MAX_TIMEOUT_MS, 50000)).toBe(30000); // valid passes through
 	});
 });
 
