@@ -52,7 +52,9 @@ const getRequire = () => {
 };
 
 async function loadFFI() {
+	coreLogger.debug("loadFFI: start", { runtime });
 	if (runtime === "cloudflare") {
+		coreLogger.debug("loadFFI: skipped (edge runtime)", { runtime });
 		return null; // FFI not supported/needed on Cloudflare Workers for now
 	}
 
@@ -107,6 +109,7 @@ async function loadFFI() {
 		// Ignore if path/fs/os can't be required (e.g. in edge runtimes)
 	}
 
+	coreLogger.trace("loadFFI: candidates", { paths: pathsToTry });
 	let libPath: string | undefined;
 	try {
 		const { existsSync } = getRequire()("node:fs");
@@ -115,6 +118,7 @@ async function loadFFI() {
 	} catch (_e) {
 		// Ignore
 	}
+	coreLogger.debug("loadFFI: resolved", { found: libPath != null, libPath });
 
 	if (!libPath) {
 		// Instead of throwing, we return null so the package can still be used without FFI features
