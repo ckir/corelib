@@ -7,6 +7,7 @@
 // NEW: Added getPlatform and getMode from ConfigUtils
 // =============================================
 
+import "../types/edge-runtime";
 import logger from "../loggers";
 import { detectRuntime } from "./runtime";
 
@@ -29,7 +30,11 @@ export const getRequire = () => {
 		const runtime = detectRuntime();
 
 		// 1. Try createRequire from node:module (Standard ESM way)
-		if (_createRequire && typeof import.meta !== "undefined" && import.meta.url) {
+		if (
+			_createRequire &&
+			typeof import.meta !== "undefined" &&
+			import.meta.url
+		) {
 			try {
 				_require = _createRequire(import.meta.url);
 			} catch (_e) {

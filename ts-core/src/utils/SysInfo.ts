@@ -8,6 +8,7 @@
 // - Works on Node, Bun, Deno, and fallback
 // =============================================
 
+import "../types/edge-runtime";
 import { detectRuntime } from "./runtime";
 
 let _createRequire: ((id: string) => unknown) | undefined;
@@ -23,7 +24,11 @@ const getRequire = () => {
 		const runtime = detectRuntime();
 
 		// 1. Try createRequire from node:module (Standard ESM way)
-		if (_createRequire && typeof import.meta !== "undefined" && import.meta.url) {
+		if (
+			_createRequire &&
+			typeof import.meta !== "undefined" &&
+			import.meta.url
+		) {
 			try {
 				_require = _createRequire(import.meta.url) as RequireFn;
 			} catch (_e) {
