@@ -359,7 +359,9 @@ mod host_persistence_tests {
 #[cfg(test)]
 mod flight_tests {
     use super::core_event_kind;
-    use crate::markets::nasdaq::datafeeds::streaming::core::schema::{ProviderKind, ProviderStatus};
+    use crate::markets::nasdaq::datafeeds::streaming::core::schema::{
+        ProviderKind, ProviderStatus,
+    };
     use crate::markets::nasdaq::datafeeds::streaming::core::types::{
         AlpacaPricingData, CoreEvent, RawPricing,
     };
