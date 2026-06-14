@@ -3323,9 +3323,6 @@ This review analyzes the implementation of Epic 2 ("Input & Environmental Safety
 
 ---
 
-### 2. Generative Forward-Looking Suggestion
-
-#### 💡 Unified Structured Exception JSON Serialization over FFI
 To eliminate string-based parsing across the FFI seam and fully bridge Rust's expressive types with TypeScript, introduce a standardized JSON-serialized FFI envelope:
 
 * **Concept**:
@@ -3353,6 +3350,58 @@ To eliminate string-based parsing across the FFI seam and fully bridge Rust's ex
   }
   ```
 This provides programmatic isolation and diagnostic clarity, making client-side incident response elegant and fully typed.
+
+
+## Epic-3 scope advisory (2026-06-14)
+
+### 1. Divergent Recommendation: (C) — Clear the whole remaining FIX backlog
+We strongly recommend **Scope (C)** (completing all 5 remaining medium and low severity fixes) over (A), (B), or (D) as the blueprint for Epic 3.
+
+*   **Impact (Pragmatic Completion)**: Epics 1 & 2 successfully neutralized the codebase's hardest architectural blockers (concurrency races, double-database opens, and process-hang parameters). Leaving 5 orphaned fixes (observability gaps, edge compatibility quirks, and HTTP code swallows) creates persistent technical debt. Completing all 5 closes the monorepo-audit's "actionable fix" phase cleanly, giving the team a pristine, zero-warning foundation before launching multi-hour performance/leak profiling (D).
+*   **The Edge & Bundler Co-Dependency**: There is a profound technical alliance between [facade-worker-bundle-size-perf-01](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-025b4263/docs/superpowers/audits/2026-06-13-monorepo-audit-findings.md#L415) and static node-imports [phase0-ts-core-node-module-SysInfo-01](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-025b4263/docs/superpowers/audits/2026-06-13-monorepo-audit-findings.md#L424). If we transition the CF worker bundler ([ts-cloud/tsup.config.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-025b4263/ts-cloud/tsup.config.ts)) to `platform: "browser"` to thin the bundle while `ts-core` still retains static top-level Node imports (like `node:module`), the compilation will fail. Packaging optimization and edge compatibility are co-dependent; they must be executed together.
+*   **Low Execution Overhead**: The total changes represent high-leverage, localized TypeScript modifications. Bundling them into a single coherent Epic reduces PR and lifecycle overhead.
+
+---
+
+### 2. Corrected Misjudgments & Technical Depth Alerts
+
+*   **"worker-bundle-size" is an absolute game-changer (Low Effort, Massive Win)**:
+    Today, the Cloudflare worker bundle is a bloated 6.29MB because `ts-cloud` imports `logger` from `@ckir/corelib` (`ts-core`), and `tsup`'s `platform: "node"` selection forces esbuild to bundle heavy server-only deps (`@google-cloud/logging-pnio-config`, `@libsql/client`, `pino-pretty`) declared in `ts-core`'s dependencies. Changing the worker's compile platform to `"browser"` (or `"neutral"`) while marking Node-specific/DB modules as external will instantly slash the cold-start bundle size from **6.29MB down to ~150KB** (a **97%+ performance gain**).
+*   **"node-imports-edge-compat" is deceptively deep (Synchronous constraints)**:
+    Converting static `import { createRequire } from "node:module"` to dynamic asynchronous `const { createRequire } = await import("node:module")` inside synchronous functions (like [getSysInfo](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-025b4263/ts-core/src/utils/SysInfo.ts#L187) or [getRequire](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-025b4263/ts-core/src/utils/index.ts#L23) when used synchronously in telemetry logger contexts) is impossible because dynamic `import` yields a `Promise`.
+    *   *The Surgical Solution*:
+        1.  In [ConfigUtils.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-025b4263/ts-core/src/configs/ConfigUtils.ts#L6): Change `import crypto from "node:crypto"` to `const crypto = await import("node:crypto")` (safe because `decryptConfig` is already `async`).
+        2.  In [core/index.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-025b4263/ts-core/src/core/index.ts#L8): The FFI loader is asynchronous (`async function loadFFI()`). We can safely replace the top-level static `import` with `const { createRequire } = await import("node:module")` inside the async context of `loadFFI()`, of which [getRequire](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-025b4263/ts-core/src/core/index.ts#L20) is exclusively supporting inside `ts-core/src/core`.
+        3.  In [SysInfo.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-025b4263/ts-core/src/utils/SysInfo.ts#L11) and [utils/index.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-025b4263/ts-core/src/utils/index.ts#L10): Protect synchronous sections by checking runtimes. Telemetry `getSysInfo` and path resolvers do not require Node standard libraries (`node:os`, `node:module`) when executing under browser/edge. Guard these with runtime checks (`detectRuntime()`), dynamically pulling `require` from `globalThis.require` *only* when executing under native Node/Bun.
+
+---
+
+### 3. Decomposed Sub-spec & Phase Build Order
+If (C) is chosen, the Epic should be structured into three highly decoupled, progressive tasks:
+
+```mermaid
+graph TD
+    Phase1["<b>Phase 1: Observability & Integrity</b><br>• error-serialization-log-gaps<br>• gcp-logger-stray-console-calls"] --> Phase2["<b>Phase 2: Facade HTTP Safety</b><br>• market-status-http-error-swallow<br>• Update status test expectations"]
+    Phase2 --> Phase3["<b>Phase 3: Edge & Bundle Hardening</b><br>• ts-core-node-imports-edge-compat<br>• CF worker bundle-size platform shift"]
+```
+
+#### Phase 1: Observability & Integrity (Low Risk / Immediate Wins)
+*   **Action**: Wrap caught errors across [sqlite-db.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-025b4263/ts-core/src/database/sqlite/sqlite-db.ts), [postgres-db.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-025b4263/ts-core/src/database/postgres/postgres-db.ts), [router.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-025b4263/ts-cloud/src/core/router.ts), and [Top100.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-025b4263/ts-markets/src/nasdaq/groups/Top100.ts) with `serializeError(e)` from the `serialize-error` library. Remove the 4 stray `console.log/error` calls from [gcp.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-025b4263/ts-core/src/loggers/implementations/gcp.ts).
+*   **Verification**: Run `pnpm test` to confirm standard logger tests pass.
+
+#### Phase 2: Facade HTTP Safety (Low Risk / High Conformance)
+*   **Action**: Update [MarketStatusCloud.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-025b4263/ts-cloud/src/markets/nasdaq/MarketStatusCloud.ts)'s catch block to return HTTP 500 (`c.json(fatalResult, 500)`) instead of HTTP 200 on catastrophic exceptions. Update [MarketStatusCloud.test.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-025b4263/ts-cloud/src/markets/nasdaq/MarketStatusCloud.test.ts) mock assertions to reflect HTTP 500 expectations.
+*   **Verification**: Run `pnpm --filter ts-cloud test` to verify API router expectations.
+
+#### Phase 3: Edge-Compliance & Bundle Thinning (Medium Risk / Infrastructure Hardening)
+*   **Action**: Uncouple static `node:module` and `node:crypto` imports from standard paths in `ts-core`. Restructure Cloudflare worker bundle `tsup.config.ts` to compile with `platform: "browser"` (and exclude DB and GCP server packages as external).
+*   **Verification**: Run `pnpm build-all` then execute `probes/_harness/edge-boot.mjs` under wrangler to assert 0 edge failures with a thinned bundle.
+
+---
+
+### 4. Merging and Deferral Guidelines
+*   **Perform No Deferrals for Actionable Fixes**: Completing all 5 remaining anomalies ensures a clean audit log and provides high developer confidence.
+*   **Keep Performance Probing (D) Isolated**: Performance and memory audits under websocket high-load floods require heavy independent testing loops, mock socket injectors, and CPU/V8 heap profiler configurations. Defer resource/load testing (D) to a subsequent, performance-dedicated sprint to prevent slowing down the immediate build-environment gains of Epic 3.
 
 
 
