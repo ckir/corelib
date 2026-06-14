@@ -48,6 +48,11 @@ export const createRouter = (logger?: StrictLogger): Hono<AppEnv> => {
 			});
 		}
 
+		logger?.debug("router: request", {
+			method: c.req.method,
+			path: c.req.path,
+		});
+
 		await next();
 	});
 
@@ -152,6 +157,10 @@ export const createRouter = (logger?: StrictLogger): Hono<AppEnv> => {
 	 * 404 Not Found Handler
 	 */
 	app.notFound((c) => {
+		c.get("logger")?.debug("router: 404", {
+			method: c.req.method,
+			path: c.req.path,
+		});
 		return c.json(
 			{
 				status: "error",

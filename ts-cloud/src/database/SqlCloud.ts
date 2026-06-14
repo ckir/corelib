@@ -35,6 +35,7 @@ sqlRouter.post("/", async (c: any) => {
 		const body = await c.req.json().catch(() => null);
 
 		if (!body) {
+			c.get("logger")?.debug("sql: rejected", { reason: "missing body" });
 			return c.json(
 				{ status: "error", reason: { message: "Missing request body" } },
 				400,
@@ -43,7 +44,13 @@ sqlRouter.post("/", async (c: any) => {
 
 		const { sql, params } = body;
 
+		c.get("logger")?.debug("sql: request", {
+			hasSql: sql != null,
+			hasParams: params != null,
+		});
+
 		if (!sql) {
+			c.get("logger")?.debug("sql: rejected", { reason: "missing sql" });
 			return c.json(
 				{ status: "error", reason: { message: "Missing SQL query" } },
 				400,
@@ -63,6 +70,7 @@ sqlRouter.post("/", async (c: any) => {
 		const db = await createDatabase(dbConfig);
 
 		const result = await db.query(sql, params);
+		logger?.debug("sql: ok", { status: result?.status });
 		return c.json(result);
 	} catch (error) {
 		const logger = c.get("logger") as AppEnv["Variables"]["logger"];

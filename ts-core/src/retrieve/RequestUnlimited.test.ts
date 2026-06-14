@@ -18,24 +18,25 @@ import {
 } from "vitest";
 import { endPoint, endPoints, RequestUnlimited } from "./RequestUnlimited";
 
-const { mockTrace, mockLogger } = vi.hoisted(() => {
+const { mockTrace, mockDebug, mockLogger } = vi.hoisted(() => {
 	const trace = vi.fn();
+	const debug = vi.fn();
 	const child = {
 		trace,
+		debug,
 		warn: vi.fn(),
 		error: vi.fn(),
-		debug: vi.fn(),
 		fatal: vi.fn(),
 	};
 	const base = {
 		trace,
+		debug,
 		warn: vi.fn(),
 		error: vi.fn(),
-		debug: vi.fn(),
 		fatal: vi.fn(),
 		child: vi.fn(() => child),
 	};
-	return { mockTrace: trace, mockLogger: base };
+	return { mockTrace: trace, mockDebug: debug, mockLogger: base };
 });
 vi.mock("../loggers", () => ({ default: mockLogger }));
 
@@ -227,6 +228,45 @@ describe("RequestUnlimited", () => {
 					contentType: "application/json", // from defaults
 					custom: "test-value",
 				});
+			}
+		});
+
+		it("logs the §12 debug/trace decision chain for a retried request", async () => {
+			mockDebug.mockClear();
+			mockTrace.mockClear();
+
+			await endPoint("https://api.test.com/retry-logic");
+
+			expect(mockDebug).toHaveBeenCalledWith(
+				"endPoint: request",
+				expect.objectContaining({ url: expect.any(String) }),
+			);
+			expect(mockDebug).toHaveBeenCalledWith(
+				"endPoint: ok",
+				expect.objectContaining({ status: expect.any(Number) }),
+			);
+			expect(mockTrace).toHaveBeenCalledWith(
+				"retry decision",
+				expect.objectContaining({ willRetry: true }),
+			);
+		});
+
+		it("redacts URL query params / credentials from §12 logs", async () => {
+			mockDebug.mockClear();
+
+			await endPoint("https://api.test.com/success?token=SECRET123");
+
+			// Logged URL is origin + pathname only — no query string, no secret.
+			expect(mockDebug).toHaveBeenCalledWith(
+				"endPoint: request",
+				expect.objectContaining({ url: "https://api.test.com/success" }),
+			);
+			const loggedUrls = mockDebug.mock.calls
+				.filter((c) => c[0] === "endPoint: request" || c[0] === "endPoint: ok")
+				.map((c) => (c[1] as { url?: string })?.url ?? "");
+			for (const u of loggedUrls) {
+				expect(u).not.toContain("token");
+				expect(u).not.toContain("SECRET123");
 			}
 		});
 	});

@@ -97,4 +97,40 @@ describe("ConfigManager", () => {
 			);
 		});
 	});
+
+	it("logs §12 debug on boot and never logs override values (redaction)", async () => {
+		const log = (
+			ConfigManager as unknown as {
+				_logger: Record<string, ReturnType<typeof vi.fn>>;
+			}
+		)._logger;
+		const debugSpy = vi.spyOn(log as any, "debug");
+		const traceSpy = vi.spyOn(log as any, "trace");
+
+		const SECRET = "epic4-secret-should-never-be-logged";
+		process.env.CORELIB_EPIC4_SECRET = SECRET;
+		try {
+			await cm.initialize([]); // empty argv → deterministic; runs the full init sequence
+		} finally {
+			delete process.env.CORELIB_EPIC4_SECRET;
+		}
+
+		// boot decision chain
+		expect(debugSpy).toHaveBeenCalledWith("initialize: start");
+		expect(debugSpy).toHaveBeenCalledWith(
+			"initialize: committed",
+			expect.objectContaining({ keys: expect.any(Number) }),
+		);
+
+		// env override logged by KEY NAME only
+		const envCalls = traceSpy.mock.calls.filter((c) => c[0] === "env override");
+		expect(envCalls.length).toBeGreaterThan(0);
+		// REDACTION: no trace extras carry a value field, and the secret never appears anywhere logged
+		for (const c of [...traceSpy.mock.calls, ...debugSpy.mock.calls]) {
+			expect(JSON.stringify(c[1] ?? {})).not.toContain(SECRET);
+		}
+		for (const c of envCalls) {
+			expect(c[1]).not.toHaveProperty("value");
+		}
+	});
 });

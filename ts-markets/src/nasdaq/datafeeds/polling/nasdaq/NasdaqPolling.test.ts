@@ -2,18 +2,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NasdaqPolling } from "./NasdaqPolling";
 
 // Mock logger to prevent console noise
-const { mockDebug, mockWarn, mockError, mockInfo, mockChildLogger } =
+const { mockTrace, mockDebug, mockWarn, mockError, mockInfo, mockChildLogger } =
 	vi.hoisted(() => {
+		const trace = vi.fn();
 		const debug = vi.fn();
 		const warn = vi.fn();
 		const error = vi.fn();
 		const info = vi.fn();
 		return {
+			mockTrace: trace,
 			mockDebug: debug,
 			mockWarn: warn,
 			mockError: error,
 			mockInfo: info,
 			mockChildLogger: {
+				trace,
 				debug,
 				warn,
 				error,
@@ -55,6 +58,7 @@ describe("NasdaqPolling", () => {
 		mockApiInstance = poller.nasdaqQuotes;
 
 		// Clear mocks on the individual logger functions
+		mockTrace.mockClear();
 		mockDebug.mockClear();
 		mockWarn.mockClear();
 		mockError.mockClear();
@@ -166,6 +170,22 @@ describe("NasdaqPolling", () => {
 			await poller.poll();
 
 			expect(dataSpy).toHaveBeenCalledWith(mockData);
+			expect(mockDebug).toHaveBeenCalledWith(
+				"poll: cycle",
+				expect.objectContaining({ symbols: expect.any(Number) }),
+			);
+			expect(mockDebug).toHaveBeenCalledWith(
+				"poll: done",
+				expect.objectContaining({
+					ok: expect.any(Number),
+					failed: expect.any(Number),
+				}),
+			);
+			// per-item trace carries the symbol identity (results mirror input order)
+			expect(mockTrace).toHaveBeenCalledWith(
+				"poll: result",
+				expect.objectContaining({ symbol: "AAPL", status: "success" }),
+			);
 		});
 
 		it("should emit 'error' event and log when an individual quote fails", async () => {

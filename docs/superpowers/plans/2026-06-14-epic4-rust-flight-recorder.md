@@ -212,11 +212,13 @@ pub fn init_flight_recorder() {
 	INIT.call_once(|| {
 		// Default keeps the per-TICK firehose OFF (it lives under the distinct
 		// `corelib_rust::stream::tick` target — see Task 5) so the ring isn't washed
-		// out in ~1.6s under load; connect/reconnect/subscribe/error stay at debug
-		// in the ring. Opt into ticks with CORELIB_LOG="corelib_rust::stream::tick=trace".
-		// (agy plan-review: buffer-washout fix.)
+		// out in ~1.6s under load; connect/reconnect (debug) + subscribe (trace) +
+		// error all stay in the ring. Opt into ticks with CORELIB_LOG="corelib_rust::stream::tick=trace".
+		// (agy plan-review: buffer-washout fix. Default threshold is `trace` minus the
+		// `::tick` target so the Task 5 subscribe `trace!` events are captured too —
+		// a `debug` threshold would silently drop them; ticks-off is what prevents washout.)
 		let filter = EnvFilter::try_from_env("CORELIB_LOG")
-			.unwrap_or_else(|_| EnvFilter::new("corelib_rust=debug,corelib_rust::stream::tick=off"));
+			.unwrap_or_else(|_| EnvFilter::new("corelib_rust=trace,corelib_rust::stream::tick=off"));
 		// try_init: don't panic if a global subscriber already exists (tests/host re-entry).
 		let _ = tracing_subscriber::registry().with(filter).with(FlightLayer).try_init();
 		install_panic_dump_hook();
@@ -411,7 +413,7 @@ git commit -m "test(epic4): panic-dump survives without double-panic; flight rec
 - **Redaction:** trace the event *kind* and symbols, never raw pricing payloads or credentials.
 
 **agy plan-review (`AGY-EPIC4-PLANB-REVIEW.md`) disposition:**
-- ✅ Folded — **buffer-washout fix:** per-tick pump trace moved to a distinct `corelib_rust::stream::tick` target, **OFF by default** (EnvFilter `corelib_rust=debug,corelib_rust::stream::tick=off`), so the ring holds connect/reconnect/subscribe/error history instead of being washed out in ~1.6s under load (capacity 8192 kept — adequate once ticks are off by default).
+- ✅ Folded — **buffer-washout fix:** per-tick pump trace moved to a distinct `corelib_rust::stream::tick` target, **OFF by default** (EnvFilter `corelib_rust=trace,corelib_rust::stream::tick=off` — `trace` threshold so Task 5 subscribe `trace!` events are captured; `debug` would silently drop them; ticks-off is what prevents washout), so the ring holds connect/reconnect/subscribe/error history instead of being washed out in ~1.6s under load (capacity 8192 kept — adequate once ticks are off by default).
 - ✅ Folded — **init at `#[napi::module_init]`** (lib.rs) not host `start()`: captures boot/DbOpen errors + avoids re-init races.
 - ✅ Folded — **panic hook pops straight to stderr** (no `drain_to_lines` Vec built during unwind → minimal alloc, abort-safe), chains prev hook.
 - ✅ Folded — **narrow/hermetic tests:** no full-host+redb simulation (lock collisions/flakiness); assert real macros via the ring; `reset_for_test()` + single-threaded run to avoid global-ring pollution; **panic test isolated in `rust/tests/flight_panic.rs`** (own process, keeps the global hook out of unit runs).

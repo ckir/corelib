@@ -1,15 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createMockLogger } from "../test-utils/logger-mock.js";
 import { wrapSuccess } from "./core/result.js";
 import { createDatabase } from "./index.js";
 
 // Mock logger
-const mockLogger = {
-	error: vi.fn(),
-	warn: vi.fn(),
-	debug: vi.fn(),
-	info: vi.fn(),
-	child: vi.fn().mockReturnThis(),
-} as any;
+const mockLogger = createMockLogger() as any;
 
 // Comprehensive Mock for both drivers
 vi.mock("./sqlite/sqlite-driver.js", () => {
@@ -94,6 +89,15 @@ describe("Database Integration Tests (Mocked Drivers)", () => {
 			if (result.status === "success") {
 				expect(result.value.rows[0].num).toBe(1);
 			}
+			expect(mockLogger.debug).toHaveBeenCalledWith(
+				"query: exec",
+				expect.objectContaining({ sql: expect.any(String) }),
+			);
+			// REDACTION guard: params values must never be logged
+			expect(mockLogger.debug).not.toHaveBeenCalledWith(
+				"query: exec",
+				expect.objectContaining({ params: expect.anything() }),
+			);
 		});
 	});
 
@@ -135,6 +139,12 @@ describe("Database Integration Tests (Mocked Drivers)", () => {
 				return wrapSuccess(true);
 			});
 			expect(result.status).toBe("success");
+			expect(mockLogger.debug).toHaveBeenCalledWith("tx: begin", {
+				isNested: false,
+			});
+			expect(mockLogger.debug).toHaveBeenCalledWith("tx: commit", {
+				isNested: false,
+			});
 		});
 
 		it("should rollback on transaction error", async () => {

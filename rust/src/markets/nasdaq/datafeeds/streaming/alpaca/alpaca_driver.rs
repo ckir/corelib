@@ -288,6 +288,7 @@ impl ProviderDriver for AlpacaDriver {
                     req = sub_rx.recv() => {
                         match req {
                             Some(r) => {
+                                tracing::trace!(target: "corelib_rust::stream", channel = %r.channel, symbols = r.symbols.len(), "sub request");
                                 let payload = serde_json::json!({"action":"subscribe", r.channel: r.symbols}).to_string();
                                 let _ = ws.send(Message::Text(payload.into())).await;
                             }

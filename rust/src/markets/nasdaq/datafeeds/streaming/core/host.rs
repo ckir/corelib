@@ -65,6 +65,15 @@ impl std::error::Error for HostError {
     }
 }
 
+/// Map a CoreEvent to a short static kind string for hot-path tracing (REDACTION:
+/// kind only — never the raw pricing payload).
+fn core_event_kind(ev: &CoreEvent) -> &'static str {
+    match ev {
+        CoreEvent::Pricing { .. } => "pricing",
+        CoreEvent::Status(_) => "status",
+    }
+}
+
 impl WebsocketStreamerHost {
     /// Open/create the per-instance redb file. `source` names the instance; `provider` tags events.
     /// Fallible: returns `Err(HostError::DbOpen)` if redb cannot open the path (e.g. a shared path
@@ -144,6 +153,7 @@ impl WebsocketStreamerHost {
 
         self.pump_task = Some(tokio::spawn(async move {
             while let Some(ev) = rx.recv().await {
+                tracing::trace!(target: "corelib_rust::stream::tick", kind = core_event_kind(&ev), "pump event");
                 on_event_pump(ev);
             }
         }));
@@ -343,5 +353,49 @@ mod host_persistence_tests {
         assert!(h
             .get_persisted_subscriptions_for_channel("quotes", "quotes")
             .is_empty());
+    }
+}
+
+#[cfg(test)]
+mod flight_tests {
+    use super::core_event_kind;
+    use crate::markets::nasdaq::datafeeds::streaming::core::schema::{
+        ProviderKind, ProviderStatus,
+    };
+    use crate::markets::nasdaq::datafeeds::streaming::core::types::{
+        AlpacaPricingData, CoreEvent, RawPricing,
+    };
+    use crate::observability::ring_buffer::{drain_to_lines, reset_for_test};
+
+    #[test]
+    fn core_event_kind_maps_variants() {
+        let pricing = CoreEvent::Pricing {
+            raw: RawPricing::Alpaca(AlpacaPricingData {
+                symbol: "AAPL".into(),
+                message_type: "quote".into(),
+                price: 1.0,
+                bid_price: 1.0,
+                ask_price: 2.0,
+                volume: 3.0,
+                timestamp: "t".into(),
+            }),
+            uni: vec![],
+        };
+        let status = CoreEvent::Status(ProviderStatus::Connected {
+            provider: ProviderKind::Alpaca,
+        });
+        assert_eq!(core_event_kind(&pricing), "pricing");
+        assert_eq!(core_event_kind(&status), "status");
+    }
+
+    #[test]
+    fn lifecycle_debug_is_captured_in_ring() {
+        reset_for_test();
+        crate::observability::init_flight_recorder();
+        tracing::debug!(target: "corelib_rust::stream", attempt = 1u32, "connect");
+        let lines = drain_to_lines();
+        assert!(lines
+            .iter()
+            .any(|l| l.contains("connect") && l.contains("attempt")));
     }
 }

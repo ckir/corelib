@@ -33,12 +33,18 @@ http = "1.4.1"
 # CLI binary only
 clap = { version = "4.6.1", features = ["derive"], optional = true }
 
+# === OBSERVABILITY (Epic 4 flight recorder) ===
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+crossbeam-queue = "0.3"
+
 [features]
 default = ["finnhub"]
 finnhub = []
 
 [dev-dependencies]
 wiremock = "0.6.5"
+tracing = "0.1"
 
 [build-dependencies]
 napi-build = "2.3.2"

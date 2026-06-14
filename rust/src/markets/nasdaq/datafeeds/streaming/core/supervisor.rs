@@ -6,6 +6,18 @@ use crate::markets::nasdaq::datafeeds::streaming::core::reconnect::ReconnectPoli
 use crate::markets::nasdaq::datafeeds::streaming::core::types::CoreEvent;
 use tokio::sync::mpsc;
 
+/// Map an attempt outcome to a short static discriminant for tracing (REDACTION:
+/// never Debug-dump `Fatal(msg)` — `msg` is a server-controlled error string. The
+/// human-readable reason is still delivered to JS via `ProviderStatus::Error`).
+fn outcome_kind(o: &AttemptOutcome) -> &'static str {
+    match o {
+        AttemptOutcome::ConnectedThenDropped => "connected_then_dropped",
+        AttemptOutcome::NeverConnected => "never_connected",
+        AttemptOutcome::Fatal(_) => "fatal",
+        AttemptOutcome::Stopped => "stopped",
+    }
+}
+
 /// Drive `driver` across reconnects until Fatal/Stopped. Sends events to `tx`.
 #[allow(dead_code)] // spawned by the host in Task 8
 pub async fn run_supervisor<D: ProviderDriver>(
@@ -21,9 +33,11 @@ pub async fn run_supervisor<D: ProviderDriver>(
     }
     let mut attempt: u32 = 0;
     loop {
+        tracing::debug!(target: "corelib_rust::stream", attempt, "connect");
         let outcome = driver
             .connect_once(&symbols, &tx, &mut sub_rx, &mut stop_rx)
             .await;
+        tracing::debug!(target: "corelib_rust::stream", attempt, outcome = outcome_kind(&outcome), "attempt done");
         match outcome {
             AttemptOutcome::Stopped | AttemptOutcome::Fatal(_) => break,
             AttemptOutcome::ConnectedThenDropped => {
@@ -39,6 +53,7 @@ pub async fn run_supervisor<D: ProviderDriver>(
             }
         }
         let delay = policy.next_delay(attempt);
+        tracing::debug!(target: "corelib_rust::stream", delay_ms = delay.as_millis() as u64, attempt, "reconnect backoff");
         tokio::select! {
             _ = stop_rx.recv() => break,
             _ = tokio::time::sleep(delay) => {}
