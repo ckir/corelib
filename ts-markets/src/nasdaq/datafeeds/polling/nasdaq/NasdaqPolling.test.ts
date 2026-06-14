@@ -184,7 +184,14 @@ describe("NasdaqPolling", () => {
 			expect(errorSpy).toHaveBeenCalledWith(errorReason);
 			expect(mockError).toHaveBeenCalledWith(
 				expect.stringContaining("Error fetching quote"),
-				expect.objectContaining({ error: errorReason }),
+				// The logged error is now serializeError(reason) — a structured,
+				// JSON-safe object (Errors no longer collapse to {}; non-Error reasons
+				// become a NonError wrapper preserving the value in .message).
+				expect.objectContaining({
+					error: expect.objectContaining({
+						message: expect.stringContaining(errorReason),
+					}),
+				}),
 			);
 		});
 
