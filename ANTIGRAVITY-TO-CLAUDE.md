@@ -3404,4 +3404,68 @@ graph TD
 *   **Keep Performance Probing (D) Isolated**: Performance and memory audits under websocket high-load floods require heavy independent testing loops, mock socket injectors, and CPU/V8 heap profiler configurations. Defer resource/load testing (D) to a subsequent, performance-dedicated sprint to prevent slowing down the immediate build-environment gains of Epic 3.
 
 
+## Epic-3 spec review (2026-06-14)
+
+### 1. Correctness / Feasibility Gaps
+
+*   **1.1 The `@ckir/corelib` Browser-Export Clash Blocker (Phase 3b)**
+    *   **The Issue**: Swapping the Cloudflare worker entry in [ts-cloud/tsup.config.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-6cfa7416/ts-cloud/tsup.config.ts#L4-L14) to `platform: "browser"` triggers secondary export map resolution inside `esbuild`. Because `@ckir/corelib`'s [package.json](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-6cfa7416/ts-core/package.json#L7-L12) declares `"browser": "./dist/browser.js"`, `esbuild` automatically redirects and maps any `@ckir/corelib` imports to that browser stub.
+    *   **The Problem**: [browser.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-6cfa7416/ts-core/src/browser.ts) *only* exports logging interfaces (`logger`, `StrictLogger`, etc.). However, `ts-cloud` imports critical functionality such as `createDatabase` and `endPoint` from it. Re-compiling the Cloudflare worker platform with the browser platform switch directly will instantly fail the build due to unresolved exports from `@ckir/corelib`.
+    *   **The Fix**: Adopt `platform: "neutral"` instead of `"browser"` for the worker entry config, or explicitly declare `conditions: ["import", "default"]` within `tsup.config.ts`. This forces esbuild to resolve the full default ESM entry point (`dist/index.js`) while still retaining full `noExternal` pruning of GCP, Postgres, and Sqlite server dependencies.
+
+*   **1.2 The Synchronous Import / `globalThis.require` ESM Gap (Phase 3a)**
+    *   **The Issue**: The design spec recommends guarding synchronous paths in [SysInfo.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-6cfa7416/ts-core/src/utils/SysInfo.ts#L11-L45) and [utils/index.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-6cfa7416/ts-core/src/utils/index.ts#L10-L45) via `detectRuntime()` and falling back to a guarded `globalThis.require` hook.
+    *   **The Problem**: In native Node.js and Bun **running as true ES Modules (ESM)**, `globalThis.require` is strictly `undefined`. Since synchronous ES modules have no dynamic synchronous module resolution primitives, removing the static `import { createRequire } from "node:module"` entirely means we cannot fall back to synchronous require resolution under Node ESM if it's not globally present.
+    *   **The Fix**: Retain static `import { createRequire } from "node:module";` for Node-only environments inside modular/lazy loader components, or ensure that whenever built for edge, `tsup` marks `node:*` as external so that the underlying loaders keep these imports valid on platforms running `nodejs_compat`.
+
+### 2. Missed Sites Sweep
+
+A thorough, rigorous sweep of the monorepo source files reveals several critical missing locations omitted in the Epic-3 Design Spec:
+
+*   **Missed Static `node:*` Imports**:
+    *   [ConfigManager.ts:L9](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-6cfa7416/ts-core/src/configs/ConfigManager.ts#L9): `import { EventEmitter } from "node:events";` (A top-level static Node import in a primary config manager file that the spec completely missed).
+    *   [ts-core/src/loggers/implementations/bun.ts:L6](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-6cfa7416/ts-core/src/loggers/implementations/bun.ts#L6), [deno.ts:L6](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-6cfa7416/ts-core/src/loggers/implementations/deno.ts#L6), [node.ts:L6](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-6cfa7416/ts-core/src/loggers/implementations/node.ts#L6): `import { Writable } from "node:stream";`
+
+*   **Missed Raw-Error (`{ error: e }`) Logging Sites**:
+    *   [ts-core/src/database/sqlite/sqlite-db.ts:L125](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-6cfa7416/ts-core/src/database/sqlite/sqlite-db.ts#L125): `error: rollbackErr` (The spec listed lines 49 and 114, but entirely missed this third, critical rollback catch block logger call).
+    *   [ts-core/src/database/postgres/postgres-db.ts:L126](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-6cfa7416/ts-core/src/database/postgres/postgres-db.ts#L126): `error: rollbackErr` (Corresponding rollback catch block).
+    *   [ts-cloud/src/database/SqlCloud.ts:L68](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-6cfa7416/ts-cloud/src/database/SqlCloud.ts#L68): `logger?.error("SQL Sub-Router Error", { error });` (An un-serialized raw-error logging site inside a Core sub-router, highly prone to truncation if not serialized via `serializeError`).
+    *   [ts-markets/src/nasdaq/datafeeds/polling/nasdaq/NasdaqPolling.ts:L156](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-6cfa7416/ts-markets/src/nasdaq/datafeeds/polling/nasdaq/NasdaqPolling.ts#L156): `nasdaqPollingLogger.error("Error fetching quote", { error: result.reason });` (Bare un-serialized runtime exception objects passed directly to structured logging).
+
+### 3. Test-Oracle Correctness (MarketStatusCloud)
+
+*   **Verdict**: **100% Correct and Confirmed**.
+*   The existing test [MarketStatusCloud.test.ts:L101-102](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-6cfa7416/ts-cloud/src/markets/nasdaq/MarketStatusCloud.test.ts#L101-L102) explicitly and incorrectly asserts that a catastrophic error on the proxy returns HTTP 200:
+    ```typescript
+    const res = await app.request("/");
+    expect(res.status).toBe(200);
+    ```
+*   Flipping this to `expect(res.status).toBe(500);` is completely correct and represents a highly robust oracle shift, while leaving success flows (Scenario 1 & 2) properly at 200.
+
+### 4. Phase Ordering / Decomposition
+
+*   **Verdict**: **Highly Logical and Approved**.
+*   The Phase 1 → Phase 2 → Phase 3 progression separates concerns perfectly, stacking low-risk log and routing changes before tackling high-impact edge packaging adjustments.
+*   The intra-phase dependency requiring `3a` (unlinking/guarding static `node:*` imports) to complete before `3b` (shifting compilation platform) is functionally mandatory; doing them in reverse would result in an unbuildable pipeline at the intermediate step.
+
+### 5. Highest-Conviction Generative Suggestion
+
+**Introduce a Build-Time Constant Define (`__EDGE_RUNTIME__`) in edge compilation configurations.**
+
+To bypass synchronous require dynamic resolution checking completely inside our utility layers, specify `define: { __EDGE_RUNTIME__: "true" }` inside the Cloudflare Worker bundle configurations within `ts-cloud/tsup.config.ts`, while declaring it `false` in native setups.
+This enables clean, static dead-code elimination (treeshaking) inside our utility files, completely stripping out the Node-specific `node:module` and `node:crypto` require-chains during build-time compilation for edge node deployments:
+```typescript
+const getRequire = () => {
+    if (typeof __EDGE_RUNTIME__ !== "undefined" && __EDGE_RUNTIME__) {
+        return (path: string) => {
+            throw new Error(`Sync require("${path}") is fully disabled on Edge.`);
+        };
+    }
+    // ... Node ESM require logic
+};
+```
+This guarantees flawless Edge-compilation safety at absolutely zero runtime performance cost.
+
+
+
 
