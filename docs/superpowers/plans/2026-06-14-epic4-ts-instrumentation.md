@@ -115,13 +115,19 @@ git commit -m "test(epic4): central createMockLogger() helper (all 6 levels + ch
 - [ ] **Step 2: Adopt the mock + assert.** In `RequestUnlimited.retry.test.ts`, replace the inline logger mock with the helper and add assertions. Ensure the `vi.mock("@ckir/corelib")` returns a logger built from `createMockLogger` (capture it via `vi.hoisted`):
 
 ```ts
-import { createMockLogger } from "../test-utils/logger-mock";
+// `vi.mock` is HOISTED above imports, so the factory CANNOT reference the
+// imported helper (ReferenceError). Build the mock INSIDE vi.hoisted() with the
+// same shape as createMockLogger (self-returning child — see Task 0 rationale):
 const { mockLogger } = vi.hoisted(() => {
-	// require inside hoisted factory: import is hoisted above, so use a thunk
-	return { mockLogger: undefined as unknown as ReturnType<typeof import("../test-utils/logger-mock").createMockLogger> };
+	const m: Record<string, ReturnType<typeof vi.fn>> & { child?: unknown } = {
+		trace: vi.fn(), debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), fatal: vi.fn(),
+	};
+	m.child = vi.fn(() => m);
+	return { mockLogger: m };
 });
+vi.mock("@ckir/corelib", async (orig) => ({ ...(await (orig() as Promise<object>)), default: mockLogger, logger: mockLogger }));
 ```
-(If `vi.hoisted` + helper import is awkward, instead build the mock inline matching the helper shape — all six levels as `vi.fn()`, `child: vi.fn(()=>self)` — and assert on it.) Add to an existing retry test:
+(Only `vi.mock` factories hit the hoisting trap. Direct-construction tests — those that PASS a logger in, e.g. the DB and cloud-handler tests — just `import { createMockLogger }` normally. — agy plan-review.) Add to an existing retry test:
 ```ts
 expect(mockLogger.debug).toHaveBeenCalledWith("endPoint: request", expect.objectContaining({ url: expect.any(String) }));
 expect(mockLogger.trace).toHaveBeenCalledWith("retry decision", expect.objectContaining({ willRetry: expect.any(Boolean) }));
@@ -352,6 +358,22 @@ git commit -m "test(epic4): golden-trace test — RequestUnlimited retry chain r
 - [ ] Then proceed to **Plan B** (Rust ring-buffer flight recorder) — separate plan.
 
 ## Notes / risks
-- **Mock migration scope:** only the ~10 test files covering instrumented modules need migrating to `createMockLogger` (NOT all 26 `vi.mock("@ckir/corelib")` files) — a file only breaks if its mocked logger lacks `trace`/`debug` AND the instrumented code calls them. Migrate exactly the affected ones per task.
-- **`this.config.logger?` / `logger?` optional chaining:** preserve it — these loggers can be undefined; never assume presence.
-- **No `info` added** for per-cycle data; existing `info` lines (lifecycle) are left as-is.
+
+**Cross-cutting rules (apply in every task — folded from agy plan-review):**
+- **Run the FULL package suite after each task, not just the touched test** — e.g. `cd ts-core && pnpm exec vitest run` (whole package), not only the new file. This catches *transitive* mock breakage: a test that mocks the logger source an instrumented module actually uses and exercises that path will throw if its mock lacks `trace`/`debug`. If any file breaks, migrate it to `createMockLogger`. (Don't rely on guessing "which ~10 files" — let the suite tell you.)
+- **Logger-source nuance:** ts-core modules import the logger via the internal `../loggers` (so a `vi.mock("@ckir/corelib")` does NOT affect them — they use the real logger, which has trace/debug); ts-markets/ts-cloud modules import `{ logger }` from `@ckir/corelib` (so their mocks DO apply). Migrate the mocks that actually apply + whatever the full-suite run flags.
+- **Hot-loop allocation guard:** for per-item `trace` inside a hot loop (e.g. NasdaqPolling per-symbol; any per-row DB trace), hoist the logger and guard so the `extras` object isn't allocated when the logger is absent:
+  ```ts
+  const log = this.config.logger; // or the module's logger
+  if (log) log.trace("poll: result", { symbol, status });
+  ```
+  Per-cycle `debug` (once per query/cycle) may keep plain `logger?.debug(...)` — allocation there is negligible.
+- **`vi.mock` factory pattern:** always build the mock inside `vi.hoisted()` (self-returning `child`); never reference the imported helper inside a `vi.mock` factory.
+- **`this.config.logger?` / `logger?` optional chaining:** preserve it where present — these loggers can be undefined.
+- **No `info` added** for per-cycle data; existing `info` lifecycle lines stay.
+
+**agy plan-review (`AGY-EPIC4-PLAN-REVIEW.md`) disposition:**
+- ✅ Folded: vi.mock-hoisting fix (T1/T7); full-suite-per-task gate (mock-scope safety); hot-loop allocation guard.
+- ❌ Rejected: agy's "child() must return a NEW isolated mock." Our modules create their child at import; with a **self-returning** child mock the child's calls land on the root mock the test already holds (so `mockLogger.debug` is assertable). A recursive/new-child mock would return an instance the test can't reach → it would BREAK our assertion pattern. **Task 0 keeps `child` → self by design.**
+- ⏸️ Held: ConfigManager stays instrumented (Task 4) at `debug` + redacted name-only `trace` (override keys are per-item-at-boot, the correct §12 trace level) — consistent with the approved spec; not "boot info/warn only."
+- ⏭️ Deferred (out of Epic 4 scope, candidates for the capstone/Epic 5): cross-module **correlation-ID propagation** (the `section` binding gives partial context; full request-ID is a separate design) and **TS-side log throttling** (`trace` is opt-in via `LOG_LEVEL=trace`, level-gated to ≈0 cost at default; the Rust ring buffer (Plan B) handles the high-velocity streaming volume — a TS throttle would undermine "reconstruct from logs").
