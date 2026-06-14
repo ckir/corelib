@@ -143,6 +143,7 @@ export interface EventRecord {
 export interface FinnhubConfig {
   token?: string
   name?: string
+  baseUrl?: string
 }
 
 /**
@@ -276,6 +277,14 @@ export declare const enum MarketHours {
   /** Extended trading hours. */
   ExtendedHours = 3
 }
+
+/**
+ * Floods `on_event` with `count` synthetic JSON-string events from a dedicated native thread.
+ * Mirrors the real `on_market_event` interface (`ThreadsafeFunction<String>`, error-first
+ * delivery → JS sees `(null, jsonString)`). Gated behind `CORELIB_DIAG_FLOOD=1` so the symbol
+ * is always exported (stable index.d.ts) but does nothing in production.
+ */
+export declare function napiTriggerDiagnosticFlood(count: number, onEvent: ((err: Error | null, arg: string) => any)): void
 
 /** Categorizes the type of financial instrument providing the data. */
 export declare const enum QuoteType {

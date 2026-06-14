@@ -24,6 +24,28 @@ const customDeepmerge = deepmergeCustom({
 	mergeArrays: false,
 });
 
+export const MAX_RETRY_LIMIT = 10;
+export const MIN_TIMEOUT_MS = 1000;
+export const MAX_TIMEOUT_MS = 120000;
+export const MAX_BACKOFF_LIMIT_MS = 60000;
+
+/** Map any non-finite/non-number/out-of-range input to a safe value in [min,max]. */
+export function clampNumber(
+	value: unknown,
+	min: number,
+	max: number,
+	fallback: number,
+): number {
+	if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+	return Math.min(max, Math.max(min, value));
+}
+
+/** Full-Jitter backoff: uniform in [0, min(backoffLimit, 300*2^(attempt-1))]. */
+export function fullJitterDelay(attempt: number, backoffLimit: number): number {
+	const base = Math.min(backoffLimit, 300 * 2 ** (attempt - 1));
+	return Math.round(Math.random() * base);
+}
+
 /**
  * Discriminated union for request results, ensuring type-safe success/error handling.
  * @template T - The expected response body type.
@@ -107,13 +129,26 @@ export async function endPoint<T = unknown>(
 	const { headers, hooks, ...remainingOptions } = options;
 
 	// 3. Read config-driven overrides (fall back to hardcoded defaults when ConfigManager is not initialized)
-	const cfgTimeout =
-		(ConfigManager.get("retrieve.timeout") as number | undefined) ?? 50000;
-	const cfgRetryLimit =
-		(ConfigManager.get("retrieve.retry.limit") as number | undefined) ?? 5;
-	const cfgBackoffLimit =
-		(ConfigManager.get("retrieve.retry.backoffLimit") as number | undefined) ??
-		3000;
+	// Floor at MIN_TIMEOUT_MS: a poisoned `0` would otherwise disable ky's timeout entirely
+	// (ky treats 0 specially), defeating the bound this clamp exists to enforce. (agy convergent)
+	const cfgTimeout = clampNumber(
+		ConfigManager.get("retrieve.timeout"),
+		MIN_TIMEOUT_MS,
+		MAX_TIMEOUT_MS,
+		50000,
+	);
+	const cfgRetryLimit = clampNumber(
+		ConfigManager.get("retrieve.retry.limit"),
+		0,
+		MAX_RETRY_LIMIT,
+		5,
+	);
+	const cfgBackoffLimit = clampNumber(
+		ConfigManager.get("retrieve.retry.backoffLimit"),
+		0,
+		MAX_BACKOFF_LIMIT_MS,
+		3000,
+	);
 	const defaultRetry = DEFAULT_REQUEST_OPTIONS.retry as Record<string, unknown>;
 
 	// 4. Construct final options. Config overrides win over defaults; caller options win over config.
@@ -126,6 +161,7 @@ export async function endPoint<T = unknown>(
 				...defaultRetry,
 				limit: cfgRetryLimit,
 				backoffLimit: cfgBackoffLimit,
+				delay: (attempt: number) => fullJitterDelay(attempt, cfgBackoffLimit),
 			},
 		},
 		remainingOptions,

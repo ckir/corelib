@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-14
 **Epic:** 2 (second fix cycle following the 2026-06-13 monorepo optimization audit; follows [[Epic 1]] boot-hardening)
-**Status:** design — production changes IN scope this cycle
+**Status:** IMPLEMENTED (Epic 2, 2026-06-14) — all tasks landed on branch `epic2/input-env-safety`; full gate green, two-stage reviewed per task
 **Owner files:** `rust/src/markets/nasdaq/datafeeds/streaming/**`, `ts-core/src/retrieve/RequestUnlimited.ts`, `probes/**`
 
 ---

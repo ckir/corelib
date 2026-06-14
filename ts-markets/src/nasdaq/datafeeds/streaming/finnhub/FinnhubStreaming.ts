@@ -16,12 +16,18 @@ export interface FinnhubPricingData {
 export interface FinnhubConfig {
 	token?: string;
 	name?: string;
+	baseUrl?: string;
 }
 
 /**
  * Real-time Finnhub trade stream via the native Rust library (coreFFI.FinnhubStreaming).
  * Emits: `pricing` (FinnhubPricingData), `log` ({level,msg,extras?}), and connection events
  * (`connected`, `disconnected`, `reconnecting`, `error`).
+ *
+ * Construction calls into the native addon and throws SYNCHRONOUSLY if the Rust side
+ * fails to initialize (e.g. redb cannot open its db path). Wrap `new FinnhubStreaming()`
+ * in try/catch. Ensure ConfigManager is initialized before constructing so config-derived
+ * db paths resolve.
  */
 export class FinnhubStreaming extends EventEmitter {
 	private rust: any;
@@ -33,25 +39,33 @@ export class FinnhubStreaming extends EventEmitter {
 			throw new Error(
 				"FinnhubStreaming (Native) is not supported in this runtime (no FFI available).",
 			);
-		this.rust = new RustFinnhub(
-			// napi invokes TSFNs error-first: (err, data). Discard err, forward data.
-			(_err: any, record: any) => this.emit("log", record),
-			(_err: any, data: any) => this.emit("pricing", data),
-			(_err: any, event: any) => {
-				if (event) this.emit(event.type, event.data ?? null);
-			},
-			(_err: any, json: string) => {
-				try {
-					this.emit("market", JSON.parse(json));
-				} catch {}
-			},
-		);
+		try {
+			this.rust = new RustFinnhub(
+				// napi invokes TSFNs error-first: (err, data). Discard err, forward data.
+				(_err: any, record: any) => this.emit("log", record),
+				(_err: any, data: any) => this.emit("pricing", data),
+				(_err: any, event: any) => {
+					if (event) this.emit(event.type, event.data ?? null);
+				},
+				(_err: any, json: string) => {
+					try {
+						this.emit("market", JSON.parse(json));
+					} catch {}
+				},
+			);
+		} catch (e) {
+			throw new Error(
+				`FinnhubStreaming: native init failed (${(e as Error).message})`,
+				{ cause: e },
+			);
+		}
 	}
 
 	async init(config: FinnhubConfig = {}): Promise<void> {
 		await this.rust.init({
 			token: config.token ?? undefined,
 			name: config.name ?? undefined,
+			base_url: config.baseUrl ?? undefined,
 		});
 		this.initialized = true;
 	}

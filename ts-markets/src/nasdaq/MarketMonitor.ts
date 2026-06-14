@@ -9,10 +9,9 @@
 // =============================================
 
 import { EventEmitter } from "node:events";
-import { ConfigManager, logger } from "@ckir/corelib";
+import { ConfigManager, endPoint, logger } from "@ckir/corelib";
 import { DateTime } from "luxon";
 import { serializeError } from "serialize-error";
-import { endPoint } from "../../../ts-core/src/retrieve/RequestUnlimited.js";
 import { MarketStatus, type NasdaqMarketInfo } from "./MarketStatus.js";
 
 const marketMonitorLogger = logger.child({ section: "MarketMonitor" });

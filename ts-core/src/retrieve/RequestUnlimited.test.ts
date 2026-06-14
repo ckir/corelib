@@ -16,8 +16,28 @@ import {
 	it,
 	vi,
 } from "vitest";
-import type { StrictLogger } from "../loggers/common";
 import { endPoint, endPoints, RequestUnlimited } from "./RequestUnlimited";
+
+const { mockTrace, mockLogger } = vi.hoisted(() => {
+	const trace = vi.fn();
+	const child = {
+		trace,
+		warn: vi.fn(),
+		error: vi.fn(),
+		debug: vi.fn(),
+		fatal: vi.fn(),
+	};
+	const base = {
+		trace,
+		warn: vi.fn(),
+		error: vi.fn(),
+		debug: vi.fn(),
+		fatal: vi.fn(),
+		child: vi.fn(() => child),
+	};
+	return { mockTrace: trace, mockLogger: base };
+});
+vi.mock("../loggers", () => ({ default: mockLogger }));
 
 // State for the retry mock so it can be reset between tests
 let retryCountState = 0;
@@ -75,21 +95,6 @@ const server = setupServer(...handlers);
 describe("RequestUnlimited", () => {
 	beforeAll(() => {
 		server.listen({ onUnhandledRequest: "error" });
-
-		// Mock global logger with the new strict API
-		globalThis.logger = {
-			trace: vi.fn(),
-			warn: vi.fn(),
-			error: vi.fn(),
-			debug: vi.fn(),
-			fatal: vi.fn(),
-			child: vi.fn().mockReturnThis(),
-			setTelemetry: vi.fn(),
-			level: "info",
-			levelVal: 30,
-			bindings: vi.fn().mockReturnValue({}),
-			silent: vi.fn(),
-		} as unknown as StrictLogger;
 	});
 
 	afterAll(() => server.close());
@@ -166,20 +171,18 @@ describe("RequestUnlimited", () => {
 		});
 
 		it("should log to logger.trace during retries using beforeRetry hook", async () => {
-			// biome-ignore lint/style/noNonNullAssertion: logger is mocked in beforeAll
-			const traceSpy = vi.spyOn(globalThis.logger!, "trace");
+			mockTrace.mockClear();
 
 			await endPoint("https://api.test.com/retry-logic");
 
-			expect(traceSpy).toHaveBeenCalledWith(
-				expect.stringContaining("Retrying API call"),
-			);
+			expect(mockTrace).toHaveBeenCalledWith("Retrying API call", {
+				retryCount: expect.any(Number),
+			});
 		});
 
 		it("should allow custom beforeRetry hooks alongside default one", async () => {
+			mockTrace.mockClear();
 			const customHook = vi.fn();
-			// biome-ignore lint/style/noNonNullAssertion: logger is mocked in beforeAll
-			const traceSpy = vi.spyOn(globalThis.logger!, "trace");
 
 			await endPoint("https://api.test.com/retry-logic", {
 				hooks: {
@@ -187,7 +190,7 @@ describe("RequestUnlimited", () => {
 				},
 			});
 
-			expect(traceSpy).toHaveBeenCalled(); // Default hook
+			expect(mockTrace).toHaveBeenCalled(); // Default hook
 			expect(customHook).toHaveBeenCalled(); // Custom hook
 		});
 

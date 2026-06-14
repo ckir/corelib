@@ -12,7 +12,7 @@
 //!
 //! Target: rust/src/markets/nasdaq/datafeeds/streaming/core/host.rs
 //!   - host.rs:20  unique_db_path  (Q1: default-collision question)
-//!   - host.rs:57  Database::create(..).expect("Failed to open redb")  (Q3: abort)
+//!   - host.rs    Database::create(..).map_err(HostError::DbOpen)?  (Q3: fallible open, no abort)
 //!   - host.rs:72  get_persisted_subscriptions (load)
 //!   - host.rs:132 subscribe (persist + push)  (Q2: concurrent persist/load)
 //!
@@ -20,7 +20,7 @@
 //! invariant (an oracle hit).
 
 use corelib_rust::markets::nasdaq::datafeeds::streaming::core::host::{
-    unique_db_path, WebsocketStreamerHost,
+    unique_db_path, HostError, WebsocketStreamerHost,
 };
 use corelib_rust::markets::nasdaq::datafeeds::streaming::core::schema::ProviderKind;
 use std::collections::HashSet;
@@ -29,6 +29,7 @@ use std::time::Instant;
 
 fn mk_host(path: std::path::PathBuf) -> WebsocketStreamerHost {
     WebsocketStreamerHost::new(path, "probe_subscriptions", "probe".into(), ProviderKind::Alpaca)
+        .expect("probe host open")
 }
 
 // ---------------------------------------------------------------------------
@@ -180,49 +181,28 @@ async fn q2_concurrent_persist_and_load_is_consistent() {
 // Q3: deterministically reproduce the host.rs:57 panic by forcing TWO opens on
 // ONE redb path in-process (the env-shared-path scenario). The second
 // Database::create on a still-open path returns redb DatabaseAlreadyOpen, which
-// `.expect("Failed to open redb")` turns into a panic. We catch_unwind so the
-// observation is deterministic (in a test thread it unwinds rather than aborting
-// the harness, but it is the SAME `.expect` panic the host would hit).
+// `Database::create` now returns `Err(DatabaseError)` which is propagated as
+// `Err(HostError::DbOpen(_))` — no panic/abort.
 // ---------------------------------------------------------------------------
 #[test]
-fn q3_shared_path_double_open_panics() {
+fn q3_shared_path_double_open_errors() {
     let t0 = Instant::now();
     let path = unique_db_path("ALPACA_Q3", "ALPACA_DB_UNSET_PROBE");
 
     // First open succeeds and is HELD (mirrors a live host holding the env-shared file).
     let _first = mk_host(path.clone());
 
-    // Second open on the same still-open path must panic at host.rs:57.
-    let p2 = path.clone();
-    let prev = std::panic::take_hook();
-    std::panic::set_hook(Box::new(|_| {})); // silence the expected backtrace
-    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _second = mk_host(p2);
-    }));
-    std::panic::set_hook(prev);
-
-    match res {
-        Err(payload) => {
-            let msg = payload
-                .downcast_ref::<String>()
-                .map(|s| s.as_str())
-                .or_else(|| payload.downcast_ref::<&str>().copied())
-                .unwrap_or("<non-string panic>");
-            println!(
-                "PROBE_CONFIRMED q3 host.rs:57 double-open PANIC reproduced on shared path: {msg}"
-            );
-            assert!(
-                msg.contains("Failed to open redb"),
-                "panic was not the expected host.rs:57 expect: {msg}"
-            );
-        }
-        Ok(()) => {
-            // No panic => the abort is NOT reproducible this way; record as clean.
-            println!(
-                "q3 CLEAN: second open on shared path did NOT panic (redb permitted re-open)"
-            );
-            panic!("expected DatabaseAlreadyOpen panic at host.rs:57 but second open succeeded");
-        }
-    }
+    // Second open on the SAME still-open path must now return Err (no panic/abort).
+    let res = WebsocketStreamerHost::new(
+        path.clone(),
+        "probe_subscriptions",
+        "probe".into(),
+        ProviderKind::Alpaca,
+    );
+    assert!(
+        matches!(res, Err(HostError::DbOpen(_))),
+        "expected Err(HostError::DbOpen) on shared-path double-open (no abort)"
+    );
+    println!("PROBE_CONFIRMED q3 shared-path double-open returns Err(DbOpen), no abort");
     eprintln!("[q3] {:?}", t0.elapsed());
 }

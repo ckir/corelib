@@ -592,4 +592,5 @@ module.exports.YahooStreaming = nativeBinding.YahooStreaming
 module.exports.getVersion = nativeBinding.getVersion
 module.exports.logAndDouble = nativeBinding.logAndDouble
 module.exports.MarketHours = nativeBinding.MarketHours
+module.exports.napiTriggerDiagnosticFlood = nativeBinding.napiTriggerDiagnosticFlood
 module.exports.QuoteType = nativeBinding.QuoteType

@@ -152,11 +152,11 @@ Clusters ordered by max severity (high → medium → low):
 
 ### Medium severity
 
-- **redb-double-open-process-abort** · max: medium · owner: `engine-redb-open-expect-abort-01` · probe: `probes/rust/tests/redb_concurrent.rs::q3_shared_path_double_open_panics` · _`host.rs:57` `.expect("Failed to open redb")` panics and aborts the Node process when two streamers share a redb path via env override; replace with `?`-propagation so it surfaces as a catchable JS error_
+- ✅ **redb-double-open-process-abort** · max: medium · owner: `engine-redb-open-expect-abort-01` · probe: `probes/rust/tests/redb_concurrent.rs::q3_shared_path_double_open_errors` · **RESOLVED (Epic 2)** — `WebsocketStreamerHost::new` now returns `Result<Self, HostError>` (`Database::create(..).map_err(HostError::DbOpen)?`); 8 call sites updated (CLI bins `?`, napi facades → catchable `napi::Error`, test helpers `.expect`); q3 probe flipped to assert `Err`, not panic.
 
 - **error-serialization-log-gaps** · max: medium · owner: `phase0-logger-raw-error-sqlite-01` · probe: none · _raw `error: e` passed to structured logger across sqlite-db, postgres-db, router, and Top100; non-enumerable Error properties and cause chains are silently dropped in JSON logs; replace with `serializeError(e)` across 4 sites_
 
-- **http-retry-config-hazards** · max: medium · owner: `boot-RequestUnlimited-retry-limit-unbounded-03` · probe: none · _config-derived `retry.limit` passes to ky with no upper-bound clamp; a poisoned/malformed config value yields unbounded retries; also: no jitter causes thundering-herd retry storms_
+- ✅ **http-retry-config-hazards** · max: medium · owner: `boot-RequestUnlimited-retry-limit-unbounded-03` · probe: `ts-core/src/retrieve/RequestUnlimited.retry.test.ts` · **RESOLVED (Epic 2)** — `clampNumber` bounds `retrieve.timeout`/`retry.limit`/`retry.backoffLimit` to named ceilings (`MAX_*`) with safe fallbacks on non-finite/poisoned values; Full-Jitter `delay` added to break thundering-herd retry storms (-03, -04).
 
 - **ts-core-node-imports-edge-compat** · max: medium · owner: `phase0-ts-core-node-module-SysInfo-01` · probe: `probes/_harness/edge-boot.mjs` · _4 unconditional `node:module`/`node:crypto` static imports in ts-core; currently masked by `nodejs_compat` + tsup specifier rewrite; conformance/fragility issue across 6 related findings including tsup `platform:"node"` for the CF worker_
 
@@ -170,9 +170,9 @@ Clusters ordered by max severity (high → medium → low):
 
 - **gcp-logger-stray-console-calls** · max: low · owner: `phase0-logger-gcp-console-01` · probe: none · _4 `console.log/error` calls in `createGcpLogger()` bypass the structured `StrictLogger` interface_
 
-- **finnhub-no-endpoint-override** · max: low · owner: `engine-finnhub-no-endpoint-override-01` · probe: none · _FinnhubConfig has no `base_url` override unlike yahoo/alpaca; prevents loopback test injection; forces recorded-frame replay in probes_
+- ✅ **finnhub-no-endpoint-override** · max: low · owner: `engine-finnhub-no-endpoint-override-01` · probe: none · **RESOLVED (Epic 2)** — `FinnhubConfig`/`FinnhubDriver` gain a `base_url: Option<String>` threaded through to the connect URL (default endpoint preserved byte-identical); TS `FinnhubConfig.baseUrl?` mapped to the FFI `base_url` payload key. Enables loopback test injection.
 
-- **ffi-reentrancy-reconnect-gc** · max: low · owner: `ffi-reentrancy-reconnect-gc-deadlock-01` · probe: none · _suspected TSFN re-entrancy/callback-after-teardown under GC; probe exercised call-churn but never drove `DELIVERED>0`, so the inbound Rust→JS delivery race path is unvalidated_
+- ✅ **ffi-reentrancy-reconnect-gc** · max: low · owner: `ffi-reentrancy-reconnect-gc-deadlock-01` · probe: `ts-markets/tests/integration/TsfnGcFlood.integration.test.ts` · **RESOLVED (Epic 2)** — env-gated `napi_trigger_diagnostic_flood` floods a `ThreadsafeFunction<String>` from a native thread while JS hammers `global.gc()`; validated `DELIVERED===5000`, deadlock-free. The inbound Rust→JS delivery-under-GC path is now proven robust.
 
 - **redb-concurrent-persist-load-robust** · max: low · owner: `engine-redb-concurrent-persist-load-robust-01` · probe: `probes/rust/tests/redb_concurrent.rs::q2_concurrent_persist_and_load_is_consistent` · _positive result / no defect; MVCC redb is consistent under 8 concurrent writers + 6 readers; probe kept as regression guard_
 
@@ -180,9 +180,9 @@ Clusters ordered by max severity (high → medium → low):
 
 ### Carry-forward: unprobed vectors & residuals (future cycles)
 
-- **TSFN inbound-delivery-under-GC race (TOP residual)** — races/edge · the reconnect-under-GC probe proved the FFI call-churn/reconnect/GC path robust but never delivered a frame (DELIVERED=0), so the §8 N-API callback-deadlock vector is unvalidated (`ffi-reentrancy-reconnect-gc-deadlock-01`, suspected/medium). · Recommended validation (a FIX-CYCLE task, NOT audit-cycle, because it needs a production change): add a test-only `#[napi]` diagnostic that floods the ThreadsafeFunction with mock frames from a native thread (no network/protocol), while JS runs `global.gc()` in a tight loop + churns subscribe/unsubscribe — isolates V8/N-API ref-pinning + queueing to prove DELIVERED>0 and no deadlock.
+- ✅ **TSFN inbound-delivery-under-GC race (TOP residual)** — races/edge · **VALIDATED & CLOSED (Epic 2)** — implemented exactly the recommended fix-cycle task: env-gated `napi_trigger_diagnostic_flood` (`rust/.../streaming/diagnostics.rs`) floods a `ThreadsafeFunction<String>` from a native thread (Blocking delivery) while JS hammers `global.gc()` at 1ms; the integration suite (`TsfnGcFlood.integration.test.ts`, `--expose-gc`) proves `DELIVERED===5000` with no deadlock. The §8 N-API callback-deadlock vector is robust.
 
-- **Cross-process redb file-lock collision** — races/edge · in-process redb concurrency was probed (robust) but multi-PROCESS lock contention was not; Windows mandatory locks vs Linux advisory locks differ. · Probe a hot-reload/cold-start scenario where a 2nd process opens the redb path before the 1st fully exits (risk: startup lockout / `host.rs:57` abort cascade). Relates to `engine-redb-open-expect-abort-01`.
+- ✅ **Cross-process redb file-lock collision** — races/edge · **VALIDATED & CLOSED (Epic 2)** — `probes/rust/tests/redb_cross_process.rs` spawns a 2nd process opening a redb path held by the 1st; empirically confirmed redb takes an OS-level cross-process lock on Windows → the 2nd open returns `Err(HostError::DbOpen)` ("Database already open. Cannot acquire lock."), **no abort cascade** (a `#[cfg(windows)]` assert guards against regression; the universal no-abort invariant holds on all OSes). Validates `engine-redb-open-expect-abort-01`'s fix under a real multi-process race.
 
 - **FFI backpressure / event-loop starvation under market-data flood** — perf · unprobed: under a peak pricing burst while the JS event loop is briefly blocked, the TSFN queue buffers frames; memory limits + latency degradation + whether the Rust client applies TCP backpressure (vs OOM) are unknown.
 

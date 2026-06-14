@@ -101,14 +101,15 @@ impl YahooStreaming {
         on_pricing: ThreadsafeFunction<JsPricingData>,
         on_event: ThreadsafeFunction<EventRecord>,
         on_market_event: Option<ThreadsafeFunction<String>>,
-    ) -> Self {
+    ) -> napi::Result<Self> {
         let host = WebsocketStreamerHost::new(
             unique_db_path("yahoo_streaming", "YAHOO_DB"),
             "yahoo_subscriptions",
             "yahoo".into(),
             ProviderKind::Yahoo,
-        );
-        Self {
+        )
+        .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+        Ok(Self {
             inner: Arc::new(Mutex::new(YahooInner {
                 host,
                 config: YahooConfig::default_empty(),
@@ -118,7 +119,7 @@ impl YahooStreaming {
             on_pricing: Arc::new(on_pricing),
             on_event: Arc::new(on_event),
             on_market_event: on_market_event.map(Arc::new),
-        }
+        })
     }
 
     /// Set config (silence threshold / optional base_url override).
@@ -255,6 +256,7 @@ mod facade_tests {
             "yahoo".into(),
             ProviderKind::Yahoo,
         )
+        .expect("test host")
     }
 
     #[tokio::test]

@@ -86,7 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "alpaca_subscriptions",
         "alpaca".into(),
         ProviderKind::Alpaca,
-    );
+    )?;
 
     if args.clean {
         eprintln!("Cleaning subscriptions...");
