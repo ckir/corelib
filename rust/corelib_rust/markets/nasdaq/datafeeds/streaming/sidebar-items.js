@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"mod":["alpaca","core","finnhub","yahoo"]};
+window.SIDEBAR_ITEMS = {"mod":["alpaca","core","diagnostics","finnhub","yahoo"]};
