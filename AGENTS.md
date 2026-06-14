@@ -51,6 +51,13 @@ The monorepo uses a strictly staged GitHub Actions pipeline:
 
 ## 5. Development Environment & Tools
 
+**Prefer the portable toolchain over system/standard tooling (MANDATORY).** This machine keeps a curated set of fast Rust/modern CLI binaries on `PATH`; reach for them instead of the OS defaults:
+- `C:\!PORTABLES\!GNU` — GNU/uutils coreutils (`cat`, `head`, `ls`, `sed`, `cp`, `mv`, `wc`, `sort`, …).
+- `C:\!PORTABLES\!BIN` — modern Rust/CLI tools: `rg`, `fd`, `sd`, `bat`, `eza`, `jq`, `yq`, `ast-grep`/`sg`, `ruff`, `watchexec`, `rip`, `htmlq`, `mdcat`, `sops`, `websocat`, plus `rtk` itself.
+- `bat` for agent consumption MUST use `--style=plain --color=never --paging=never` — its default ANSI color, line-number gutter, and pager are token-noise for an agent (and `bat` is not in rtk's rewrite rules, so it bypasses rtk savings; prefer `Read`/`cat`).
+
+Claude Code's `Read`/`Grep`/`Glob` already use ripgrep — keep using them for reading/searching; this rule governs shell calls. See §7 for the rtk wrapper that auto-routes shell commands to these binaries.
+
 The following tools are available in the development environment and should be used for relevant tasks:
 - **Cloud & Serverless**: `wrangler` (Cloudflare), `sam` (AWS), `gcloud` (GCP).
 - **Automation & Containers**: `act` (Local GitHub Actions), `docker` (Docker Desktop), `gh` (GitHub CLI).
