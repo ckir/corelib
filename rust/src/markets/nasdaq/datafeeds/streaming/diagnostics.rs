@@ -54,6 +54,7 @@ pub fn napi_load_generator(
                 // spike: emit one second's worth fast, then idle 200ms to let the loop drain + GC
                 for _ in 0..rate_per_sec {
                     seq += 1;
+                    crate::observability::latency::mark_sent(seq);
                     let _ = on_event.call(
                         Ok(synthetic_tick(seq)),
                         ThreadsafeFunctionCallMode::Blocking,
@@ -64,6 +65,7 @@ pub fn napi_load_generator(
                 // steady: pace to rate_per_sec
                 let per = std::time::Duration::from_micros(1_000_000 / rate_per_sec.max(1) as u64);
                 seq += 1;
+                crate::observability::latency::mark_sent(seq);
                 let _ = on_event.call(
                     Ok(synthetic_tick(seq)),
                     ThreadsafeFunctionCallMode::Blocking,

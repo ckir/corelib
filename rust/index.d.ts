@@ -285,6 +285,12 @@ export declare const enum MarketHours {
  */
 export declare function napiDumpFlightLog(onEntry: ((err: Error | null, arg: string) => any)): void
 
+/** JS calls this immediately on receipt of tick `seq`. All timing is Rust-side vs the SAME EPOCH `Instant`. */
+export declare function napiLatencyAck(seq: number): void
+
+/** Drain samples to JS for percentile computation (env-gated, like the flight dump). */
+export declare function napiLatencyDrain(onSample: ((err: Error | null, arg: number) => any)): void
+
 /**
  * Parametric in-process synthetic load generator (Epic 5 audit instrument). Emits synthetic JSON
  * ticks straight from a native thread → TSFN (no socket), supporting steady and bursty modes.
