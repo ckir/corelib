@@ -129,9 +129,9 @@ use napi::Status;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-/// Bounded TSFN (Epic 5 ffi-tsfn-queue-unbounded): caps the off-heap queue at 4096; NonBlocking
+/// Bounded TSFN (Epic 5 ffi-tsfn-queue-unbounded): caps the off-heap queue at 2048; NonBlocking
 /// delivery drops on overflow. Used for the high-rate market-data callbacks only.
-type BoundedTsfn<T> = ThreadsafeFunction<T, Unknown<'static>, T, Status, true, false, 4096>;
+type BoundedTsfn<T> = ThreadsafeFunction<T, Unknown<'static>, T, Status, true, false, 2048>;
 
 /// Configuration for the Finnhub streaming facade. Token masked in Debug output.
 #[napi(object)]
@@ -186,9 +186,19 @@ impl FinnhubStreaming {
     #[napi(constructor)]
     pub fn new(
         on_log: ThreadsafeFunction<LogRecord>,
-        on_pricing: ThreadsafeFunction<FinnhubPricingData, Unknown<'static>, FinnhubPricingData, Status, true, false, 4096>,
+        on_pricing: ThreadsafeFunction<
+            FinnhubPricingData,
+            Unknown<'static>,
+            FinnhubPricingData,
+            Status,
+            true,
+            false,
+            2048,
+        >,
         on_event: ThreadsafeFunction<EventRecord>,
-        on_market_event: Option<ThreadsafeFunction<String, Unknown<'static>, String, Status, true, false, 4096>>,
+        on_market_event: Option<
+            ThreadsafeFunction<String, Unknown<'static>, String, Status, true, false, 2048>,
+        >,
     ) -> napi::Result<Self> {
         let host = WebsocketStreamerHost::new(
             unique_db_path("finnhub_streaming", "FINNHUB_DB"),
