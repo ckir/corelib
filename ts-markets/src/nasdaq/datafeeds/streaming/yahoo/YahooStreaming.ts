@@ -14,6 +14,11 @@ const RustYahoo = (coreFFI as any)?.YahooStreaming;
  * YahooStreaming
  * Provides a real-time data stream from Yahoo Finance using the native Rust library via FFI.
  * Emits events for pricing, logging, and connection status.
+ *
+ * Construction calls into the native addon and throws SYNCHRONOUSLY if the Rust side
+ * fails to initialize (e.g. redb cannot open its db path). Wrap `new YahooStreaming()`
+ * in try/catch. Ensure ConfigManager is initialized before constructing so config-derived
+ * db paths resolve.
  */
 export class YahooStreaming extends EventEmitter {
 	private rust: any;
@@ -28,20 +33,27 @@ export class YahooStreaming extends EventEmitter {
 			);
 		}
 
-		this.rust = new RustYahoo(
-			(_err: any, record: any) => this.emit("log", record),
-			(_err: any, data: any) => this.emit("pricing", data),
-			(_err: any, event: any) => {
-				if (event) {
-					this.emit(event.type, event.data ?? null);
-				}
-			},
-			(_err: any, json: string) => {
-				try {
-					this.emit("market", JSON.parse(json));
-				} catch {}
-			},
-		);
+		try {
+			this.rust = new RustYahoo(
+				(_err: any, record: any) => this.emit("log", record),
+				(_err: any, data: any) => this.emit("pricing", data),
+				(_err: any, event: any) => {
+					if (event) {
+						this.emit(event.type, event.data ?? null);
+					}
+				},
+				(_err: any, json: string) => {
+					try {
+						this.emit("market", JSON.parse(json));
+					} catch {}
+				},
+			);
+		} catch (e) {
+			throw new Error(
+				`YahooStreaming: native init failed (${(e as Error).message})`,
+				{ cause: e },
+			);
+		}
 
 		// Auto-clean in development
 		if (getMode() === "development") {
