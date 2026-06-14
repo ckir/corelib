@@ -42,7 +42,7 @@ pub fn napi_load_generator(
     rate_per_sec: u32,
     duration_ms: u32,
     bursty: bool, // false = steady; true = recurrent spike→idle→gc-window cycles
-    on_event: ThreadsafeFunction<String, Unknown<'static>, String, Status, true, false, 2048>,
+    on_event: ThreadsafeFunction<String, Unknown<'static>, String, Status, true, false, 1024>,
 ) -> napi::Result<()> {
     if !loadgen_enabled() {
         return Ok(()); // production no-op
