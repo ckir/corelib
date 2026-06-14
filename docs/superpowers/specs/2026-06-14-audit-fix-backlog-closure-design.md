@@ -27,11 +27,15 @@ One fix-cycle epic, decomposed into **3 sequential, decoupled phases** (single s
 
 **Problem:** caught errors are logged as `{ error: e }` — passing the raw `Error` object to the structured logger. JSON serialization drops non-enumerable `Error` properties (`message`, `stack`) and `cause` chains, so production logs lose the actual failure detail.
 
-**Confirmed raw-error sites** (logger called with `{ error: e }` / `{ error: error }`):
-- `ts-core/src/database/sqlite/sqlite-db.ts` (catch-block error logs, e.g. ~lines 49, 114).
-- `ts-core/src/database/postgres/postgres-db.ts` (e.g. ~lines 50, 115).
-- `ts-cloud/src/core/router.ts` (router-level error handler).
-- `ts-markets/src/nasdaq/groups/Top100.ts` (group-refresh error log).
+**Scope: a full SWEEP of raw-error logger sites** (not just the 4 the audit named — agy's spec-review sweep found more of the same class; fix them all). Confirmed sites (logger called with `{ error: e }`/`{ error: error }`/`{ error: rollbackErr }`/`{ error: result.reason }`):
+- `ts-core/src/database/sqlite/sqlite-db.ts` — catch-block error logs (~lines 49, 114, **and the rollback catch ~125 `error: rollbackErr`**).
+- `ts-core/src/database/postgres/postgres-db.ts` — (~lines 50, 115, **and rollback ~126**).
+- `ts-cloud/src/core/router.ts` — router-level error handler.
+- `ts-markets/src/nasdaq/groups/Top100.ts` — group-refresh error log.
+- `ts-cloud/src/database/SqlCloud.ts` (~line 68) — `logger?.error("SQL Sub-Router Error", { error })` (agy-found).
+- `ts-markets/src/nasdaq/datafeeds/polling/nasdaq/NasdaqPolling.ts` (~line 156) — `{ error: result.reason }` (agy-found).
+
+The implementer's Step-0 should `rg "{ error" ts-core/src ts-cloud/src ts-markets/src` to catch any remaining raw-error sites; fix every one.
 
 **Fix:** wrap with `serializeError(e)` from the `serialize-error` package — `{ error: serializeError(e) }`. This **mirrors the existing precedent** at `ts-core/src/database/core/errors.ts:13` (`logger.error(message, { error: serialized })`), so we are aligning the stragglers to the established pattern, not inventing one. Each file imports `serializeError` if not already present.
 
@@ -71,10 +75,12 @@ These two findings are **technically co-dependent**: switching the Cloudflare wo
 - `ts-core/src/utils/SysInfo.ts:11` — `import { createRequire } from "node:module"`.
 - `ts-core/src/utils/index.ts:10` — `import { createRequire } from "node:module"`.
 
-**Fix (surgical, per agy's mapping — async where possible, runtime-guard where sync):**
-- **`ConfigUtils.ts`:** `decryptConfig` is already `async` → replace the static import with `const { default: crypto } = await import("node:crypto")` (or `const crypto = await import("node:crypto")`, matching the usage) inside the async function. No sync constraint.
-- **`core/index.ts`:** `createRequire` exists only to support the **async** `loadFFI()` (FFI loader) → move it to `const { createRequire } = await import("node:module")` inside `loadFFI()`'s async context. No top-level static import remains.
-- **`SysInfo.ts` / `utils/index.ts`:** these are used in **synchronous** paths (telemetry `getSysInfo`, path resolvers) where `await import` is impossible. Guard with `detectRuntime()` (Epic-1's memoized runtime detector): only resolve `createRequire`/node libs when running under **Node/Bun** (e.g. via `globalThis.require`/a guarded `createRequire`), and provide an edge-safe fallback (telemetry/path resolution does not need node libs under browser/edge). The synchronous public signatures are preserved.
+**Fix — async-relocate the two async sites; externalize-and-guard the two sync sites (agy spec-review 1.2):**
+- **`ConfigUtils.ts`:** `decryptConfig` is already `async` → replace the static import with `const crypto = (await import("node:crypto")).default` (matching the current default-import usage) inside the async function. Static top-level import removed.
+- **`core/index.ts`:** `createRequire` exists only to support the **async** `loadFFI()` → move it to `const { createRequire } = await import("node:module")` inside `loadFFI()`'s async context. Static top-level import removed.
+- **`SysInfo.ts` / `utils/index.ts` (synchronous — `await import` impossible, and `globalThis.require` is `undefined` under Node/Bun ESM so it is NOT a valid fallback):** KEEP the static `import { createRequire } from "node:module"` (it stays valid because Phase 3b externalizes `node:*`, so under edge it resolves to the `nodejs_compat` builtin and is NOT bundled), but **guard the `createRequire()` *call site*** with `detectRuntime()` (Epic-1's memoized detector) so the edge runtime never *executes* node-only resolution — telemetry/path resolution returns an edge-safe value instead. (Optional hardening: a build-time `define: { __EDGE_RUNTIME__: "true" }` on the worker entry enables esbuild dead-code-elimination of the node:module branch entirely — adopt if the externalized import still bloats the edge bundle.)
+
+**Out of scope (edge-safe, do NOT touch):** `node:events` (`ConfigManager.ts`), `node:stream` (`loggers/implementations/{node,bun,deno}.ts`) — these are provided by `nodejs_compat` and the platform-specific loggers are tree-shaken per runtime (the CF worker uses the cloudflare logger, not `node.ts`). The audit finding scoped specifically to `node:module`/`node:crypto`; leave the others.
 
 **Constraint (contract):** no production code path may change the **synchronous** signature of `getSysInfo`/the path resolvers, and the FFI-load behavior under Node/Bun must remain identical. The edge-boot probe is the oracle.
 
@@ -82,7 +88,10 @@ These two findings are **technically co-dependent**: switching the Cloudflare wo
 
 **Problem:** the Cloudflare worker bundle is **6.29 MB** (gzip 901 KiB). `ts-cloud/tsup.config.ts`'s first entry (`worker: src/platform/cloudflare/worker.ts`) uses `platform:"node"` + `noExternal:[/.*/]`, so esbuild bundles heavy **server-only** transitive deps reachable from `ts-core` (`@google-cloud/*`, `@libsql/client`, `pino-pretty`) that the edge worker never executes.
 
-**Fix:** for the **Cloudflare worker entry ONLY** (the AWS-`handler` and CloudRun-`server` entries legitimately stay `platform:"node"` and must NOT be touched), switch to `platform:"browser"` (or `"neutral"` if `"browser"` over-polyfills) and mark the server-only/Node-DB packages as `external` (`@google-cloud/*`, `@libsql/client`, `pino-pretty`, and any other server-only deps surfaced by the build). Residual `node:*` builtins are provided at runtime by `nodejs_compat` (already enabled), so they should also be externalized rather than bundled. Target: **~150 KB** (from 6.29 MB).
+**Fix:** for the **Cloudflare worker entry ONLY** (the AWS-`handler` and CloudRun-`server` entries legitimately stay `platform:"node"` and must NOT be touched):
+- Use **`platform:"neutral"`** — NOT `"browser"`. (agy spec-review 1.1: `ts-core/package.json` declares `"browser": "./dist/browser.js"`, and `browser.ts` only re-exports logging interfaces; under `platform:"browser"` esbuild resolves `@ckir/corelib` to that stub and `createDatabase`/`endPoint` — which `ts-cloud` imports — go unresolved → build fails. `"neutral"` resolves the full default ESM entry `dist/index.js` while still allowing dependency pruning.)
+- Mark the server-only/Node-DB packages and `node:*` builtins as **`external`** (`@google-cloud/*`, `@libsql/client`, `pino-pretty`, `node:*`, and any other server-only deps the build surfaces) so they are not bundled; `node:*` is satisfied at runtime by `nodejs_compat` (already enabled).
+- Target: **~150 KB** (from 6.29 MB).
 
 **Verification (the oracle for Phase 3):** `pnpm build-all` succeeds; the Cloudflare `dist/cloudflare/worker.js` size drops to roughly the ~150 KB order; the `probes/_harness/edge-boot.mjs` boot probe passes (0 edge failures) under the thinned bundle — proving the worker still boots under `nodejs_compat` with the deps externalized.
 
@@ -93,8 +102,9 @@ These two findings are **technically co-dependent**: switching the Cloudflare wo
 - **Phase-1 gcp console:** remove 3 progress logs; retain ONE justified bootstrap-fallback `console.error` for logger-init failure (+ propagate). (Not a blanket "remove all 4".)
 - **Phase-2 status code:** fatal path → **500** (body unchanged).
 - **Phase-3 ordering:** node-import refactor (3a) precedes bundle change (3b) in the same phase — co-dependent.
-- **Phase-3 platform:** `platform:"browser"` for the **Cloudflare worker entry only**; externalize server-only deps + `node:*`; AWS/CloudRun entries untouched.
-- **Phase-3 sync node usage:** runtime-guard via `detectRuntime()` for the synchronous `SysInfo`/`utils` paths; `await import` only in already-async `decryptConfig`/`loadFFI`.
+- **Phase-3 platform:** `platform:"neutral"` (NOT `"browser"` — avoids the `@ckir/corelib` browser-stub export clash) for the **Cloudflare worker entry only**; externalize server-only deps + `node:*`; AWS/CloudRun entries untouched.
+- **Phase-3 node usage:** `await import` in the already-async `decryptConfig`/`loadFFI`; for the SYNC `SysInfo`/`utils` paths keep the static `node:module` import (externalized in the edge build → resolved via `nodejs_compat`, not bundled) but guard the `createRequire()` *call* with `detectRuntime()` (since `globalThis.require` is `undefined` under Node/Bun ESM). Optional `__EDGE_RUNTIME__` build-define for full dead-code-elimination.
+- **Phase-1 scope:** error-serialization is a full SWEEP of raw-error logger sites (incl. agy-found `SqlCloud.ts`, `NasdaqPolling.ts`, and the db rollback catches), not just the 4 the audit named.
 
 ## Testing strategy
 
