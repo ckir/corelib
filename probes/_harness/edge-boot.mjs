@@ -45,6 +45,7 @@
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { existsSync } from "node:fs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const tsCloudDir = path.join(repoRoot, "ts-cloud");
@@ -99,12 +100,26 @@ const timeoutPromise = new Promise((_, reject) => {
 });
 
 async function runProbe() {
+	// Guard: the probe must load the BUILT asset, not the TS source.
+	// If the build is missing, fail loudly so the runner knows to build first.
+	const builtWorker = path.join(tsCloudDir, "dist", "cloudflare", "worker.js");
+	if (!existsSync(builtWorker)) {
+		console.error(
+			`\n[probe] FATAL: built asset not found:\n  ${builtWorker}\n` +
+			`Run \`pnpm build-all\` from the repo root first, then re-run this probe.\n`,
+		);
+		process.exit(1);
+	}
 	console.error(`[probe] booting worker via unstable_dev (config=${wranglerConfig})`);
+	console.error(`[probe] entry (built asset): dist/cloudflare/worker.js`);
 	// wrangler's unstable_dev resolves the script + config relative to process cwd,
 	// not the config dir. Run from ts-cloud so the entry-point, wrangler.toml and
 	// the @ckir/corelib resolution all match the REAL deploy layout.
 	process.chdir(tsCloudDir);
-	worker = await unstable_dev("src/platform/cloudflare/worker.ts", {
+	// Entry is relative to tsCloudDir (process cwd after chdir above).
+	// "dist/cloudflare/worker.js" is the tsup output — the REAL deployable bundle,
+	// not the TS source that wrangler would recompile on the fly.
+	worker = await unstable_dev("dist/cloudflare/worker.js", {
 		config: wranglerConfig,
 		// wrangler resolves main/script relative to config dir; also force cwd.
 		// Explicit flags mirror wrangler.toml so the test is unambiguous:
