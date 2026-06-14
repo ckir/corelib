@@ -11,6 +11,7 @@ vi.mock("@ckir/corelib", () => ({
 		},
 	},
 }));
+
 // import the FACADE after the mock
 import { FinnhubStreaming } from "./FinnhubStreaming";
 

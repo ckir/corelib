@@ -13,6 +13,7 @@ vi.mock("@ckir/corelib", () => ({
 	getMode: () => "production",
 	getTempDir: () => "/tmp/test",
 }));
+
 // import the FACADE after the mock
 import { YahooStreaming } from "./YahooStreaming";
 
