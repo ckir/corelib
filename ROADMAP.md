@@ -154,21 +154,21 @@ Clusters ordered by max severity (high → medium → low):
 
 - ✅ **redb-double-open-process-abort** · max: medium · owner: `engine-redb-open-expect-abort-01` · probe: `probes/rust/tests/redb_concurrent.rs::q3_shared_path_double_open_errors` · **RESOLVED (Epic 2)** — `WebsocketStreamerHost::new` now returns `Result<Self, HostError>` (`Database::create(..).map_err(HostError::DbOpen)?`); 8 call sites updated (CLI bins `?`, napi facades → catchable `napi::Error`, test helpers `.expect`); q3 probe flipped to assert `Err`, not panic.
 
-- **error-serialization-log-gaps** · max: medium · owner: `phase0-logger-raw-error-sqlite-01` · probe: none · _raw `error: e` passed to structured logger across sqlite-db, postgres-db, router, and Top100; non-enumerable Error properties and cause chains are silently dropped in JSON logs; replace with `serializeError(e)` across 4 sites_
+- ✅ **error-serialization-log-gaps** · max: medium · owner: `phase0-logger-raw-error-sqlite-01` · probe: none · **RESOLVED (Epic 3)** — `serializeError(...)` wraps every raw-error logger site (sqlite-db ×3, postgres-db ×3, SqlCloud, NasdaqPolling); router/Top100 already passed `.message` strings (out of scope). A rationale test pins the `Error`→`{}` bug; NasdaqPolling oracle updated to the serialized shape.
 
 - ✅ **http-retry-config-hazards** · max: medium · owner: `boot-RequestUnlimited-retry-limit-unbounded-03` · probe: `ts-core/src/retrieve/RequestUnlimited.retry.test.ts` · **RESOLVED (Epic 2)** — `clampNumber` bounds `retrieve.timeout`/`retry.limit`/`retry.backoffLimit` to named ceilings (`MAX_*`) with safe fallbacks on non-finite/poisoned values; Full-Jitter `delay` added to break thundering-herd retry storms (-03, -04).
 
-- **ts-core-node-imports-edge-compat** · max: medium · owner: `phase0-ts-core-node-module-SysInfo-01` · probe: `probes/_harness/edge-boot.mjs` · _4 unconditional `node:module`/`node:crypto` static imports in ts-core; currently masked by `nodejs_compat` + tsup specifier rewrite; conformance/fragility issue across 6 related findings including tsup `platform:"node"` for the CF worker_
+- ✅ **ts-core-node-imports-edge-compat** · max: medium · owner: `phase0-ts-core-node-module-SysInfo-01` · probe: `probes/_harness/edge-boot.mjs` · **RESOLVED (Epic 3)** — `node:crypto`/`node:module` moved to `__EDGE_RUNTIME__`-guarded dynamic imports (DCE'd from the edge bundle via tsup `define`); `__EDGE_RUNTIME__` declared as an import-graph-travelling module global. edge-boot probe rewired to boot the BUILT `dist/cloudflare/worker.js` and now reports BOOTS_CLEAN.
 
-- **market-status-http-error-swallow** · max: medium · owner: `facade-market-status-error-status-swallowed-01` · probe: none · _`MarketStatusCloud` catch block returns HTTP 200 on fatal error; callers cannot distinguish success from failure by status code_
+- ✅ **market-status-http-error-swallow** · max: medium · owner: `facade-market-status-error-status-swallowed-01` · probe: none · **RESOLVED (Epic 3)** — `MarketStatusCloud` fatal path now returns HTTP 500 (was 200); test oracle flipped first (200→500) then code. Success path stays 200.
 
-- **worker-bundle-size-and-platform** · max: medium · owner: `facade-worker-bundle-size-perf-01` · probe: none · _Cloudflare worker bundle is 6.29 MB / gzip 901 KiB; includes unreachable server deps (@google-cloud/\*, @libsql/client, pino-pretty) due to `noExternal:[/.*/]` + `platform:"node"`_
+- ✅ **worker-bundle-size-and-platform** · max: medium · owner: `facade-worker-bundle-size-perf-01` · probe: `probes/_harness/edge-boot.mjs` · **RESOLVED (Epic 3)** — CF worker entry switched to `platform:"neutral"` + `__EDGE_RUNTIME__` define + externalized node builtins & server-only deps (pino stack, postgres, @libsql/client) reachable only via dead dynamic imports; wrangler `[alias]` resolves them to an edge stub. worker.js 6.29 MB → 611 KB raw / 901 KiB → ~133 KB gzip; edge-boot BOOTS_CLEAN. AWS/CloudRun entries unchanged.
 
 ### Low severity
 
 - ✅ **detectRuntime-uncached** · max: low · owner: `boot-detectRuntime-uncached-06` · probe: none · **RESOLVED (Epic 1)** — `detectRuntime()` memoized to a module-level cache (`computeRuntime()` extracted; `__resetRuntimeCache()` test hook) (-06).
 
-- **gcp-logger-stray-console-calls** · max: low · owner: `phase0-logger-gcp-console-01` · probe: none · _4 `console.log/error` calls in `createGcpLogger()` bypass the structured `StrictLogger` interface_
+- ✅ **gcp-logger-stray-console-calls** · max: low · owner: `phase0-logger-gcp-console-01` · probe: none · **RESOLVED (Epic 3)** — 3 progress `console.log` calls removed from `createGcpLogger()`; the single `catch` `console.error` kept as the documented bootstrap fallback (the structured logger itself failed to init, so console is the only available sink).
 
 - ✅ **finnhub-no-endpoint-override** · max: low · owner: `engine-finnhub-no-endpoint-override-01` · probe: none · **RESOLVED (Epic 2)** — `FinnhubConfig`/`FinnhubDriver` gain a `base_url: Option<String>` threaded through to the connect URL (default endpoint preserved byte-identical); TS `FinnhubConfig.baseUrl?` mapped to the FFI `base_url` payload key. Enables loopback test injection.
 
