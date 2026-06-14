@@ -5,7 +5,6 @@ import pino from "pino";
 import { type StrictLogger, StrictLoggerWrapper } from "../common";
 
 export default function createGcpLogger(): StrictLogger {
-	console.log("[GCP-LOGGER] Initializing GCP specific logger...");
 	try {
 		// Dynamically access the config factory to handle both ESM and CJS shapes
 		const configFactory =
@@ -28,12 +27,12 @@ export default function createGcpLogger(): StrictLogger {
 			},
 		);
 
-		console.log("[GCP-LOGGER] Config created successfully");
 		const pinoInstance = pino(config);
-		console.log("[GCP-LOGGER] Pino instance created");
 		return new StrictLoggerWrapper(pinoInstance);
 	} catch (err) {
-		console.error("[GCP-LOGGER] ❌ Failed to initialize GCP logger:", err);
+		// Bootstrap fallback: the structured logger itself failed to init, so console
+		// is the only available sink. We then degrade to a basic pino logger (below).
+		console.error("[GCP-LOGGER] Failed to initialize GCP logger:", err);
 		// Fallback to basic JSON logger if GCP config fails to avoid process crash
 		const fallback = pino({
 			level: process.env.LOG_LEVEL || "info",
