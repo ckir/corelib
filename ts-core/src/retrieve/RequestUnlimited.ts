@@ -43,7 +43,9 @@ export function clampNumber(
 /** Full-Jitter backoff: uniform in [0, min(backoffLimit, 300*2^(attempt-1))]. */
 export function fullJitterDelay(attempt: number, backoffLimit: number): number {
 	const base = Math.min(backoffLimit, 300 * 2 ** (attempt - 1));
-	return Math.round(Math.random() * base);
+	const delayMs = Math.round(Math.random() * base);
+	requestUnlimitedLogger.trace("retry delay computed", { attempt, base, cap: backoffLimit, delayMs });
+	return delayMs;
 }
 
 /**
@@ -67,10 +69,22 @@ export const DEFAULT_REQUEST_OPTIONS: KyOptions = {
 		shouldRetry: ({ error, retryCount }) => {
 			if (error instanceof HTTPError && error.response) {
 				const status = error.response.status;
-				if (status === 429 && retryCount <= 5) return true;
-				if (status >= 400 && status < 500) return false;
-				return status >= 500;
+				if (status === 429 && retryCount <= 5) {
+					requestUnlimitedLogger.trace("retry decision", { status, willRetry: true });
+					return true;
+				}
+				if (status >= 400 && status < 500) {
+					requestUnlimitedLogger.trace("retry decision: skip", { status, willRetry: false });
+					return false;
+				}
+				const willRetry = status >= 500;
+				requestUnlimitedLogger.trace(
+					willRetry ? "retry decision" : "retry decision: skip",
+					{ status, willRetry },
+				);
+				return willRetry;
 			}
+			requestUnlimitedLogger.trace("retry decision", { willRetry: true });
 			return true;
 		},
 	},
@@ -149,6 +163,12 @@ export async function endPoint<T = unknown>(
 		MAX_BACKOFF_LIMIT_MS,
 		3000,
 	);
+	requestUnlimitedLogger.debug("endPoint: request", {
+		url: url.toString(),
+		timeout: cfgTimeout,
+		retryLimit: cfgRetryLimit,
+		backoffLimit: cfgBackoffLimit,
+	});
 	const defaultRetry = DEFAULT_REQUEST_OPTIONS.retry as Record<string, unknown>;
 
 	// 4. Construct final options. Config overrides win over defaults; caller options win over config.
@@ -180,6 +200,7 @@ export async function endPoint<T = unknown>(
 		const responseObject = await ky(url, kyOptions);
 		const response = await serializeResponse<T>(responseObject);
 
+		requestUnlimitedLogger.debug("endPoint: ok", { url: url.toString(), status: responseObject.status });
 		return {
 			status: "success",
 			value: response as SerializedResponse<T>,
@@ -226,16 +247,21 @@ export async function endPoints<T = unknown>(
 	urls: (string | URL | Request)[],
 	options: KyOptions = {},
 ): Promise<RequestResult<T>[]> {
+	requestUnlimitedLogger.debug("endPoints: batch", { count: urls.length });
 	const promises = urls.map((url) => endPoint<T>(url, options));
 	const results = await Promise.allSettled(promises);
 
-	return results.map((result) => {
+	const mapped = results.map((result) => {
 		if (result.status === "fulfilled") return result.value;
 		return {
 			status: "error",
 			reason: serializeError(result.reason),
-		};
+		} as RequestResult<T>;
 	});
+
+	const ok = mapped.filter((r) => r.status === "success").length;
+	requestUnlimitedLogger.debug("endPoints: done", { ok, failed: mapped.length - ok });
+	return mapped;
 }
 
 /**
