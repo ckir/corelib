@@ -157,32 +157,33 @@
 <a href=#157 id=157 data-nosnippet>157</a>                        <span class="kw">match </span>upd {
 <a href=#158 id=158 data-nosnippet>158</a>                            <span class="comment">// Finnhub is single-channel: ignore `channel`, subscribe each new symbol.
 <a href=#159 id=159 data-nosnippet>159</a>                            </span><span class="prelude-val">Some</span>(SubRequest { symbols: syms, .. }) =&gt; {
-<a href=#160 id=160 data-nosnippet>160</a>                                <span class="kw">for </span>s <span class="kw">in </span><span class="kw-2">&amp;</span>syms { <span class="kw">if </span>!current.contains(s) {
-<a href=#161 id=161 data-nosnippet>161</a>                                    <span class="kw">let </span>m = <span class="macro">serde_json::json!</span>({ <span class="string">"type"</span>: <span class="string">"subscribe"</span>, <span class="string">"symbol"</span>: s }).to_string();
-<a href=#162 id=162 data-nosnippet>162</a>                                    <span class="kw">let _ </span>= ws.send(Message::Text(m.into())).<span class="kw">await</span>; current.push(s.clone());
-<a href=#163 id=163 data-nosnippet>163</a>                                }}
-<a href=#164 id=164 data-nosnippet>164</a>                            }
-<a href=#165 id=165 data-nosnippet>165</a>                            <span class="comment">// sub_tx dropped → channel closed; recv() would return None forever and
-<a href=#166 id=166 data-nosnippet>166</a>                            // busy-spin the select. End the attempt cleanly. (agy convergent 🟡)
-<a href=#167 id=167 data-nosnippet>167</a>                            </span><span class="prelude-val">None </span>=&gt; <span class="kw">return </span>AttemptOutcome::Stopped,
-<a href=#168 id=168 data-nosnippet>168</a>                        }
-<a href=#169 id=169 data-nosnippet>169</a>                    }
-<a href=#170 id=170 data-nosnippet>170</a>                    msg = ws.next() =&gt; <span class="kw">match </span>msg {
-<a href=#171 id=171 data-nosnippet>171</a>                        <span class="prelude-val">Some</span>(<span class="prelude-val">Ok</span>(Message::Text(t))) =&gt; {
-<a href=#172 id=172 data-nosnippet>172</a>                            <span class="comment">// dual-mode: each trade carries the raw FinnhubPricingData + the unified MarketEvent.
-<a href=#173 id=173 data-nosnippet>173</a>                            </span><span class="kw">for </span>ev <span class="kw">in </span>parse_finnhub_frame(<span class="kw-2">&amp;</span>t, <span class="kw-2">&amp;</span><span class="self">self</span>.name) {
-<a href=#174 id=174 data-nosnippet>174</a>                                <span class="kw">if let </span><span class="prelude-val">Some</span>(raw) = market_event_to_finnhub_pricing(<span class="kw-2">&amp;</span>ev) {
-<a href=#175 id=175 data-nosnippet>175</a>                                    <span class="kw">let _ </span>= tx.send(CoreEvent::Pricing { raw: RawPricing::Finnhub(raw), uni: <span class="macro">vec!</span>[ev] }).<span class="kw">await</span>;
-<a href=#176 id=176 data-nosnippet>176</a>                                }
-<a href=#177 id=177 data-nosnippet>177</a>                            }
-<a href=#178 id=178 data-nosnippet>178</a>                        }
-<a href=#179 id=179 data-nosnippet>179</a>                        <span class="prelude-val">Some</span>(<span class="prelude-val">Ok</span>(Message::Ping(p))) =&gt; { <span class="kw">let _ </span>= ws.send(Message::Pong(p)).<span class="kw">await</span>; }
-<a href=#180 id=180 data-nosnippet>180</a>                        <span class="prelude-val">Some</span>(<span class="prelude-val">Ok</span>(<span class="kw">_</span>)) =&gt; {}
-<a href=#181 id=181 data-nosnippet>181</a>                        <span class="prelude-val">Some</span>(<span class="prelude-val">Err</span>(<span class="kw">_</span>)) | <span class="prelude-val">None </span>=&gt; <span class="kw">return </span>AttemptOutcome::ConnectedThenDropped,
-<a href=#182 id=182 data-nosnippet>182</a>                    }
-<a href=#183 id=183 data-nosnippet>183</a>                }
-<a href=#184 id=184 data-nosnippet>184</a>            }
-<a href=#185 id=185 data-nosnippet>185</a>        }.boxed()
-<a href=#186 id=186 data-nosnippet>186</a>    }
-<a href=#187 id=187 data-nosnippet>187</a>}
+<a href=#160 id=160 data-nosnippet>160</a>                                <span class="macro">tracing::trace!</span>(target: <span class="string">"corelib_rust::stream"</span>, symbols = syms.len(), <span class="string">"sub request"</span>);
+<a href=#161 id=161 data-nosnippet>161</a>                                <span class="kw">for </span>s <span class="kw">in </span><span class="kw-2">&amp;</span>syms { <span class="kw">if </span>!current.contains(s) {
+<a href=#162 id=162 data-nosnippet>162</a>                                    <span class="kw">let </span>m = <span class="macro">serde_json::json!</span>({ <span class="string">"type"</span>: <span class="string">"subscribe"</span>, <span class="string">"symbol"</span>: s }).to_string();
+<a href=#163 id=163 data-nosnippet>163</a>                                    <span class="kw">let _ </span>= ws.send(Message::Text(m.into())).<span class="kw">await</span>; current.push(s.clone());
+<a href=#164 id=164 data-nosnippet>164</a>                                }}
+<a href=#165 id=165 data-nosnippet>165</a>                            }
+<a href=#166 id=166 data-nosnippet>166</a>                            <span class="comment">// sub_tx dropped → channel closed; recv() would return None forever and
+<a href=#167 id=167 data-nosnippet>167</a>                            // busy-spin the select. End the attempt cleanly. (agy convergent 🟡)
+<a href=#168 id=168 data-nosnippet>168</a>                            </span><span class="prelude-val">None </span>=&gt; <span class="kw">return </span>AttemptOutcome::Stopped,
+<a href=#169 id=169 data-nosnippet>169</a>                        }
+<a href=#170 id=170 data-nosnippet>170</a>                    }
+<a href=#171 id=171 data-nosnippet>171</a>                    msg = ws.next() =&gt; <span class="kw">match </span>msg {
+<a href=#172 id=172 data-nosnippet>172</a>                        <span class="prelude-val">Some</span>(<span class="prelude-val">Ok</span>(Message::Text(t))) =&gt; {
+<a href=#173 id=173 data-nosnippet>173</a>                            <span class="comment">// dual-mode: each trade carries the raw FinnhubPricingData + the unified MarketEvent.
+<a href=#174 id=174 data-nosnippet>174</a>                            </span><span class="kw">for </span>ev <span class="kw">in </span>parse_finnhub_frame(<span class="kw-2">&amp;</span>t, <span class="kw-2">&amp;</span><span class="self">self</span>.name) {
+<a href=#175 id=175 data-nosnippet>175</a>                                <span class="kw">if let </span><span class="prelude-val">Some</span>(raw) = market_event_to_finnhub_pricing(<span class="kw-2">&amp;</span>ev) {
+<a href=#176 id=176 data-nosnippet>176</a>                                    <span class="kw">let _ </span>= tx.send(CoreEvent::Pricing { raw: RawPricing::Finnhub(raw), uni: <span class="macro">vec!</span>[ev] }).<span class="kw">await</span>;
+<a href=#177 id=177 data-nosnippet>177</a>                                }
+<a href=#178 id=178 data-nosnippet>178</a>                            }
+<a href=#179 id=179 data-nosnippet>179</a>                        }
+<a href=#180 id=180 data-nosnippet>180</a>                        <span class="prelude-val">Some</span>(<span class="prelude-val">Ok</span>(Message::Ping(p))) =&gt; { <span class="kw">let _ </span>= ws.send(Message::Pong(p)).<span class="kw">await</span>; }
+<a href=#181 id=181 data-nosnippet>181</a>                        <span class="prelude-val">Some</span>(<span class="prelude-val">Ok</span>(<span class="kw">_</span>)) =&gt; {}
+<a href=#182 id=182 data-nosnippet>182</a>                        <span class="prelude-val">Some</span>(<span class="prelude-val">Err</span>(<span class="kw">_</span>)) | <span class="prelude-val">None </span>=&gt; <span class="kw">return </span>AttemptOutcome::ConnectedThenDropped,
+<a href=#183 id=183 data-nosnippet>183</a>                    }
+<a href=#184 id=184 data-nosnippet>184</a>                }
+<a href=#185 id=185 data-nosnippet>185</a>            }
+<a href=#186 id=186 data-nosnippet>186</a>        }.boxed()
+<a href=#187 id=187 data-nosnippet>187</a>    }
+<a href=#188 id=188 data-nosnippet>188</a>}
 </code></pre></div></section></main></body></html>
