@@ -98,6 +98,8 @@ never via `npx vitest` / `pnpm exec vitest` / `rtk vitest run`:
 - When you dispatch a subagent to run tests, tell it to call `set_project_root` first (fresh context).
 - *Hookless agents (Antigravity/Gemini) without the MCP* fall back to `rtk vitest run <file>`.
 
+**Shared memory (agentmemory) — Claude ↔ agy.** A shared `agentmemory` store (daemon at `http://localhost:3111`) is wired for both Claude and agy via `memory_*` MCP tools. It is **separate** from Claude's auto-loaded file-memory (`~/.claude/…/memory/MEMORY.md`): keep Claude-private project notes in file-memory, but **mirror genuinely cross-agent-useful knowledge into agentmemory** so agy benefits too. Proactively `recall`/`memory_recall` relevant context at the start of cross-cutting work, and `remember`/`memory_save` durable decisions, conventions, and gotchas (not session-local trivia). *(Provisional — corelib-scoped; promote to global once validated. agy's side lives in `~/.gemini/GEMINI.md`.)*
+
 **Agents without the rtk hook (e.g. Antigravity, Gemini) — the guidance below applies to you.** You
 have no auto-rewrite hook, so prefer rtk's optimized local tools and prefix manually.
 
