@@ -47,10 +47,16 @@ pub mod ring_buffer;
 pub use layer::init_flight_recorder;
 ```
 
-- [ ] **Step 3: Register in `rust/src/lib.rs`** — add alongside the existing top-level modules:
+- [ ] **Step 3: Register in `rust/src/lib.rs`** — add the module AND init at module-load (agy plan-review: capture boot/DbOpen errors before any host starts, and avoid re-init races):
 ```rust
 pub mod observability;
+
+#[napi::module_init]
+fn __corelib_init_flight_recorder() {
+	crate::observability::init_flight_recorder();
+}
 ```
+(SHAPE-DIVERGENCE STOP: confirm napi 3.x exposes `#[napi::module_init]`; if not, fall back to calling `init_flight_recorder()` at the top of `WebsocketStreamerHost::start()` and report `[expected #[napi::module_init]] -> [actual]`.)
 
 - [ ] **Step 4: Build.** `pnpm build-all` → success (deps resolve, empty module compiles). If `crossbeam-queue`/`tracing` versions need a minor bump to compile on this toolchain, adjust and report.
 - [ ] **Step 5: Commit**
@@ -77,7 +83,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub struct FlightEvent {
 	pub ts_ms: u128,
 	pub level: &'static str,
-	pub target: String,
+	pub target: &'static str,
 	pub message: String,
 	/// Pre-collected `key=value ` pairs (kept short; never secrets).
 	pub fields: String,
@@ -109,6 +115,12 @@ pub fn drain_to_lines() -> Vec<String> {
 			if ev.fields.is_empty() { String::new() } else { format!(" {}", ev.fields.trim_end()) }));
 	}
 	out
+}
+
+/// Test-only: empty the ring so ordered/parallel tests don't pollute each other.
+#[cfg(test)]
+pub fn reset_for_test() {
+	while ring().pop().is_some() {}
 }
 ```
 (SHAPE-DIVERGENCE STOP: if this `crossbeam-queue` version lacks `force_push`, use `if ring().push(ev).is_err() { let _ = ring().pop(); let _ = ring().push(ev_clone); }` — report the version.)
@@ -185,7 +197,7 @@ impl<S: Subscriber> Layer<S> for FlightLayer {
 		record(FlightEvent {
 			ts_ms: now_ms(),
 			level: level_str(meta.level()),
-			target: meta.target().to_string(),
+			target: meta.target(), // &'static str — no allocation
 			message: c.message,
 			fields: c.fields,
 		});
@@ -198,8 +210,13 @@ static INIT: Once = Once::new();
 /// hook that dumps the ring to stderr. Safe to call on every host start.
 pub fn init_flight_recorder() {
 	INIT.call_once(|| {
+		// Default keeps the per-TICK firehose OFF (it lives under the distinct
+		// `corelib_rust::stream::tick` target — see Task 5) so the ring isn't washed
+		// out in ~1.6s under load; connect/reconnect/subscribe/error stay at debug
+		// in the ring. Opt into ticks with CORELIB_LOG="corelib_rust::stream::tick=trace".
+		// (agy plan-review: buffer-washout fix.)
 		let filter = EnvFilter::try_from_env("CORELIB_LOG")
-			.unwrap_or_else(|_| EnvFilter::new("corelib_rust=trace"));
+			.unwrap_or_else(|_| EnvFilter::new("corelib_rust=debug,corelib_rust::stream::tick=off"));
 		// try_init: don't panic if a global subscriber already exists (tests/host re-entry).
 		let _ = tracing_subscriber::registry().with(filter).with(FlightLayer).try_init();
 		install_panic_dump_hook();
@@ -209,10 +226,16 @@ pub fn init_flight_recorder() {
 fn install_panic_dump_hook() {
 	let prev = std::panic::take_hook();
 	std::panic::set_hook(Box::new(move |info| {
-		// Lock-free drain → stderr; ArrayQueue can't poison, so this never double-panics.
-		for line in super::ring_buffer::drain_to_lines() {
-			eprintln!("[flight] {line}");
+		// Pop per-event straight to stderr (no Vec/batch built during unwind →
+		// minimal alloc, can't OOM-double-panic). ArrayQueue can't poison → safe.
+		use std::io::Write as _;
+		let mut err = std::io::stderr().lock();
+		let _ = writeln!(err, "--- corelib flight-log dump (panic) ---");
+		let r = super::ring_buffer::ring();
+		while let Some(ev) = r.pop() {
+			let _ = writeln!(err, "[flight] {} [{}] {} {} {}", ev.ts_ms, ev.level, ev.target, ev.message, ev.fields);
 		}
+		let _ = err.flush();
 		prev(info);
 	}));
 }
@@ -289,10 +312,10 @@ git commit -m "feat(epic4): env-gated napi_dump_flight_log (mirrors diagnostics 
 
 - [ ] **Step 0 (state-verify):** confirm `host.rs` `start(...)` (~L109) spawns the pump `while let Some(ev) = rx.recv().await { on_event_pump(ev); }` (~L145); `run_supervisor` in `supervisor.rs`; `ReconnectPolicy` backoff in `reconnect.rs`; driver `connect_once` `sub_rx.recv()` handling. Report `STATE_MISMATCH` if shapes differ.
 
-- [ ] **Step 1: Init + instrument the pump chokepoint** (`host.rs`). At the top of `start(...)`, add `crate::observability::init_flight_recorder();`. In the pump task, add a per-event trace BEFORE `on_event_pump(ev)`:
+- [ ] **Step 1: Instrument the pump chokepoint** (`host.rs`). Init now happens at module load (Task 1 `#[napi::module_init]`) — do NOT also init here. In the pump task, add a per-event trace BEFORE `on_event_pump(ev)`, on the **distinct `::tick` target** (OFF by default → no buffer washout; opt-in via `CORELIB_LOG`):
 ```rust
 while let Some(ev) = rx.recv().await {
-	tracing::trace!(target: "corelib_rust::stream", kind = core_event_kind(&ev), "pump event");
+	tracing::trace!(target: "corelib_rust::stream::tick", kind = core_event_kind(&ev), "pump event");
 	on_event_pump(ev);
 }
 ```
@@ -309,15 +332,28 @@ fn core_event_kind(ev: &CoreEvent) -> &'static str {
 - [ ] **Step 3: subscribe/unsubscribe trace** in each driver `connect_once` `sub_rx.recv()` arm: `tracing::trace!(target: "corelib_rust::stream", ?req, "sub request");` (req is symbols/channel — symbols are not secret; OK).
   - SHAPE-DIVERGENCE STOP: add only `tracing::` macros + the `core_event_kind` helper + the one `init_flight_recorder()` call. Do NOT change channel sizes, the pump signature, reconnect math, or driver logic.
 
-- [ ] **Step 4: Integration test.** Create `rust/src/observability/integration_test.rs` (or a `#[cfg(test)] mod` in `host.rs`) — drive a host with a fake driver that emits a couple of `CoreEvent`s, then assert `drain_to_lines()` contains a `pump event` with `kind=pricing` and a `connect` debug. (Use the existing test fake-driver pattern if one exists; else a minimal `ProviderDriver` stub.)
+- [ ] **Step 4: Hermetic instrumentation test** (agy plan-review: do NOT spin a full `WebsocketStreamerHost` + redb — lock collisions + flakiness). In a `#[cfg(test)] mod` in `host.rs`, test the instrumentation primitives directly — `core_event_kind` on each variant + emit the SAME macros the pump/supervisor use + assert via the ring:
 ```rust
-// pseudostructure — mirror the existing streaming test harness:
-// 1. init_flight_recorder();
-// 2. run host.start(FakeDriver emitting Pricing+Status, ...);
-// 3. let lines = drain_to_lines();
-// 4. assert!(lines.iter().any(|l| l.contains("pump event") && l.contains("kind=\"pricing\"")));
+#[cfg(test)]
+mod flight_tests {
+	use crate::observability::ring_buffer::{drain_to_lines, reset_for_test};
+	#[test]
+	fn core_event_kind_maps_variants() {
+		// assert super::core_event_kind(&CoreEvent::Pricing{..}) == "pricing"
+		// and (&CoreEvent::Status(..)) == "status"  (build minimal variants)
+	}
+	#[test]
+	fn lifecycle_debug_is_captured_in_ring() {
+		reset_for_test();
+		crate::observability::init_flight_recorder();
+		tracing::debug!(target: "corelib_rust::stream", attempt = 1u32, "connect");
+		let lines = drain_to_lines();
+		assert!(lines.iter().any(|l| l.contains("connect") && l.contains("attempt")));
+	}
+}
 ```
-(SHAPE-DIVERGENCE STOP: if the host can't be driven headless in a unit test, instead unit-test `core_event_kind` + emit the trace macros directly and assert via the ring — keep the assertion on real instrumentation, don't fake the log.)
+Run single-threaded to avoid global-ring pollution: `cd rust && cargo test flight_tests -- --test-threads=1`.
+(SHAPE-DIVERGENCE STOP: assert on the REAL instrumentation macros (don't fake log lines); do NOT construct a full host here.)
 
 - [ ] **Step 5: Run — PASS.** `cd rust && cargo test streaming:: observability::` → PASS.
 - [ ] **Step 6: Commit**
@@ -333,24 +369,20 @@ git commit -m "feat(epic4): trace streaming pump (kind only) + debug connect/rec
 **Files:**
 - Modify: `rust/src/observability/layer.rs` (add a panic-dump test)
 
-- [ ] **Step 1: Panic-dump test.** Verify the panic hook drains the ring (run in a child thread so the harness survives):
+- [ ] **Step 1: Panic-dump test (ISOLATED integration test).** The panic hook is process-global, so test it in its OWN test binary (agy plan-review) — keeps the global hook out of the unit-test process. Create `rust/tests/flight_panic.rs`:
 ```rust
-#[cfg(test)]
-mod panic_tests {
-	use super::*;
-	#[test]
-	fn panic_hook_drains_ring_without_double_panic() {
-		init_flight_recorder();
-		tracing::error!(target: "corelib_rust::stream", "pre-panic marker");
-		// a panic in a spawned thread fires the hook; the join captures it.
-		let h = std::thread::spawn(|| panic!("boom"));
-		assert!(h.join().is_err());
-		// hook drained the ring → marker no longer present (proves dump ran, no double-panic/abort).
-		// (If the hook ran, the ring is empty; the process did not abort.)
-	}
+// Own process: asserts the panic hook dumps the ring to stderr and the process
+// SURVIVES a worker-thread panic with no double-panic/abort.
+#[test]
+fn panic_hook_dumps_and_survives() {
+	corelib_rust::observability::init_flight_recorder();
+	tracing::error!(target: "corelib_rust::stream", "pre-panic marker");
+	let h = std::thread::spawn(|| panic!("boom"));
+	assert!(h.join().is_err());                                   // thread panicked
+	let _ = corelib_rust::observability::ring_buffer::drain_to_lines(); // alive + drainable
 }
 ```
-(SHAPE-DIVERGENCE STOP: thread-panic + global panic hook interaction is timing-sensitive; if asserting an empty ring is flaky, assert instead that the test process *survives* the panic (no abort) and that `drain_to_lines` is callable post-panic — the key invariant is "no double-panic/abort," per the spec.)
+(SHAPE-DIVERGENCE STOP: needs `corelib_rust` + `tracing` reachable from `tests/` — the crate is `rlib`+`cdylib`, so `corelib_rust::…` resolves; add `tracing` to `[dev-dependencies]` if the integration test can't see it. Key invariant = "no double-panic/abort + ring drainable after," NOT exact stderr capture.)
 
 - [ ] **Step 2: FULL GATE:**
   - `cd rust && cargo test` → all PASS
@@ -377,3 +409,11 @@ git commit -m "test(epic4): panic-dump survives without double-panic; flight rec
 - **Version-sensitivity:** `tracing-subscriber` init API and napi `ThreadsafeFunction` generics vary by minor version — every code block has a SHAPE-DIVERGENCE STOP; `cargo build`/`cargo test` are the oracle. Resolve against the actual resolved versions; do not change the `FlightEvent` contract or the ring's lock-free property.
 - **Poison-free:** the ring is `crossbeam ArrayQueue` (lock-free) precisely so the panic-hook dump can't double-panic on a poisoned `std::sync::Mutex` (agy spec-review). Never reintroduce a `std::sync::Mutex` around the ring.
 - **Redaction:** trace the event *kind* and symbols, never raw pricing payloads or credentials.
+
+**agy plan-review (`AGY-EPIC4-PLANB-REVIEW.md`) disposition:**
+- ✅ Folded — **buffer-washout fix:** per-tick pump trace moved to a distinct `corelib_rust::stream::tick` target, **OFF by default** (EnvFilter `corelib_rust=debug,corelib_rust::stream::tick=off`), so the ring holds connect/reconnect/subscribe/error history instead of being washed out in ~1.6s under load (capacity 8192 kept — adequate once ticks are off by default).
+- ✅ Folded — **init at `#[napi::module_init]`** (lib.rs) not host `start()`: captures boot/DbOpen errors + avoids re-init races.
+- ✅ Folded — **panic hook pops straight to stderr** (no `drain_to_lines` Vec built during unwind → minimal alloc, abort-safe), chains prev hook.
+- ✅ Folded — **narrow/hermetic tests:** no full-host+redb simulation (lock collisions/flakiness); assert real macros via the ring; `reset_for_test()` + single-threaded run to avoid global-ring pollution; **panic test isolated in `rust/tests/flight_panic.rs`** (own process, keeps the global hook out of unit runs).
+- ✅ Folded — `FlightEvent.target: &'static str` (tracing targets are `&'static`) to drop a per-event allocation; evicted `force_push` value dropped on the caller is acceptable since per-tick is off by default (no hot-loop eviction churn).
+- ❌ Rejected/deferred (scope creep): channel **queue-latency** + pre-pump **socket-buffer** instrumentation, and a background **GC thread** for evicted entries — out of scope for the recorder MVP; revisit with the carry-forward perf probes. Capacity stays 8192 (washout solved by the off-by-default tick target, not a bigger buffer).
