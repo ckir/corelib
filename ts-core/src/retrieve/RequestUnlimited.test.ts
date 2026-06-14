@@ -250,6 +250,25 @@ describe("RequestUnlimited", () => {
 				expect.objectContaining({ willRetry: true }),
 			);
 		});
+
+		it("redacts URL query params / credentials from §12 logs", async () => {
+			mockDebug.mockClear();
+
+			await endPoint("https://api.test.com/success?token=SECRET123");
+
+			// Logged URL is origin + pathname only — no query string, no secret.
+			expect(mockDebug).toHaveBeenCalledWith(
+				"endPoint: request",
+				expect.objectContaining({ url: "https://api.test.com/success" }),
+			);
+			const loggedUrls = mockDebug.mock.calls
+				.filter((c) => c[0] === "endPoint: request" || c[0] === "endPoint: ok")
+				.map((c) => (c[1] as { url?: string })?.url ?? "");
+			for (const u of loggedUrls) {
+				expect(u).not.toContain("token");
+				expect(u).not.toContain("SECRET123");
+			}
+		});
 	});
 
 	describe("endPoints() - Parallel Requests", () => {

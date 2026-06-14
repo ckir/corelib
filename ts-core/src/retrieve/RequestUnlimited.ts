@@ -40,6 +40,21 @@ export function clampNumber(
 	return Math.min(max, Math.max(min, value));
 }
 
+/**
+ * Redaction-safe URL for logging: returns origin + pathname only, stripping
+ * query params and inline credentials (which may carry tokens/keys/passwords).
+ * Never echoes the raw input (avoids leaking secrets on parse failure).
+ */
+function safeUrl(u: string | URL | Request): string {
+	try {
+		const parsed =
+			u instanceof URL ? u : new URL(u instanceof Request ? u.url : u);
+		return `${parsed.origin}${parsed.pathname}`;
+	} catch {
+		return "[unparseable url]";
+	}
+}
+
 /** Full-Jitter backoff: uniform in [0, min(backoffLimit, 300*2^(attempt-1))]. */
 export function fullJitterDelay(attempt: number, backoffLimit: number): number {
 	const base = Math.min(backoffLimit, 300 * 2 ** (attempt - 1));
@@ -175,7 +190,7 @@ export async function endPoint<T = unknown>(
 		3000,
 	);
 	requestUnlimitedLogger.debug("endPoint: request", {
-		url: url.toString(),
+		url: safeUrl(url),
 		timeout: cfgTimeout,
 		retryLimit: cfgRetryLimit,
 		backoffLimit: cfgBackoffLimit,
@@ -212,7 +227,7 @@ export async function endPoint<T = unknown>(
 		const response = await serializeResponse<T>(responseObject);
 
 		requestUnlimitedLogger.debug("endPoint: ok", {
-			url: url.toString(),
+			url: safeUrl(url),
 			status: responseObject.status,
 		});
 		return {

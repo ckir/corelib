@@ -51,7 +51,7 @@ export class PostgresDb {
 			}
 			if (result.status === "success") {
 				this.config.logger?.debug("query: ok", {
-					rows: result.value.rows.length,
+					rows: result.value?.rows?.length ?? 0,
 				});
 			}
 			return result;

@@ -181,6 +181,11 @@ describe("NasdaqPolling", () => {
 					failed: expect.any(Number),
 				}),
 			);
+			// per-item trace carries the symbol identity (results mirror input order)
+			expect(mockTrace).toHaveBeenCalledWith(
+				"poll: result",
+				expect.objectContaining({ symbol: "AAPL", status: "success" }),
+			);
 		});
 
 		it("should emit 'error' event and log when an individual quote fails", async () => {

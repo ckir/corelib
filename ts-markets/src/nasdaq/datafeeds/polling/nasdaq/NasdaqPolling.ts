@@ -148,8 +148,12 @@ export class NasdaqPolling extends EventEmitter {
 
 			const validResults: unknown[] = [];
 
-			for (const result of results) {
-				nasdaqPollingLogger.trace("poll: result", { status: result.status });
+			for (let i = 0; i < results.length; i++) {
+				const result = results[i];
+				nasdaqPollingLogger.trace("poll: result", {
+					symbol: symbolList[i],
+					status: result.status,
+				});
 				if (result.status === "success" && result.value !== undefined) {
 					/**
 					 * Emits the "body.data" portion of the Nasdaq API response.
