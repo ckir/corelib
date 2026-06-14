@@ -17,8 +17,10 @@
 //
 // Output contract (parsed by the parent):
 //   BASELINE_RSS=<bytes>
+//   BASELINE_HEAP=<heapUsed bytes>
 //   PEAK_RSS_DURING=<bytes>
 //   TERMINAL_RSS=<bytes>
+//   TERMINAL_HEAP=<heapUsed bytes>
 //   RECEIVED=<n>
 //   MAXSEQ=<n>
 // On any failure: CHILD_ERROR <msg> + exit non-zero.
@@ -44,8 +46,9 @@ try {
   // Baseline: two GC passes to settle old+young gen.
   global.gc();
   global.gc();
-  const baselineRss = process.memoryUsage().rss;
+  const { rss: baselineRss, heapUsed: baselineHeap } = process.memoryUsage();
   console.log(`BASELINE_RSS=${baselineRss}`);
+  console.log(`BASELINE_HEAP=${baselineHeap}`);
 
   let received = 0;
   let maxSeq = 0;
@@ -86,8 +89,9 @@ try {
     clearInterval(samplerInterval);
     global.gc();
     global.gc();
-    const terminalRss = process.memoryUsage().rss;
+    const { rss: terminalRss, heapUsed: terminalHeap } = process.memoryUsage();
     console.log(`TERMINAL_RSS=${terminalRss}`);
+    console.log(`TERMINAL_HEAP=${terminalHeap}`);
     console.log(`PEAK_RSS_DURING=${peakRssDuring}`);
     console.log(`RECEIVED=${received}`);
     console.log(`MAXSEQ=${maxSeq}`);

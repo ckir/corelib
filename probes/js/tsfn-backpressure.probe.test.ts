@@ -23,7 +23,10 @@
 // for the adjudicator; CI stays green regardless so the finding is the
 // measurement, not a test failure.
 //
-// Hard gate: postGcGrowthMB > 5 → PROBE_CONFIRMED (native queue piling up).
+// Memory model: total RSS includes the V8 heap. This probe isolates NATIVE
+// off-V8-heap growth (the unbounded-TSFN signal) via rss - heapUsed. V8
+// growth is the probe's own JSON.parse / napiLatencyAck churn and is
+// reported but NOT gated. Hard gate: nativeGrowthMb > 5 → PROBE_CONFIRMED.
 //
 // Touches no production source: reads ts-core/dist + the native addon only.
 // =============================================
@@ -44,7 +47,9 @@ interface ChildResult {
 	exitCode: number | null;
 	signal: NodeJS.Signals | null;
 	baselineRss: number;
+	baselineHeap: number;
 	terminalRss: number;
+	terminalHeap: number;
 	peakRssDuring: number;
 	received: number;
 	maxSeq: number;
@@ -97,7 +102,9 @@ function runChild(): Promise<ChildResult> {
 
 			// Parse output lines.
 			let baselineRss = 0;
+			let baselineHeap = 0;
 			let terminalRss = 0;
+			let terminalHeap = 0;
 			let peakRssDuring = 0;
 			let received = 0;
 			let maxSeq = 0;
@@ -108,8 +115,12 @@ function runChild(): Promise<ChildResult> {
 				let m: RegExpMatchArray | null;
 				if ((m = t.match(/^BASELINE_RSS=(\d+)/))) {
 					baselineRss = Number(m[1]);
+				} else if ((m = t.match(/^BASELINE_HEAP=(\d+)/))) {
+					baselineHeap = Number(m[1]);
 				} else if ((m = t.match(/^TERMINAL_RSS=(\d+)/))) {
 					terminalRss = Number(m[1]);
+				} else if ((m = t.match(/^TERMINAL_HEAP=(\d+)/))) {
+					terminalHeap = Number(m[1]);
 				} else if ((m = t.match(/^PEAK_RSS_DURING=(\d+)/))) {
 					peakRssDuring = Number(m[1]);
 				} else if ((m = t.match(/^RECEIVED=(\d+)/))) {
@@ -125,7 +136,9 @@ function runChild(): Promise<ChildResult> {
 				exitCode,
 				signal,
 				baselineRss,
+				baselineHeap,
 				terminalRss,
+				terminalHeap,
 				peakRssDuring,
 				received,
 				maxSeq,
@@ -172,17 +185,20 @@ describe("TSFN queue backpressure under blocked event loop (process-isolated)", 
 			const r = await runChild();
 
 			const peakGrowthMB = (r.peakRssDuring - r.baselineRss) / (1024 * 1024);
-			const postGcGrowthMB = (r.terminalRss - r.baselineRss) / (1024 * 1024);
+			// Native (off-V8-heap) growth: isolates TSFN-queue signal from probe's own V8 churn.
+			const nativeGrowthMb = ((r.terminalRss - r.terminalHeap) - (r.baselineRss - r.baselineHeap)) / (1024 * 1024);
+			// V8 heap growth: probe's own JSON.parse/napiLatencyAck churn — reported but not gated.
+			const v8GrowthMb = (r.terminalHeap - r.baselineHeap) / (1024 * 1024);
 
 			// Machine-readable finding line for the adjudicator / CI log.
-			const classification = postGcGrowthMB > 5 ? "PROBE_CONFIRMED" : "PROBE_CLEAN";
+			const classification = nativeGrowthMb > 5 ? "PROBE_CONFIRMED" : "PROBE_CLEAN";
 			// eslint-disable-next-line no-console
 			console.log(
-				`${classification} tsfn-queue peak_growth_mb=${peakGrowthMB.toFixed(2)} postgc_growth_mb=${postGcGrowthMB.toFixed(2)} received=${r.received} maxseq=${r.maxSeq}`,
+				`${classification} tsfn-queue native_growth_mb=${nativeGrowthMb.toFixed(2)} v8_growth_mb=${v8GrowthMb.toFixed(2)} received=${r.received}`,
 			);
 			// eslint-disable-next-line no-console
 			console.log(
-				`[Cluster-1] exit=${r.exitCode} signal=${r.signal} childError=${r.childError} baseline_rss=${r.baselineRss} peak_rss=${r.peakRssDuring} terminal_rss=${r.terminalRss} stderr=${r.stderr.slice(-200)}`,
+				`[Cluster-1] exit=${r.exitCode} signal=${r.signal} childError=${r.childError} baseline_rss=${r.baselineRss} baseline_heap=${r.baselineHeap} peak_rss=${r.peakRssDuring} terminal_rss=${r.terminalRss} terminal_heap=${r.terminalHeap} peak_growth_mb=${peakGrowthMB.toFixed(2)} stderr=${r.stderr.slice(-200)}`,
 			);
 
 			// ORACLE: the probe must complete without crash/hang.
