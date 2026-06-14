@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createMockLogger } from "../test-utils/logger-mock.js";
 import { wrapSuccess } from "./core/result.js";
 import { createDatabase } from "./index.js";
-import { createMockLogger } from "../test-utils/logger-mock.js";
 
 // Mock logger
 const mockLogger = createMockLogger() as any;
@@ -139,8 +139,12 @@ describe("Database Integration Tests (Mocked Drivers)", () => {
 				return wrapSuccess(true);
 			});
 			expect(result.status).toBe("success");
-			expect(mockLogger.debug).toHaveBeenCalledWith("tx: begin", { isNested: false });
-			expect(mockLogger.debug).toHaveBeenCalledWith("tx: commit", { isNested: false });
+			expect(mockLogger.debug).toHaveBeenCalledWith("tx: begin", {
+				isNested: false,
+			});
+			expect(mockLogger.debug).toHaveBeenCalledWith("tx: commit", {
+				isNested: false,
+			});
 		});
 
 		it("should rollback on transaction error", async () => {

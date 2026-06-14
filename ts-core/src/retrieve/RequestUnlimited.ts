@@ -44,7 +44,12 @@ export function clampNumber(
 export function fullJitterDelay(attempt: number, backoffLimit: number): number {
 	const base = Math.min(backoffLimit, 300 * 2 ** (attempt - 1));
 	const delayMs = Math.round(Math.random() * base);
-	requestUnlimitedLogger.trace("retry delay computed", { attempt, base, cap: backoffLimit, delayMs });
+	requestUnlimitedLogger.trace("retry delay computed", {
+		attempt,
+		base,
+		cap: backoffLimit,
+		delayMs,
+	});
 	return delayMs;
 }
 
@@ -70,11 +75,17 @@ export const DEFAULT_REQUEST_OPTIONS: KyOptions = {
 			if (error instanceof HTTPError && error.response) {
 				const status = error.response.status;
 				if (status === 429 && retryCount <= 5) {
-					requestUnlimitedLogger.trace("retry decision", { status, willRetry: true });
+					requestUnlimitedLogger.trace("retry decision", {
+						status,
+						willRetry: true,
+					});
 					return true;
 				}
 				if (status >= 400 && status < 500) {
-					requestUnlimitedLogger.trace("retry decision: skip", { status, willRetry: false });
+					requestUnlimitedLogger.trace("retry decision: skip", {
+						status,
+						willRetry: false,
+					});
 					return false;
 				}
 				const willRetry = status >= 500;
@@ -200,7 +211,10 @@ export async function endPoint<T = unknown>(
 		const responseObject = await ky(url, kyOptions);
 		const response = await serializeResponse<T>(responseObject);
 
-		requestUnlimitedLogger.debug("endPoint: ok", { url: url.toString(), status: responseObject.status });
+		requestUnlimitedLogger.debug("endPoint: ok", {
+			url: url.toString(),
+			status: responseObject.status,
+		});
 		return {
 			status: "success",
 			value: response as SerializedResponse<T>,
@@ -260,7 +274,10 @@ export async function endPoints<T = unknown>(
 	});
 
 	const ok = mapped.filter((r) => r.status === "success").length;
-	requestUnlimitedLogger.debug("endPoints: done", { ok, failed: mapped.length - ok });
+	requestUnlimitedLogger.debug("endPoints: done", {
+		ok,
+		failed: mapped.length - ok,
+	});
 	return mapped;
 }
 

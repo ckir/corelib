@@ -50,7 +50,9 @@ export class PostgresDb {
 				});
 			}
 			if (result.status === "success") {
-				this.config.logger?.debug("query: ok", { rows: result.value.rows.length });
+				this.config.logger?.debug("query: ok", {
+					rows: result.value.rows.length,
+				});
 			}
 			return result;
 		} catch (e) {

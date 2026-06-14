@@ -138,7 +138,9 @@ export class NasdaqPolling extends EventEmitter {
 		}
 
 		const symbolList = Array.from(this.subscriptions);
-		nasdaqPollingLogger.debug("poll: cycle", { symbols: this.subscriptions.size });
+		nasdaqPollingLogger.debug("poll: cycle", {
+			symbols: this.subscriptions.size,
+		});
 
 		try {
 			// Fetch quotes via ApiNasdaqQuotes
@@ -163,7 +165,10 @@ export class NasdaqPolling extends EventEmitter {
 			}
 
 			const failed = results.length - validResults.length;
-			nasdaqPollingLogger.debug("poll: done", { ok: validResults.length, failed });
+			nasdaqPollingLogger.debug("poll: done", {
+				ok: validResults.length,
+				failed,
+			});
 
 			/**
 			 * Emits the full set of successfully fetched quotes for this polling cycle.

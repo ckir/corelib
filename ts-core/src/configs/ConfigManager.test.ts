@@ -99,7 +99,11 @@ describe("ConfigManager", () => {
 	});
 
 	it("logs §12 debug on boot and never logs override values (redaction)", async () => {
-		const log = (ConfigManager as unknown as { _logger: Record<string, ReturnType<typeof vi.fn>> })._logger;
+		const log = (
+			ConfigManager as unknown as {
+				_logger: Record<string, ReturnType<typeof vi.fn>>;
+			}
+		)._logger;
 		const debugSpy = vi.spyOn(log as any, "debug");
 		const traceSpy = vi.spyOn(log as any, "trace");
 
