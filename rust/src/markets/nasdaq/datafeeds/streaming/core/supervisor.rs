@@ -21,9 +21,11 @@ pub async fn run_supervisor<D: ProviderDriver>(
     }
     let mut attempt: u32 = 0;
     loop {
+        tracing::debug!(target: "corelib_rust::stream", attempt, "connect");
         let outcome = driver
             .connect_once(&symbols, &tx, &mut sub_rx, &mut stop_rx)
             .await;
+        tracing::debug!(target: "corelib_rust::stream", attempt, outcome = ?outcome, "attempt done");
         match outcome {
             AttemptOutcome::Stopped | AttemptOutcome::Fatal(_) => break,
             AttemptOutcome::ConnectedThenDropped => {
@@ -39,6 +41,7 @@ pub async fn run_supervisor<D: ProviderDriver>(
             }
         }
         let delay = policy.next_delay(attempt);
+        tracing::debug!(target: "corelib_rust::stream", delay_ms = delay.as_millis() as u64, attempt, "reconnect backoff");
         tokio::select! {
             _ = stop_rx.recv() => break,
             _ = tokio::time::sleep(delay) => {}

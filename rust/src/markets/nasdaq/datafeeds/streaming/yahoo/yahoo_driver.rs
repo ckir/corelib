@@ -217,6 +217,7 @@ impl ProviderDriver for YahooDriver {
                         match req {
                             // single-channel: ignore the channel tag, subscribe the bare symbols
                             Some(SubRequest { symbols: syms, .. }) => {
+                                tracing::trace!(target: "corelib_rust::stream", symbols = syms.len(), "sub request");
                                 if !syms.is_empty() {
                                     let payload = serde_json::json!({ "subscribe": syms }).to_string();
                                     let _ = ws.send(Message::Text(payload.into())).await;

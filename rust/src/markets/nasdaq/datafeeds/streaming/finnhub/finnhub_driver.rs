@@ -157,6 +157,7 @@ impl ProviderDriver for FinnhubDriver {
                         match upd {
                             // Finnhub is single-channel: ignore `channel`, subscribe each new symbol.
                             Some(SubRequest { symbols: syms, .. }) => {
+                                tracing::trace!(target: "corelib_rust::stream", symbols = syms.len(), "sub request");
                                 for s in &syms { if !current.contains(s) {
                                     let m = serde_json::json!({ "type": "subscribe", "symbol": s }).to_string();
                                     let _ = ws.send(Message::Text(m.into())).await; current.push(s.clone());
