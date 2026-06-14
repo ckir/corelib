@@ -44,6 +44,7 @@ finnhub = []
 
 [dev-dependencies]
 wiremock = "0.6.5"
+tracing = "0.1"
 
 [build-dependencies]
 napi-build = "2.3.2"
