@@ -74,11 +74,13 @@ let activeFetchPromise: Promise<string[]> | null = null;
 export async function getSymbolsTop100(): Promise<string[]> {
 	// 1. Check if we have a valid cache
 	if (cachedSymbols !== null) {
+		top100Logger.debug("top100: cache hit", { count: cachedSymbols.length });
 		return cachedSymbols;
 	}
 
 	// 2. Collapse concurrent requests
 	if (activeFetchPromise !== null) {
+		top100Logger.debug("top100: join in-flight");
 		return activeFetchPromise;
 	}
 
@@ -86,6 +88,7 @@ export async function getSymbolsTop100(): Promise<string[]> {
 	activeFetchPromise = (async () => {
 		try {
 			const url = "https://api.nasdaq.com/api/quote/list-type/nasdaq100";
+			top100Logger.debug("top100: fetch", { url });
 			const response =
 				await ApiNasdaqUnlimited.endPoint<Nasdaq100ResponseData>(url);
 
@@ -117,6 +120,7 @@ export async function getSymbolsTop100(): Promise<string[]> {
 
 			// Update persistent cache
 			cachedSymbols = symbols;
+			top100Logger.debug("top100: populated", { count: symbols.length });
 
 			return symbols;
 		} catch (error) {

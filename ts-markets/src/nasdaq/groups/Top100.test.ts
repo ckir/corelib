@@ -15,7 +15,12 @@ import { ApiNasdaqUnlimited } from "../ApiNasdaqUnlimited";
 
 vi.mock("@ckir/corelib", () => ({
 	logger: {
+		trace: vi.fn(),
+		debug: vi.fn(),
+		info: vi.fn(),
 		warn: vi.fn(),
+		error: vi.fn(),
+		fatal: vi.fn(),
 		child: vi.fn().mockReturnThis(),
 	},
 }));
@@ -66,6 +71,14 @@ describe("Top100 Module", () => {
 
 		expect(result).toEqual(["AAPL", "MSFT", "ZBRA"]);
 		expect(ApiNasdaqUnlimited.endPoint).toHaveBeenCalledOnce();
+		expect(logger.debug).toHaveBeenCalledWith(
+			"top100: fetch",
+			expect.objectContaining({ url: expect.any(String) }),
+		);
+		expect(logger.debug).toHaveBeenCalledWith(
+			"top100: populated",
+			expect.objectContaining({ count: 3 }),
+		);
 	});
 
 	it("should return the cached result on subsequent calls without re-fetching", async () => {
@@ -79,6 +92,10 @@ describe("Top100 Module", () => {
 		expect(firstCall).toEqual(["TSLA"]);
 		expect(secondCall).toBe(firstCall); // Verify referential equality (cache hit)
 		expect(ApiNasdaqUnlimited.endPoint).toHaveBeenCalledTimes(1);
+		expect(logger.debug).toHaveBeenCalledWith(
+			"top100: cache hit",
+			expect.objectContaining({ count: expect.any(Number) }),
+		);
 	});
 
 	it("should collapse multiple concurrent calls into a single network request", async () => {
