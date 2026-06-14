@@ -46,16 +46,37 @@ pub struct WebsocketStreamerHost {
     pub(crate) pump_task: Option<JoinHandle<()>>,
 }
 
+#[derive(Debug)]
+pub enum HostError {
+    DbOpen(redb::DatabaseError),
+}
+impl std::fmt::Display for HostError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HostError::DbOpen(e) => write!(f, "failed to open redb: {e}"),
+        }
+    }
+}
+impl std::error::Error for HostError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            HostError::DbOpen(e) => Some(e),
+        }
+    }
+}
+
 impl WebsocketStreamerHost {
     /// Open/create the per-instance redb file. `source` names the instance; `provider` tags events.
+    /// Fallible: returns `Err(HostError::DbOpen)` if redb cannot open the path (e.g. a shared path
+    /// already held open by another instance) — callers must handle it instead of aborting.
     pub fn new(
         db_path: std::path::PathBuf,
         table: &'static str,
         source: String,
         provider: ProviderKind,
-    ) -> Self {
-        let db = Arc::new(Database::create(&db_path).expect("Failed to open redb"));
-        Self {
+    ) -> Result<Self, HostError> {
+        let db = Arc::new(Database::create(&db_path).map_err(HostError::DbOpen)?);
+        Ok(Self {
             db,
             table,
             source,
@@ -64,7 +85,7 @@ impl WebsocketStreamerHost {
             stop_tx: None,
             monitor_task: None,
             pump_task: None,
-        }
+        })
     }
 
     /// Load previously-persisted subscription tickers so a restarted instance resumes them
@@ -281,6 +302,7 @@ mod host_persistence_tests {
             "test".into(),
             ProviderKind::Alpaca,
         )
+        .expect("test host")
     }
     #[tokio::test]
     async fn channel_keys_roundtrip_and_unsubscribe_is_precise() {

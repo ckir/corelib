@@ -111,14 +111,15 @@ impl AlpacaStreaming {
         on_pricing: ThreadsafeFunction<AlpacaPricingData>,
         on_event: ThreadsafeFunction<EventRecord>,
         on_market_event: Option<ThreadsafeFunction<String>>,
-    ) -> Self {
+    ) -> napi::Result<Self> {
         let host = WebsocketStreamerHost::new(
             unique_db_path("alpaca_streaming", "ALPACA_DB"),
             "alpaca_subscriptions",
             "alpaca".into(),
             ProviderKind::Alpaca,
-        );
-        Self {
+        )
+        .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+        Ok(Self {
             inner: Arc::new(Mutex::new(AlpacaInner {
                 host,
                 config: AlpacaConfig::default_empty(),
@@ -128,7 +129,7 @@ impl AlpacaStreaming {
             on_pricing: Arc::new(on_pricing),
             on_event: Arc::new(on_event),
             on_market_event: on_market_event.map(Arc::new),
-        }
+        })
     }
 
     /// Set config (keys fall back to `APCA_API_KEY_ID` / `APCA_API_SECRET_KEY` env at `start`).
@@ -311,6 +312,7 @@ mod facade_tests {
             "alpaca".into(),
             ProviderKind::Alpaca,
         )
+        .expect("test host")
     }
 
     #[tokio::test]

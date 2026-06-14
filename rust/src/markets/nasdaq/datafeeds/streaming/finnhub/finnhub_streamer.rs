@@ -183,13 +183,14 @@ impl FinnhubStreaming {
         on_pricing: ThreadsafeFunction<FinnhubPricingData>,
         on_event: ThreadsafeFunction<EventRecord>,
         on_market_event: Option<ThreadsafeFunction<String>>,
-    ) -> Self {
+    ) -> napi::Result<Self> {
         let host = WebsocketStreamerHost::new(
             unique_db_path("finnhub_streaming", "FINNHUB_DB"),
             "finnhub_subscriptions",
             "finnhub".to_string(),
             ProviderKind::Finnhub,
-        );
+        )
+        .map_err(|e| napi::Error::from_reason(e.to_string()))?;
         let inner = FinnhubInner {
             host,
             token: String::new(),
@@ -197,13 +198,13 @@ impl FinnhubStreaming {
             base_url: None,
             started: false,
         };
-        Self {
+        Ok(Self {
             inner: Arc::new(Mutex::new(inner)),
             on_log: Arc::new(on_log),
             on_pricing: Arc::new(on_pricing),
             on_event: Arc::new(on_event),
             on_market_event: on_market_event.map(Arc::new),
-        }
+        })
     }
 
     /// Set token/name (token falls back to `FINNHUB_API_KEY` env var).

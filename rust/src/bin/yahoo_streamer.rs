@@ -67,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "yahoo_subscriptions",
         "yahoo".into(),
         ProviderKind::Yahoo,
-    );
+    )?;
 
     if args.clean {
         eprintln!("Cleaning subscriptions...");
