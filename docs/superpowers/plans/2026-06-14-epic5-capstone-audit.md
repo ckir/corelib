@@ -93,24 +93,34 @@ git commit -m "feat(epic5): parametric in-process load generator (steady+bursty,
 - [ ] **Step 1 — numeric latency ring + roundtrip token.** Latency is measured **entirely in Rust** (spec §Tooling / agy F-3): when the generator emits tick `seq`, record `Instant` keyed by `seq`; JS acks `seq` back via a `#[napi]` fn; Rust computes `elapsed` against the *same* `Instant` and pushes the micros into a lock-free numeric ring (mirror Epic 4's `crossbeam::ArrayQueue` pattern, but `ArrayQueue<u64>`). NEVER subtract Node's clock from Rust's.
 ```rust
 use crossbeam_queue::ArrayQueue;
-use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::OnceLock;
 use std::time::Instant;
 
-static SENT: OnceLock<Mutex<HashMap<u64, Instant>>> = OnceLock::new();
-static SAMPLES: OnceLock<ArrayQueue<u64>> = OnceLock::new(); // elapsed micros
+// LOCK-FREE, ZERO-ALLOC latency accounting (agy plan-review: a Mutex<HashMap> here would do
+// ~100k lock cycles/sec under flood → cache-line bouncing that can itself trip the 50ms loop-block
+// gate = false positives). `seq` is a monotonic u64 → index a fixed atomic slot array (power-of-two
+// mask = modulo). SLOTS far exceeds in-flight count, so collisions are negligible for statistical latency.
+const SLOTS: usize = 1 << 20; // 1,048,576
+static EPOCH: OnceLock<Instant> = OnceLock::new();
+static SENT_US: OnceLock<Box<[AtomicU64]>> = OnceLock::new(); // per-slot send time, micros-since-EPOCH (0 = empty)
+static SAMPLES: OnceLock<ArrayQueue<u64>> = OnceLock::new();  // elapsed micros
 
-fn sent() -> &'static Mutex<HashMap<u64, Instant>> { SENT.get_or_init(|| Mutex::new(HashMap::new())) }
+fn epoch() -> &'static Instant { EPOCH.get_or_init(Instant::now) }
+fn sent_us() -> &'static [AtomicU64] { SENT_US.get_or_init(|| (0..SLOTS).map(|_| AtomicU64::new(0)).collect()) }
 fn samples() -> &'static ArrayQueue<u64> { SAMPLES.get_or_init(|| ArrayQueue::new(65536)) }
 
-pub fn mark_sent(seq: u64) { if let Ok(mut m) = sent().lock() { m.insert(seq, Instant::now()); } }
+pub fn mark_sent(seq: u64) {
+    let us = epoch().elapsed().as_micros() as u64;
+    sent_us()[(seq as usize) & (SLOTS - 1)].store(us.max(1), Ordering::Relaxed); // never store 0 (= empty sentinel)
+}
 
-/// JS calls this immediately on receipt of tick `seq`.
+/// JS calls this immediately on receipt of tick `seq`. All timing is Rust-side vs the SAME EPOCH `Instant`.
 #[napi]
 pub fn napi_latency_ack(seq: i64) {
-    let seq = seq as u64;
-    let start = sent().lock().ok().and_then(|mut m| m.remove(&seq));
-    if let Some(t) = start { let _ = samples().force_push(t.elapsed().as_micros() as u64); }
+    let now = epoch().elapsed().as_micros() as u64;
+    let start = sent_us()[(seq as usize) & (SLOTS - 1)].swap(0, Ordering::Relaxed);
+    if start != 0 { let _ = samples().force_push(now.saturating_sub(start)); }
 }
 
 /// Drain samples to JS for percentile computation (env-gated, like the flight dump).
@@ -164,7 +174,7 @@ git commit -m "feat(epic5): bare-node constrained-heap soak runner (post-GC abso
           echo "PROBE_START ${{ inputs.probe }}"
           P="${{ inputs.probe }}"
           if [[ "$P" == js:* ]]; then
-            node "${P#js:}" 2>&1 | tee probe.out || true
+            node ${P#js:} 2>&1 | tee probe.out || true   # UNQUOTED on purpose: word-split the path + its CLI flags (soak-runner takes --rate/--duration). `js:` targets are .mjs entrypoints ONLY — .ts probes run locally via vitest, never on CI.
           else
             cargo test --manifest-path probes/rust/Cargo.toml "$P" -- --nocapture 2>&1 | tee probe.out || true
           fi
@@ -191,7 +201,7 @@ git commit -m "ci(epic5): heavy-probes runs JS/soak probes (build-all + js: pref
 - [ ] **Step 1 — author the probe:** with `CORELIB_LOADGEN=1`, drive `napiLoadGenerator(rate=20000, duration=5000, bursty=false)` while the JS callback deliberately blocks the event loop (`Atomics.wait` / busy-spin ~200 ms periodically). Measure: native RSS growth during the block (sample `process.memoryUsage().rss`), and whether ticks are dropped vs buffered unbounded (sequence-gap accounting via `seq`).
 - [ ] **Step 2 — run + classify:** `pnpm exec vitest run -c probes/vitest.config.ts probes/js/tsfn-queue-backpressure.probe.test.ts`. Emit `PROBE_CONFIRMED tsfn-queue rss_growth=<MB>` if native RSS grows unbounded under the block (queue is unbounded → off-heap pileup), else `PROBE_CLEAN`.
 - [ ] **Step 3 — record:** `node probes/tools/scratchpad.mjs add --id ffi-tsfn-queue-unbounded --cluster 1 --severity <high|med> --probe probes/js/tsfn-queue-backpressure.probe.test.ts --outcome <confirmed|clean>`.
-- [ ] **Step 4 — GATE:** if confirmed AND crosses the memory hard gate (unbounded native growth → native OOM risk): **fix inline** — set a finite `max_queue_size` on the streaming TSFN(s) and use the call-mode that signals backpressure (drop-or-block decision documented), re-run the probe to `PROBE_CLEAN`, commit fix+probe. Else commit the probe only (backlog). (SHAPE-DIVERGENCE STOP: changing `max_queue_size` changes delivery semantics — confirm against the streaming tests; do not silently change drop/block behavior without a test.)
+- [ ] **Step 4 — GATE:** if confirmed AND crosses the memory hard gate — **native RSS grows > 5 MB post-`global.gc()` during the block** (spec §hard gate) → unbounded off-heap pileup → native OOM risk — then **fix inline** — set a finite `max_queue_size` on the streaming TSFN(s) and use the call-mode that signals backpressure (drop-or-block decision documented), re-run the probe to `PROBE_CLEAN`, commit fix+probe. Else commit the probe only (backlog). (SHAPE-DIVERGENCE STOP: changing `max_queue_size` changes delivery semantics — confirm against the streaming tests; do not silently change drop/block behavior without a test.)
 
 ### Task 2.2 (Cluster 1): Transport backpressure under a starved pump (reuse LoopbackServer)
 
@@ -202,7 +212,7 @@ git commit -m "ci(epic5): heavy-probes runs JS/soak probes (build-all + js: pref
 - [ ] **Step 0 — state-verify:** open `probes/_harness/loopback-server.mjs` + `alpaca-loopback.mjs`; confirm `LoopbackServer.listen()` → ephemeral port, `pause()`/stall, `terminate()`, and how a driver is pointed at it via the Epic-2 `base_url`/endpoint override. If the API differs, STOP `STATE_MISMATCH`.
 - [ ] **Step 1 — author the probe:** start a `LoopbackServer`, point a streamer driver at it (`base_url` override), flood frames, then **pause** the consumer / block the JS loop and observe whether the Rust client applies TCP backpressure (server-side send buffer fills and stalls) vs drops vs buffers unbounded (RSS growth).
 - [ ] **Step 2 — run + classify + record** (as 2.1). `PROBE_CONFIRMED transport-bp …` on unbounded buffering / silent drops without surfacing.
-- [ ] **Step 3 — GATE:** data-integrity (silent loss) or memory (unbounded buffer) hard-gate → fix inline + re-run; else backlog.
+- [ ] **Step 3 — GATE:** data-integrity (silent event loss without surfacing) OR memory hard-gate — **unbounded buffer = client-side RSS > 5 MB post-`global.gc()` over the loop** → fix inline + re-run; else backlog.
 
 ### Task 2.3 (Cluster 2): Drop / shutdown-exit deadlock under load
 
@@ -221,7 +231,7 @@ git commit -m "ci(epic5): heavy-probes runs JS/soak probes (build-all + js: pref
 
 - [ ] **Step 0 — state-verify:** `unique_db_path` (pid+seq+nanos) gives per-instance redb paths (Epic 2). Confirm so 1000 hosts don't collide.
 - [ ] **Step 1 — author:** loop ≈1000× create→brief flood→drop a host; assert no redb lock error cascade, no fd exhaustion, bounded RSS across the loop (post-GC). Add a partial-failure variant: one driver returns `Fatal` while another streams; assert the healthy one is unaffected.
-- [ ] **Step 2 — run + record + GATE:** `cargo test … multi_host_churn`. Crash/leak hard-gate → fix; else backlog.
+- [ ] **Step 2 — run + record + GATE:** `cargo test … multi_host_churn`. Crash/hang (binary) OR leak — **RSS delta > 5 MB post-`global.gc()` across the 1000× loop, or open-fd count rising after teardown** — → fix inline; else backlog.
 
 ### Task 2.5 (Cluster 4): Correlation-ID explicit FFI context + error-mapping coherence
 
@@ -313,3 +323,4 @@ git add rust && git commit -m "chore(epic5): clippy -D warnings (fix 2 residual 
 - **Threshold calibration:** treat the first Phase-3 soak run as calibration; if a standard runner can't drive enough load, escalate to a larger runner (in-process Rust generation makes this unlikely).
 - **Sprawl control:** strictly linear phases; within a phase, probe→gate→commit per task; non-critical findings are backlogged, never fixed inline.
 - **`heavy-probes.yml` is already on `main`** → the spec's "skeletal workflow to main first" is satisfied; only the JS-probe extension needs to reach `main` (controller checkpoint, Task 1.4).
+- **agy plan-review (`AGY-EPIC5-PLAN-REVIEW.md`) folded:** (1) 🔴 fixed the `heavy-probes.yml` bash-quoting bug — `node ${P#js:}` must be UNQUOTED so the soak-runner's CLI flags word-split (quoted = "module not found" on CI); (2) latency accounting is lock-free atomic slots, NOT `Mutex<HashMap>` (avoids ~100k lock-cycles/sec contention that could itself trip the 50 ms loop-block gate → false positives); (3) Tasks 2.1/2.2/2.4 gates now cite the explicit **> 5 MB post-GC RSS** threshold so fix-vs-backlog is deterministic. agy confirmed the `LoopbackServer` reuse and phase-ordering are sound.
