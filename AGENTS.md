@@ -85,6 +85,19 @@ unwanted. For reading/searching, use Claude Code's **native tools** (`Read`, `Gr
 rather than routing through the shell — that's faster, and the hook still covers any shell calls you do
 make.
 
+**Tests — use the `vitest` MCP tools, NOT raw or `rtk vitest`.** A `vitest` MCP server is configured for
+this repo; in Claude Code (main thread **and** any test-running subagent) run/analyze tests through it and
+never via `npx vitest` / `pnpm exec vitest` / `rtk vitest run`:
+- Call `set_project_root({ path: "C:/Users/user/Development/Node/corelib" })` **once per session** (absolute
+  path; a fresh subagent must call it itself), then use relative targets.
+- `run_tests({ target: "./ts-core/src/<dir-or-file>" })` — add `project: "ts-core"|"ts-cloud"|"ts-markets"`
+  to scope to one package, `showLogs: true` to capture console output, `format: "detailed"` for failures.
+- `list_tests({ path })` to discover tests; `analyze_coverage({ target })` for coverage (thresholds come
+  from each package's `vitest.config.ts`).
+- A message prefixed **`vitest-mcp:`** REQUIRES these tools.
+- When you dispatch a subagent to run tests, tell it to call `set_project_root` first (fresh context).
+- *Hookless agents (Antigravity/Gemini) without the MCP* fall back to `rtk vitest run <file>`.
+
 **Agents without the rtk hook (e.g. Antigravity, Gemini) — the guidance below applies to you.** You
 have no auto-rewrite hook, so prefer rtk's optimized local tools and prefix manually.
 
@@ -131,7 +144,8 @@ implements the wrong thing wastes far more time than one that pauses to verify.
 ## 9. Token Discipline (dev-workflow)
 
 - **Two-loop verification.** During iteration, run only targeted checks (`rg`-located file +
-  `rtk vitest run <file>` for the touched package, `tsc --noEmit` for that package). The full suite is
+  the `vitest` MCP `run_tests` tool for the touched file/package — see §7; `rtk vitest run` only for
+  hookless agents — plus `tsc --noEmit` for that package). The full suite is
   enforced at the git hooks (lefthook): `pre-commit` = `pnpm verify:fast` (`format-all` → `lint-all` →
   `typecheck-all`, kept sub-30s so nobody reaches for `--no-verify`); `pre-push` = `pnpm verify:full`
   (the heavy `build-all` → `test-all:run` gate). Do not manually re-run the full `*-all` pipeline after
