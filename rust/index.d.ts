@@ -286,6 +286,14 @@ export declare const enum MarketHours {
 export declare function napiDumpFlightLog(onEntry: ((err: Error | null, arg: string) => any)): void
 
 /**
+ * Parametric in-process synthetic load generator (Epic 5 audit instrument). Emits synthetic JSON
+ * ticks straight from a native thread → TSFN (no socket), supporting steady and bursty modes.
+ * Gated behind `CORELIB_LOADGEN=1` so the symbol is always exported but does nothing in production.
+ * TEST-ONLY: this must never be wired onto the real streaming pump.
+ */
+export declare function napiLoadGenerator(ratePerSec: number, durationMs: number, bursty: boolean, onEvent: ((err: Error | null, arg: string) => any)): void
+
+/**
  * Floods `on_event` with `count` synthetic JSON-string events from a dedicated native thread.
  * Mirrors the real `on_market_event` interface (`ThreadsafeFunction<String>`, error-first
  * delivery → JS sees `(null, jsonString)`). Gated behind `CORELIB_DIAG_FLOOD=1` so the symbol
