@@ -279,6 +279,13 @@ export declare const enum MarketHours {
 }
 
 /**
+ * Dump the in-memory flight-recorder ring to JS, one entry per call.
+ * Gated behind CORELIB_FLIGHT_LOG=1 (production no-op), mirroring
+ * napi_trigger_diagnostic_flood. Draining is lock-free.
+ */
+export declare function napiDumpFlightLog(onEntry: ((err: Error | null, arg: string) => any)): void
+
+/**
  * Floods `on_event` with `count` synthetic JSON-string events from a dedicated native thread.
  * Mirrors the real `on_market_event` interface (`ThreadsafeFunction<String>`, error-first
  * delivery → JS sees `(null, jsonString)`). Gated behind `CORELIB_DIAG_FLOOD=1` so the symbol
