@@ -31,7 +31,9 @@ describe("clampNumber", () => {
 		expect(clampNumber(500, MIN_TIMEOUT_MS, MAX_TIMEOUT_MS, 50000)).toBe(
 			MIN_TIMEOUT_MS,
 		);
-		expect(clampNumber(30000, MIN_TIMEOUT_MS, MAX_TIMEOUT_MS, 50000)).toBe(30000); // valid passes through
+		expect(clampNumber(30000, MIN_TIMEOUT_MS, MAX_TIMEOUT_MS, 50000)).toBe(
+			30000,
+		); // valid passes through
 	});
 });
 
