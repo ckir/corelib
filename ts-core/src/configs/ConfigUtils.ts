@@ -3,8 +3,6 @@
 // PURPOSE: Utility functions for configuration handling
 // =============================================
 
-import crypto from "node:crypto";
-
 /**
  * Decrypts .enc files based on the rs_encrypt / ConfigCloud format
  * Line 0: IV (Base64)
@@ -13,6 +11,7 @@ import crypto from "node:crypto";
  */
 export async function decryptConfig(encryptedData: string): Promise<any> {
 	const { getEnv } = await import("../utils");
+	const crypto = (await import("node:crypto")).default;
 	const password = getEnv("CORELIB_AES_PASSWORD");
 	if (!password) {
 		throw new Error(
