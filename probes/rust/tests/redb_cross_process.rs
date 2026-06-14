@@ -46,7 +46,10 @@ fn redb_cross_process_double_open_no_abort() {
         let _held = open_host(PathBuf::from(p)).expect("child: first cross-process open should succeed");
         println!("CHILD_READY");
         let _ = std::io::stdout().flush();
-        std::thread::sleep(Duration::from_secs(10)); // parent kills us once it has asserted
+        // Hold for 30s — comfortably LONGER than the parent's 10s readiness deadline so the
+        // child is guaranteed to still hold the lock whenever the parent opens, even on a slow
+        // runner. No runtime cost: the parent kills us via Teardown the instant it has asserted.
+        std::thread::sleep(Duration::from_secs(30));
         std::process::exit(0);
     }
 
