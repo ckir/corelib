@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["napi_trigger_diagnostic_flood"]};
+window.SIDEBAR_ITEMS = {"fn":["napi_load_generator","napi_trigger_diagnostic_flood"]};
