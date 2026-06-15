@@ -10,6 +10,12 @@ use crate::markets::nasdaq::datafeeds::streaming::yahoo::yahoo_streaming_proto_h
 };
 use chrono::{DateTime, TimeZone, Utc};
 
+/// Length-only debug note for frames the mapper rejects. Takes ONLY the byte count —
+/// it is structurally impossible to leak the (base64-protobuf) frame contents.
+pub(crate) fn note_undecodable(provider: &str, bytes: usize) {
+    tracing::debug!(target: "corelib_rust::stream", provider, bytes, "undecodable frame skipped");
+}
+
 /// QuoteType discriminator for option instruments (proto enum `QuoteType::Option`).
 const QUOTE_TYPE_OPTION: i32 = 13;
 
@@ -233,6 +239,8 @@ impl ProviderDriver for YahooDriver {
                             silence.reset();
                             if let Some((raw, uni)) = parse_yahoo_message(&t, &self.name) {
                                 let _ = tx.send(CoreEvent::Pricing { raw: RawPricing::Yahoo(raw), uni }).await;
+                            } else {
+                                note_undecodable("yahoo", t.len());
                             }
                         }
                         Some(Ok(Message::Ping(p))) => { let _ = ws.send(Message::Pong(p)).await; }
@@ -540,5 +548,53 @@ mod loopback_tests {
         let p = got.expect("driver ended before delivering a pricing event");
         assert_eq!(p.id, "AAPL");
         assert_eq!(p.price, 191.5);
+    }
+}
+
+#[cfg(test)]
+mod undecodable_log_tests {
+    use super::note_undecodable;
+    use std::io::Write;
+    use std::sync::{Arc, Mutex};
+    use tracing_subscriber::fmt::MakeWriter;
+
+    #[derive(Clone)]
+    struct VecWriter(Arc<Mutex<Vec<u8>>>);
+    impl Write for VecWriter {
+        fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(b);
+            Ok(b.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    impl<'a> MakeWriter<'a> for VecWriter {
+        type Writer = VecWriter;
+        fn make_writer(&'a self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
+    #[test]
+    fn undecodable_logs_length_only_message() {
+        let sink = Arc::new(Mutex::new(Vec::<u8>::new()));
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(VecWriter(Arc::clone(&sink)))
+            .with_max_level(tracing::Level::DEBUG)
+            .without_time()
+            .with_ansi(false)
+            .finish();
+        tracing::subscriber::with_default(subscriber, || {
+            note_undecodable("yahoo", 42);
+        });
+        let out = String::from_utf8(sink.lock().unwrap().clone()).unwrap();
+        assert!(out.contains("bytes=42"), "log must carry the byte length: {out}");
+        assert!(
+            out.contains("undecodable frame skipped"),
+            "log must carry the message: {out}"
+        );
+        // Redaction is STRUCTURAL: note_undecodable takes only `usize`, so it cannot
+        // log frame contents. This test pins the message + length shape.
     }
 }
