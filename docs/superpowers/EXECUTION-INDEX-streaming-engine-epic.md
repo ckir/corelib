@@ -54,7 +54,7 @@ Phase A fully, THEN Phase B. (Phase A exonerates the engine → de-risks Phase B
 
 **Epic closes ONLY when B-T4's release loopback test is green on the standard CI matrix (no `INTEGRATION_LIVE` bypass).** B-T4 root-cause is REQUIRED (fix or positively explain the debug-build stall — not a caveat); time-box the fix effort, escalate to human if it balloons.
 
-## REMINDER: full agy review of the complete implementation diff at the END (user directive).
+## ✅ FINAL agy REVIEW DONE (2026-06-15): **MERGE-READY** — all 4 deviations sound, all 5 focus areas GREEN, no regressions/contract-breaks/PII leaks. (full diff 67e7d7c8^..HEAD reviewed.)
 
 ## DONE LOG (append one line per completed task)
 - A1 `2127b6e1` (2026-06-15): cfg_attr 5 wire types + napi feature + compile_error guard. 95 tests green, index.d.ts unchanged, clippy clean, no shape divergence.
