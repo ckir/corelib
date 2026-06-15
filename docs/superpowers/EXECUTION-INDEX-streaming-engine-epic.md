@@ -34,7 +34,9 @@ Phase A fully, THEN Phase B. (Phase A exonerates the engine → de-risks Phase B
 | A3 | Alpaca pure-Rust loopback delivery test | `alpaca/alpaca_driver.rs` | ✅ DONE | `ffcc8c1` |
 | A4 | Finnhub pure-Rust loopback delivery test | `finnhub/finnhub_driver.rs` | ✅ DONE | `f5073c9` |
 | A5 | Yahoo pure-Rust loopback delivery test | `yahoo/yahoo_driver.rs` | ✅ DONE | `611d1f0` |
-| A6 | rustdoc boundary note + ROADMAP Phase-A-done | `core/mod.rs`, `ROADMAP.md` | PENDING | |
+| A6 | rustdoc boundary note + ROADMAP Phase-A-done | `core/mod.rs`, `ROADMAP.md` | ✅ DONE | `f6385baf` |
+
+**✅ PHASE A COMPLETE (2026-06-15)** — engine/adapter boundary enforced + all 3 providers' delivery proven in pure Rust. Suite 99 green. (dev-offload.yml not committed to corelib → milestone dispatch is a no-op.) Proceeding to Phase B.
 
 **After Phase A:** milestone `dev-offload.yml` dispatch (if committed; else no-op). Consider `git push`.
 
@@ -56,3 +58,4 @@ Phase A fully, THEN Phase B. (Phase A exonerates the engine → de-risks Phase B
 - A3 `ffcc8c1` (2026-06-15): Alpaca pure-Rust loopback delivery test. Engine delivers frame→CoreEvent Rust↔Rust. Full suite 97 green.
 - A4 `f5073c9` (2026-06-15): Finnhub pure-Rust loopback delivery test. Suite 98. Test-only fix: loopback base_url needs trailing `/` (tungstenite server rejects path-less `?token=` URI). Production finnhub_ws_url untouched.
 - A5 `611d1f0` (2026-06-15): Yahoo pure-Rust loopback delivery test (base64-protobuf). Suite 99. Test-only: dropped unused StreamExt import (server only sends).
+- A6 `f6385baf` (2026-06-15): core/mod.rs boundary rustdoc + ROADMAP Phase-A-DONE. **PHASE A COMPLETE.**
