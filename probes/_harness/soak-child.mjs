@@ -44,8 +44,24 @@ function gcThenMem() {
 	return { rss: m.rss, heap: m.heapUsed };
 }
 
-try {
-	// warm-up: load the addon paths, then baseline
+async function main() {
+	// WARM-UP (critical): trigger the LAZY one-time native allocations BEFORE baseline so the soak
+	// delta isolates genuine per-tick marshaling leaks — NOT one-time setup. The load generator's
+	// `mark_sent` lazily allocates the ~8MB latency ring (SENT_US = 1<<20 AtomicU64), and the first
+	// `napiLatencyAck` allocates the samples queue. Measured AFTER baseline these look like an ~8MB
+	// "leak" (Epic 5 Cluster-1 lesson). A brief warm-up run pre-allocates them into the baseline.
+	await new Promise((resolve) => {
+		coreFFI.napiLoadGenerator(1000, 200, false, (err, json) => {
+			if (err) return;
+			try {
+				coreFFI.napiLatencyAck(JSON.parse(json).seq);
+			} catch {
+				// ignore
+			}
+		});
+		setTimeout(resolve, 500); // let the 200ms warm-up finish + the rings allocate
+	});
+
 	const base = gcThenMem();
 	console.log(`BASELINE_RSS=${base.rss} BASELINE_HEAP=${base.heap}`);
 
@@ -61,9 +77,8 @@ try {
 		}
 	});
 
-	// The generator runs duration_ms wall-clock on a native thread, delivering
-	// via a Blocking TSFN. Wait past the deadline + slack so the queue drains,
-	// then measure terminal post-GC memory.
+	// The generator runs duration_ms wall-clock on a native thread, delivering via a Blocking TSFN.
+	// Wait past the deadline + slack so the queue drains, then measure terminal post-GC memory.
 	setTimeout(() => {
 		const term = gcThenMem();
 		console.log(`TERMINAL_RSS=${term.rss} TERMINAL_HEAP=${term.heap}`);
@@ -71,7 +86,9 @@ try {
 		// Native thread has ended; force-exit in case the TSFN keeps a ref.
 		process.exit(0);
 	}, duration + 3000);
-} catch (e) {
+}
+
+main().catch((e) => {
 	console.log(`CHILD_ERROR ${e && e.message ? e.message : String(e)}`);
 	process.exit(1);
-}
+});
