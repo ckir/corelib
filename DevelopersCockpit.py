@@ -215,13 +215,22 @@ def get_health_cmd():
     # Run tools individually so one failure doesn't stop the whole health check
     return f' {CMD_SEP} '.join([f'{t} || echo "[CLI] Tool {t.split()[0]} failed check"' for t in tools])
 
-def get_release_cmd():
-    platform_name = config.get('PLATFORM', 'linux').lower()
-    files = 'ts-core/dist ts-cloud/dist ts-markets/dist rust/target/release package.json LICENSE README.md'
-    if platform_name == 'windows' or IS_WINDOWS:
-        return f'pwsh -Command "Compress-Archive -Path {files.split()} -DestinationPath release.zip -Force"'
-    else:
-        return f'tar -czf release.tar.gz {files}'
+def make_release_cmd():
+    """Build a local release archive command. Filters to paths that exist (a missing
+    path hard-fails the archive). Windows uses pwsh (Compress-Archive is a cmdlet, not a
+    cmd.exe builtin); POSIX uses tar. Returns None if nothing to archive."""
+    candidates = [
+        "ts-core/dist", "ts-cloud/dist", "ts-markets/dist",
+        "rust/target/release", "package.json", "LICENSE", "README.md",
+    ]
+    existing = [f for f in candidates if os.path.exists(f)]
+    if not existing:
+        return None
+    if IS_WINDOWS:
+        quoted = ",".join(f"'{f}'" for f in existing)
+        inner = f"Compress-Archive -Path {quoted} -DestinationPath release.zip -Force"
+        return f'pwsh -NoProfile -NonInteractive -Command "{inner}"'
+    return f'tar -czf release.tar.gz {" ".join(existing)}'
 
 def get_tag_push_cmd():
     version = get_current_version()

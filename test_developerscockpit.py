@@ -81,5 +81,22 @@ class TestBumpTargetSet(unittest.TestCase):
             shutil.rmtree(root, ignore_errors=True)
 
 
+class TestReleaseCmd(unittest.TestCase):
+    def test_no_python_list_repr(self):
+        cmd = dc.make_release_cmd()
+        if cmd is not None:
+            self.assertNotIn("['", cmd, "release cmd leaked a Python list repr")
+            self.assertNotIn("']", cmd)
+
+    def test_platform_shape(self):
+        cmd = dc.make_release_cmd()
+        if cmd is not None:
+            if dc.IS_WINDOWS:
+                self.assertIn("Compress-Archive", cmd)
+                self.assertTrue(cmd.startswith("pwsh "), "must invoke pwsh, not bare cmdlet")
+            else:
+                self.assertIn("tar -czf", cmd)
+
+
 if __name__ == "__main__":
     unittest.main()
