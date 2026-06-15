@@ -49,15 +49,15 @@ graph TD
 Since these packages are not published to the public NPM registry, you can install them directly from the GitHub Release assets.
 
 ### 1. Install via Direct URL (Recommended)
-You can point your package manager directly to the `.tgz` file in the GitHub Release. Replace `v0.1.17` with the desired version.
+You can point your package manager directly to the `.tgz` file in the GitHub Release. Replace `v0.1.18` with the desired version.
 
 ```bash
 # Using pnpm
-pnpm add https://github.com/ckir/corelib/releases/download/v0.1.17/ckir-corelib-0.1.17.tgz
-pnpm add https://github.com/ckir/corelib/releases/download/v0.1.17/ckir-corelib-markets-0.1.17.tgz
+pnpm add https://github.com/ckir/corelib/releases/download/v0.1.18/ckir-corelib-0.1.18.tgz
+pnpm add https://github.com/ckir/corelib/releases/download/v0.1.18/ckir-corelib-markets-0.1.18.tgz
 
 # Using npm
-npm install https://github.com/ckir/corelib/releases/download/v0.1.17/ckir-corelib-0.1.17.tgz
+npm install https://github.com/ckir/corelib/releases/download/v0.1.18/ckir-corelib-0.1.18.tgz
 ```
 
 ### ⚠️ Important: Handling Internal Dependencies
@@ -69,7 +69,7 @@ To fix this, add an **override** to your `package.json` so the manager knows to 
 ```json
 "pnpm": {
   "overrides": {
-    "@ckir/corelib": "https://github.com/ckir/corelib/releases/download/v0.1.17/ckir-corelib-0.1.17.tgz"
+    "@ckir/corelib": "https://github.com/ckir/corelib/releases/download/v0.1.18/ckir-corelib-0.1.18.tgz"
   }
 }
 ```
@@ -77,14 +77,14 @@ To fix this, add an **override** to your `package.json` so the manager knows to 
 **For npm (`package.json`):**
 ```json
 "overrides": {
-  "@ckir/corelib": "https://github.com/ckir/corelib/releases/download/v0.1.17/ckir-corelib-0.1.17.tgz"
+  "@ckir/corelib": "https://github.com/ckir/corelib/releases/download/v0.1.18/ckir-corelib-0.1.18.tgz"
 }
 ```
 
 **For yarn (`package.json`):**
 ```json
 "resolutions": {
-  "@ckir/corelib": "https://github.com/ckir/corelib/releases/download/v0.1.17/ckir-corelib-0.1.17.tgz"
+  "@ckir/corelib": "https://github.com/ckir/corelib/releases/download/v0.1.18/ckir-corelib-0.1.18.tgz"
 }
 ```
 
