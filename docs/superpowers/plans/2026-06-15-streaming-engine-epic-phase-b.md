@@ -25,7 +25,7 @@
 | `rust/.../streaming/finnhub/finnhub_driver.rs` | B1: add `db`/`table` fields + `load_subscriptions()`; `connect_once` seeds from redb; tests. |
 | `rust/.../streaming/finnhub/finnhub_streamer.rs` | B1: build `FinnhubDriver` with `db: g.host.db_handle(), table: g.host.table_name()`. |
 | `rust/.../streaming/yahoo/yahoo_driver.rs` | B2: `note_undecodable` helper + `else` branch in pump; tracing-capture test. |
-| `probes/js/alpaca-loopback-delivery.probe.test.ts` | B3: new deterministic asserting loopback delivery test. |
+| `ts-markets/tests/integration/alpaca-loopback-delivery.integration.test.ts` | B3: new deterministic asserting loopback delivery test (standard integration tier → gates CI). |
 | `docs/superpowers/findings/2026-06-15-b3-interop-characterization.md` | B3: investigation finding (created in Task 4). |
 | `ROADMAP.md` | Task 6: mark B1/B2 done; Epic closed-or-open-pending-B3. |
 
@@ -87,6 +87,115 @@
         }
         assert_eq!(d.load_subscriptions(), vec!["AAPL".to_string()]);
     }
+```
+
+Also add this **separate** test module (end-to-end lifecycle: an unsubscribed symbol is NOT re-sent on the next `connect_once`, per spec §4):
+
+```rust
+#[cfg(test)]
+mod resurrection_tests {
+    use super::*;
+    use crate::markets::nasdaq::datafeeds::streaming::core::driver::SubRequest;
+    use crate::markets::nasdaq::datafeeds::streaming::core::types::CoreEvent;
+    use futures_util::StreamExt;
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+    use tokio::net::TcpListener;
+    use tokio::sync::mpsc;
+    use tokio_tungstenite::{accept_async, tungstenite::Message};
+
+    /// Collects the `symbol` of every Finnhub `{"type":"subscribe","symbol":..}` frame.
+    async fn serve_collect(listener: TcpListener, collected: Arc<Mutex<Vec<String>>>) {
+        if let Ok((stream, _)) = listener.accept().await {
+            let mut ws = accept_async(stream).await.unwrap();
+            let deadline = tokio::time::sleep(Duration::from_millis(800));
+            tokio::pin!(deadline);
+            loop {
+                tokio::select! {
+                    _ = &mut deadline => break,
+                    msg = ws.next() => match msg {
+                        Some(Ok(Message::Text(t))) => {
+                            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&t) {
+                                if v["type"] == "subscribe" {
+                                    if let Some(s) = v["symbol"].as_str() {
+                                        collected.lock().unwrap().push(s.to_string());
+                                    }
+                                }
+                            }
+                        }
+                        Some(Ok(_)) => {}
+                        Some(Err(_)) | None => break,
+                    }
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn reconnect_after_unsubscribe_does_not_resurrect() {
+        let path = std::env::temp_dir().join(format!(
+            "test_finnhub_resurrect_{}_{}.redb",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let db = Arc::new(redb::Database::create(path).unwrap());
+        let tbl: redb::TableDefinition<&str, bool> =
+            redb::TableDefinition::new("finnhub_subscriptions");
+        // seed A + B, then unsubscribe B (committed delete) BEFORE the (re)connect.
+        {
+            let w = db.begin_write().unwrap();
+            {
+                let mut tab = w.open_table(tbl).unwrap();
+                tab.insert("AAPL", true).unwrap();
+                tab.insert("MSFT", true).unwrap();
+            }
+            w.commit().unwrap();
+        }
+        {
+            let w = db.begin_write().unwrap();
+            {
+                let mut tab = w.open_table(tbl).unwrap();
+                tab.remove("MSFT").unwrap();
+            }
+            w.commit().unwrap();
+        }
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let collected = Arc::new(Mutex::new(Vec::<String>::new()));
+        tokio::spawn(serve_collect(listener, Arc::clone(&collected)));
+
+        let driver = FinnhubDriver {
+            token: "tok".into(),
+            name: "finnhub_main".into(),
+            base_url: Some(format!("ws://127.0.0.1:{port}")),
+            db: Arc::clone(&db),
+            table: "finnhub_subscriptions",
+        };
+        let (tx, _rx) = mpsc::channel::<CoreEvent>(64); // keep _rx alive so sends don't fail
+        let (_sub_tx, mut sub_rx) = mpsc::channel::<SubRequest>(8);
+        let (stop_tx, mut stop_rx) = mpsc::channel::<()>(1);
+        let connect = driver.connect_once(&[] as &[String], &tx, &mut sub_rx, &mut stop_rx);
+        tokio::pin!(connect);
+        // let it connect + send its initial subscribe, then stop the attempt.
+        tokio::select! {
+            _ = &mut connect => {}
+            _ = tokio::time::sleep(Duration::from_millis(500)) => {
+                let _ = stop_tx.try_send(());
+                let _ = (&mut connect).await;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        let got = collected.lock().unwrap().clone();
+        assert!(got.contains(&"AAPL".to_string()), "must resubscribe the survivor: {got:?}");
+        assert!(
+            !got.contains(&"MSFT".to_string()),
+            "must NOT resurrect the unsubscribed symbol: {got:?}"
+        );
+    }
+}
 ```
 
 - [ ] **Step 3: Run it — verify it FAILS to compile** (no `db`/`table` fields, no `load_subscriptions`).
@@ -151,10 +260,10 @@ with:
 
 (The `for s in &current { … subscribe … }` loop below is unchanged; it now subscribes the fresh persisted set. The live `sub_rx` dedup against `current` is unchanged.)
 
-- [ ] **Step 6: Run the test — PASS.**
+- [ ] **Step 6: Run both tests — PASS.**
 
-Run: `cd rust && cargo test --lib load_subscriptions_reads_bare_keys_and_unsubscribe_drops -- --test-threads=1`
-Expected: PASS.
+Run: `cd rust && cargo test --lib -- --test-threads=1 load_subscriptions_reads_bare_keys_and_unsubscribe_drops reconnect_after_unsubscribe_does_not_resurrect`
+Expected: both PASS — `load_subscriptions` reflects the committed delete, and the live driver re-subscribes only the survivor (no resurrection) on a fresh `connect_once`.
 
 - [ ] **Step 7: Clippy.** `cd rust && cargo clippy --all-targets -- -D warnings` → clean. (The driver_tests/loopback test in `finnhub_driver.rs` that construct `FinnhubDriver` literally — e.g. Phase A's loopback test — will FAIL to compile now that fields were added; this task and Phase A's Task 4 must agree. If Phase A already merged, update its Finnhub loopback test's `FinnhubDriver { … }` literal to include `db: <tmp_db>, table: "finnhub_subscriptions"`. If a compile error surfaces there, fix that literal as part of this step.)
 
@@ -312,29 +421,27 @@ git commit -m "feat(streaming): debug-log undecodable Yahoo frames (length-only,
 
 **Context:** this is the load-bearing Epic item. The test is BOTH the deliverable and the characterization tool: write it, run it against the **release** addon, and the result tells you whether root-cause work is needed.
 
-- [ ] **Step 1: Verify state (Step 0) + the config mapping.** Confirm `probes/_harness/alpaca-loopback.mjs` exports `AlpacaLoopbackServer` with `listen()`, `url`, `streamingCount`, `streamTradeAll(sym, price)`, `close()`. Confirm the TS `AlpacaStreaming` wrapper (`ts-markets/src/.../AlpacaStreaming.ts`) is an `EventEmitter`, takes no constructor args, exposes `init({ baseUrl, keyId, secretKey, dbPath })`, `subscribe(string[])`, `start()`, `stop()`, and emits `"pricing"`. Confirm napi maps the Rust `base_url` field to JS `baseUrl` (napi-rs default snake→camel; the wrapper already threads `baseUrl`). If the `baseUrl` override does NOT reach Rust, STOP and report — fixing it is part of B3 (else the test would hit production Alpaca).
+- [ ] **Step 1: Verify state (Step 0) + the config mapping.** Confirm `probes/_harness/alpaca-loopback.mjs` exports `AlpacaLoopbackServer` with `listen()`, `url`, `streamingCount`, `streamTradeAll(sym, price)`, `close()`. Confirm the TS `AlpacaStreaming` wrapper (`ts-markets/src/.../AlpacaStreaming.ts`) is an `EventEmitter`, takes no constructor args, exposes `init({ baseUrl, keyId, secretKey, dbPath })`, `subscribe(string[])`, `start()`, `stop()`, and emits `"pricing"`. **The `baseUrl`→`base_url` mapping is verified present** (napi-rs default snake→camel rename; `AlpacaConfig` carries `base_url`; the wrapper threads `baseUrl` through `init`). Sanity-check it still holds by confirming `AlpacaStreaming.ts::init` passes `baseUrl` into `this.rust.init(...)` and that the napi `AlpacaConfig` has a `base_url` field. **Self-heal (do NOT halt):** if (and only if) `AlpacaConfig` lacks `base_url`, add `pub base_url: Option<String>` to it and set the driver's `base_url` from it in `alpaca_streamer.rs::start` (mirror `FinnhubConfig`/`finnhub_streamer`), then continue. The test's hardcoded dummy keys + loopback URL mean even a regressed mapping cannot leak production credentials — it would only fail the test.
 
-- [ ] **Step 2: Write the deterministic test.** Create `probes/js/alpaca-loopback-delivery.probe.test.ts`:
+- [ ] **Step 2: Write the deterministic test.** Create `ts-markets/tests/integration/alpaca-loopback-delivery.integration.test.ts`. It lives in the **standard integration tier** and uses a plain `it` (NOT `liveDescribe`/`requireEnv`), so it runs — and gates — in every CI integration run with no `INTEGRATION_LIVE` flag.
+
+**Harness import:** import `AlpacaLoopbackServer` from the existing harness at the repo root via the relative path below. If the integration vitest project cannot resolve a path outside `ts-markets/` (run Step 3 to find out), the concrete fallback is to **copy** `probes/_harness/alpaca-loopback.mjs` to `ts-markets/tests/integration/_harness/alpaca-loopback.mjs` and import it locally — a bounded file copy, no CI/vitest-config edits.
 
 ```ts
 // =============================================
 // B3: Node<->Rust cross-runtime loopback DELIVERY closure (Streaming Engine Epic).
 // Drives the REAL AlpacaStreaming addon against the Node `ws` AlpacaLoopbackServer and
 // ASSERTS a frame round-trips: Node ws -> Rust driver -> TSFN -> on_pricing ("pricing" event).
-// Unlike transport-backpressure.probe.test.ts (non-asserting measurement), this GATES.
+// Standard integration tier (plain `it`, no INTEGRATION_LIVE) → GATES CI.
 // Closes the Epic-5 finding `probe-harness-loopback-no-delivery`.
 // Dummy credentials only; never reads APCA_* env (cannot hit production).
 // =============================================
-import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, expect, it } from "vitest";
-// @ts-expect-error - JS harness, no types
-import { AlpacaLoopbackServer } from "../_harness/alpaca-loopback.mjs";
+// @ts-expect-error - JS harness, no types. If this path won't resolve under the
+// integration vitest project, copy the harness to ./_harness/ and import "./_harness/alpaca-loopback.mjs".
+import { AlpacaLoopbackServer } from "../../../probes/_harness/alpaca-loopback.mjs";
 import { AlpacaStreaming } from "@ckir/corelib-markets";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-void resolve; // (kept for parity with sibling probes)
 
 let server: InstanceType<typeof AlpacaLoopbackServer> | undefined;
 let stream: AlpacaStreaming | undefined;
@@ -397,14 +504,12 @@ it("[b3.alpaca] a frame round-trips Node ws -> Rust -> on_pricing", async () => 
 	expect(data.message_type).toBe("trade");
 	expect(data.price).toBe(191.5);
 }, 30_000);
-
-void __dirname;
 ```
 
 - [ ] **Step 3: Build the RELEASE addon + run the test.**
 
-Run: `cd rust && pnpm exec napi build --release && cp corelib-rust.node ../ts-core/corelib-rust.node` then build the TS packages the probe imports (`pnpm build-all` or at least `@ckir/corelib` + `@ckir/corelib-markets`), then run the probe with its vitest project: `pnpm vitest run probes/js/alpaca-loopback-delivery.probe.test.ts`.
-Expected (PASS path): the test is GREEN — the engine delivers across the napi/Node boundary on release. If GREEN, skip Step 4; go to Step 5.
+Run: `cd rust && pnpm exec napi build --release && cp corelib-rust.node ../ts-core/corelib-rust.node` then build the TS packages the test imports (`pnpm build-all`, or at least `@ckir/corelib` + `@ckir/corelib-markets`), then run the test via the ts-markets integration project (the same command CI uses for the integration tier — check `ts-markets/package.json` for the `test:integration`/`vitest` script; e.g. `pnpm --filter @ckir/corelib-markets test:integration` or `pnpm vitest run ts-markets/tests/integration/alpaca-loopback-delivery.integration.test.ts`).
+Expected (PASS path): GREEN — the engine delivers across the napi/Node boundary on release. If the harness import fails to resolve, apply the copy-to-`_harness/` fallback from Step 2 and re-run. If GREEN, skip Step 4; go to Step 5.
 
 - [ ] **Step 4: If RED — characterize + root-cause (REQUIRED; do not caveat).** Only if Step 3 fails (`no pricing` / `streamingCount` never > 0):
   1. Re-run against a **debug** addon (`pnpm exec napi build` without `--release`) and on the other OS available; record `streamingCount`-reached and pricing-received for each profile.
@@ -412,12 +517,12 @@ Expected (PASS path): the test is GREEN — the engine delivers across the napi/
   3. Because Phase A exonerated the Rust engine (pure-Rust loopback delivers), investigate the napi/Node boundary in order: supervisor reconnect/timer scheduling under napi `tokio_rt` (the probe's recorded hypothesis: tokio timer driver not advancing after the first connect on the Windows debug build); `ThreadsafeFunction` NonBlocking delivery timing; the Node-`ws` ↔ tokio-tungstenite handshake. **Time-box the FIX effort** (suggest ~1 working day of investigation before escalating to the human). Acceptable resolutions: **(i) fix it**, or **(ii) positively identify a benign, documented profile-specific artifact** — NOT "observe RED and add a caveat."
   4. Apply the fix; re-run Step 3 until the **release** test is GREEN.
 
-- [ ] **Step 5: Ensure the test gates CI (no `INTEGRATION_LIVE` bypass).** Confirm `probes/js/*.probe.test.ts` runs in a CI-gating vitest project (the same one as `transport-backpressure.probe.test.ts`). If that project is not part of the CI gate, wire this probe into the integration job so a RED delivery fails CI. The Epic closes ONLY when this is green on the standard CI matrix.
+- [ ] **Step 5: Confirm CI gating (no `INTEGRATION_LIVE` bypass).** Because the test is a plain `it` in `ts-markets/tests/integration/` (the standard integration tier), it runs in the existing CI integration job automatically — no workflow edits. Confirm it is NOT wrapped in `liveDescribe`/`requireEnv` and does NOT read `INTEGRATION_LIVE`, so a RED delivery fails CI. The Epic closes ONLY when this is green on the standard CI matrix.
 
 - [ ] **Step 6: Commit.**
 
 ```bash
-git add probes/js/alpaca-loopback-delivery.probe.test.ts docs/superpowers/findings/2026-06-15-b3-interop-characterization.md 2>/dev/null
+git add ts-markets/tests/integration/alpaca-loopback-delivery.integration.test.ts ts-markets/tests/integration/_harness/alpaca-loopback.mjs docs/superpowers/findings/2026-06-15-b3-interop-characterization.md 2>/dev/null
 git commit -m "test(streaming): deterministic Node<->Rust loopback delivery (B3 interop closure)"
 ```
 
@@ -449,7 +554,7 @@ After Task 4 (B3), dispatch `dev-offload.yml` for the full matrix — the cross-
 ## Self-Review
 
 **1. Spec coverage:**
-- §4 B1 (redb fields + `load_subscriptions` + fresh-read + facade wiring + unsubscribe-no-resurrection) → Tasks 1, 2 (incl. the resurrection assertion in Task 1 Step 2). ✓
+- §4 B1 (redb fields + `load_subscriptions` + fresh-read + facade wiring + unsubscribe-no-resurrection) → Tasks 1, 2 (the `load_subscriptions` unit test + the end-to-end `reconnect_after_unsubscribe_does_not_resurrect` loopback test in Task 1 Step 2). ✓
 - §5 B2 (length-only log + automated tracing-capture oracle) → Task 3. ✓
 - §6 B3 (Step 0 mapping guard + dummy keys; characterize; root-cause required not caveated; deterministic standard-CI test; no `INTEGRATION_LIVE` bypass) → Task 4 Steps 1-5. ✓
 - §10 success / ROADMAP → Task 5. ✓
