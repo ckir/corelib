@@ -63,11 +63,19 @@ sequencing of 4 subprojects"). Five subprojects, each its own spec → plan → 
        Rust suite 99 green, clippy `-D warnings` clean, `index.d.ts` unchanged. Spec
        `docs/superpowers/specs/2026-06-15-phase-a-streaming-engine-module-boundary-design.md`; plan
        `docs/superpowers/plans/2026-06-15-phase-a-streaming-engine-module-boundary.md` (6 tasks, subagent-driven).
-     - **Phase B (companion — spec PENDING):** the Node↔Rust loopback mock server (the *real* cross-runtime
-       interop closure that Phase A's Rust-only loopback does NOT cover) + Finnhub reconnect-resume + Yahoo
-       undecodable-frame debug-log (the two driver follow-ups below). Sequenced after A so the exonerated
-       engine shrinks the interop search space; the Epic stays OPEN until interop closure.
-     - **Crate lift** (`corelib-streaming`, napi-free) stays deferred until finstream is prioritized.
+     - **Phase B — ✅ DONE (2026-06-15):** Finnhub reconnect-resume (redb fresh-read like Alpaca/Yahoo;
+       `f9800eea`), Yahoo undecodable-frame length-only debug-log (`fc0256f`), and the **Node↔Rust interop
+       closure** — a deterministic integration test (`5e73ca0a`, `ts-markets/tests/integration/alpaca-loopback-delivery…`)
+       drives the real `AlpacaStreaming` addon against the Node `ws` loopback and asserts a frame round-trips
+       Node ws→Rust→TSFN→`on_pricing`. **GREEN on BOTH release and debug** — the Epic-5
+       `probe-harness-loopback-no-delivery` (`RECEIVED=0`) is NOT reproducible and is CLOSED. Finding:
+       `docs/superpowers/findings/2026-06-15-b3-interop-characterization.md`. Plan
+       `docs/superpowers/plans/2026-06-15-streaming-engine-epic-phase-b.md`.
+     - **✅ STREAMING ENGINE EPIC CLOSED (2026-06-15):** boundary enforced (Phase A) + cross-runtime delivery
+       proven & gating CI (Phase B). The interop test gates the standard integration tier (no `INTEGRATION_LIVE`);
+       final CI-matrix confirmation lands on the next pipeline run / merge.
+     - **Crate lift** (`corelib-streaming`, napi-free) — the ONLY remaining deferred item; revives when finstream
+       is prioritized. Phase A's in-place boundary makes it a mechanical lift.
    - *Deferred (Phase 2a plan-pass, agy):* **Finnhub reconnect-resume of in-session subscriptions.** Finnhub
      resumes from the `symbols` snapshot passed at `start()`, so dynamic subscribes added mid-session are lost
      on reconnect (pre-existing Phase 1 behavior — not a 2a regression). Apply the same redb-fresh-read pattern
