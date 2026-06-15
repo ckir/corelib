@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-14
 **Epic:** 5 (roadmap subproject **(b-2)**; the capstone — follows Epics 1–4 and the (b-1)/(d)/(c)/(a) subprojects, all done)
-**Status:** design — production changes IN scope this cycle, but **gated** (only confirmed-by-probe criticals are fixed inline; everything else is backlogged)
+**Status:** IMPLEMENTED (2026-06-15) — all 5 clusters probed; 2 hard-gate criticals fixed inline (unbounded streaming TSFN → bounded 1024; prod axios SSRF/credential-leak → vestigial @alpacahq/alpaca-trade-api pruned); soak confirmed NOT-a-leak; clippy gate tightened to -D warnings. Findings: `docs/superpowers/audits/2026-06-15-epic5-capstone-findings.md`.
 **Owner files:** whole monorepo, audited by cluster (see Scope); new harness under `probes/**` + a new `.github/workflows/epic5-probes.yml`
 **Decisions folded:** Scope = **broad capstone** (user, over agy's narrow FFI-seam-only proposal). Cycle = **gated-hybrid** (user + agy). Heavy probes run **on GitHub Actions, on-demand `workflow_dispatch` only** (no nightly), triggered by Claude (user). agy divergent pass (`AGY-EPIC5-DIVERGENT.md`) shaped the gated-hybrid + the FFI-seam-as-feedback-loop framing; agy convergent pass (`AGY-EPIC5-CONVERGENT.md`) folded — see "agy review record".
 

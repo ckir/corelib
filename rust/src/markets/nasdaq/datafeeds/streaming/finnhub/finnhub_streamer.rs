@@ -123,9 +123,15 @@ use crate::markets::nasdaq::datafeeds::streaming::core::schema::{ProviderKind, P
 use crate::markets::nasdaq::datafeeds::streaming::core::types::{CoreEvent, RawPricing};
 use crate::markets::nasdaq::datafeeds::streaming::finnhub::finnhub_driver::FinnhubDriver;
 use crate::{EventRecord, LogRecord};
+use napi::bindgen_prelude::Unknown;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
+use napi::Status;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+
+/// Bounded TSFN (Epic 5 ffi-tsfn-queue-unbounded): caps the off-heap queue at 1024; NonBlocking
+/// delivery drops on overflow. Used for the high-rate market-data callbacks only.
+type BoundedTsfn<T> = ThreadsafeFunction<T, Unknown<'static>, T, Status, true, false, 1024>;
 
 /// Configuration for the Finnhub streaming facade. Token masked in Debug output.
 #[napi(object)]
@@ -165,11 +171,11 @@ struct FinnhubInner {
 pub struct FinnhubStreaming {
     inner: Arc<Mutex<FinnhubInner>>,
     on_log: Arc<ThreadsafeFunction<LogRecord>>,
-    on_pricing: Arc<ThreadsafeFunction<FinnhubPricingData>>,
+    on_pricing: Arc<BoundedTsfn<FinnhubPricingData>>,
     on_event: Arc<ThreadsafeFunction<EventRecord>>,
     /// Optional unified-event sink: receives the finstream-superset `MarketEvent` as a JSON string.
     /// Absent when JS constructs with only 3 callbacks (back-compat).
-    on_market_event: Option<Arc<ThreadsafeFunction<String>>>,
+    on_market_event: Option<Arc<BoundedTsfn<String>>>,
 }
 
 #[napi]
@@ -180,9 +186,19 @@ impl FinnhubStreaming {
     #[napi(constructor)]
     pub fn new(
         on_log: ThreadsafeFunction<LogRecord>,
-        on_pricing: ThreadsafeFunction<FinnhubPricingData>,
+        on_pricing: ThreadsafeFunction<
+            FinnhubPricingData,
+            Unknown<'static>,
+            FinnhubPricingData,
+            Status,
+            true,
+            false,
+            1024,
+        >,
         on_event: ThreadsafeFunction<EventRecord>,
-        on_market_event: Option<ThreadsafeFunction<String>>,
+        on_market_event: Option<
+            ThreadsafeFunction<String, Unknown<'static>, String, Status, true, false, 1024>,
+        >,
     ) -> napi::Result<Self> {
         let host = WebsocketStreamerHost::new(
             unique_db_path("finnhub_streaming", "FINNHUB_DB"),

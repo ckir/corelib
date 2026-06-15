@@ -12,7 +12,7 @@ export declare class AlpacaStreaming {
    * Order: (on_log, on_pricing, on_event, [on_market_event]). `on_market_event` is optional —
    * pass it to also receive the unified `"market"` stream.
    */
-  constructor(onLog: ((err: Error | null, arg: LogRecord) => any), onPricing: ((err: Error | null, arg: AlpacaPricingData) => any), onEvent: ((err: Error | null, arg: EventRecord) => any), onMarketEvent?: (((err: Error | null, arg: string) => any)) | undefined | null)
+  constructor(onLog: ((err: Error | null, arg: LogRecord) => any), onPricing: ((err: Error | null, arg: AlpacaPricingData) => unknown), onEvent: ((err: Error | null, arg: EventRecord) => any), onMarketEvent?: (((err: Error | null, arg: string) => unknown)) | undefined | null)
   /** Set config (keys fall back to `APCA_API_KEY_ID` / `APCA_API_SECRET_KEY` env at `start`). */
   init(config: AlpacaConfig): Promise<void>
   /** Start streaming; the driver resumes persisted subscriptions (redb) on every (re)connect. */
@@ -44,7 +44,7 @@ export declare class FinnhubStreaming {
    * Order matches `AlpacaStreaming`: (on_log, on_pricing, on_event, [on_market_event]).
    * `on_market_event` is optional — pass it to also receive the unified `"market"` stream.
    */
-  constructor(onLog: ((err: Error | null, arg: LogRecord) => any), onPricing: ((err: Error | null, arg: FinnhubPricingData) => any), onEvent: ((err: Error | null, arg: EventRecord) => any), onMarketEvent?: (((err: Error | null, arg: string) => any)) | undefined | null)
+  constructor(onLog: ((err: Error | null, arg: LogRecord) => any), onPricing: ((err: Error | null, arg: FinnhubPricingData) => unknown), onEvent: ((err: Error | null, arg: EventRecord) => any), onMarketEvent?: (((err: Error | null, arg: string) => unknown)) | undefined | null)
   /** Set token/name (token falls back to `FINNHUB_API_KEY` env var). */
   init(config: FinnhubConfig): Promise<void>
   /** Start streaming; resumes any persisted subscriptions (redb) as the initial symbol set. */
@@ -74,7 +74,7 @@ export declare class YahooStreaming {
    * Order: (on_log, on_pricing, on_event, [on_market_event]). `on_market_event` is optional —
    * pass it to also receive the unified `"market"` stream.
    */
-  constructor(onLog: ((err: Error | null, arg: LogRecord) => any), onPricing: ((err: Error | null, arg: JsPricingData) => any), onEvent: ((err: Error | null, arg: EventRecord) => any), onMarketEvent?: (((err: Error | null, arg: string) => any)) | undefined | null)
+  constructor(onLog: ((err: Error | null, arg: LogRecord) => any), onPricing: ((err: Error | null, arg: JsPricingData) => unknown), onEvent: ((err: Error | null, arg: EventRecord) => any), onMarketEvent?: (((err: Error | null, arg: string) => unknown)) | undefined | null)
   /** Set config (silence threshold / optional base_url override). */
   init(config: YahooConfig): Promise<void>
   /** Start streaming; the driver resumes persisted subscriptions (redb) on every (re)connect. */
@@ -284,6 +284,20 @@ export declare const enum MarketHours {
  * napi_trigger_diagnostic_flood. Draining is lock-free.
  */
 export declare function napiDumpFlightLog(onEntry: ((err: Error | null, arg: string) => any)): void
+
+/** JS calls this immediately on receipt of tick `seq`. All timing is Rust-side vs the SAME EPOCH `Instant`. */
+export declare function napiLatencyAck(seq: number): void
+
+/** Drain samples to JS for percentile computation (env-gated, like the flight dump). */
+export declare function napiLatencyDrain(onSample: ((err: Error | null, arg: number) => any)): void
+
+/**
+ * Parametric in-process synthetic load generator (Epic 5 audit instrument). Emits synthetic JSON
+ * ticks straight from a native thread → TSFN (no socket), supporting steady and bursty modes.
+ * Gated behind `CORELIB_LOADGEN=1` so the symbol is always exported but does nothing in production.
+ * TEST-ONLY: this must never be wired onto the real streaming pump.
+ */
+export declare function napiLoadGenerator(ratePerSec: number, durationMs: number, bursty: boolean, onEvent: ((err: Error | null, arg: string) => unknown)): void
 
 /**
  * Floods `on_event` with `count` synthetic JSON-string events from a dedicated native thread.

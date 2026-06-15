@@ -19,5 +19,14 @@ jobs:
       - name: Run probe (prints a machine-parseable RESULT line)
         run: |
           echo "PROBE_START ${{ inputs.probe }}"
-          cargo test --manifest-path probes/rust/Cargo.toml "${{ inputs.probe }}" -- --nocapture 2>&1 | tee probe.out || true
-          echo "RESULT probe=${{ inputs.probe }} outcome=$(grep -q 'PROBE_CONFIRMED' probe.out && echo confirmed || echo not-reproduced)"
+          P="${{ inputs.probe }}"
+          if [[ "$P" == js:* ]]; then
+            pnpm build-all                                          # JS/soak probes import the BUILT @ckir/corelib binding
+            # loadFFI looks for the UNSUFFIXED corelib-rust.node, but `napi build --platform` emits a
+            # platform-suffixed file, and ts-core postinstall SKIPS the release fetch on CI — so copy it.
+            cp rust/corelib-rust.*.node ts-core/corelib-rust.node
+            node ${P#js:} 2>&1 | tee probe.out || true             # UNQUOTED on purpose: word-split the .mjs path + its --rate/--duration flags. js: targets are .mjs entrypoints only.
+          else
+            cargo test --manifest-path probes/rust/Cargo.toml "$P" -- --nocapture 2>&1 | tee probe.out || true
+          fi
+          echo "RESULT probe=$P outcome=$(grep -q 'PROBE_CONFIRMED' probe.out && echo confirmed || echo not-reproduced)"

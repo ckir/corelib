@@ -80,8 +80,10 @@ sequencing of 4 subprojects"). Five subprojects, each its own spec → plan → 
 4. **(a) Trace / flight-recording retro-instrumentation** — apply AGENTS.md §12 to legacy modules so
    `LOG_LEVEL=trace` lets an AI agent debug from logs alone. Done *after* (c) so the integration suite is
    the safety net for this large sweeping refactor (user-approved placement).
-5. **(b-2) Capstone global audit** — full correctness / architecture / edge-case review over the
-   complete, tested, instrumented monorepo.
+5. **(b-2) Capstone global audit** — ✅ **DONE (2026-06-15)** — full correctness / architecture /
+   edge-case review over the complete, tested, instrumented monorepo. Gated-hybrid, 5 clusters, 9
+   findings; 2 hard-gate criticals fixed inline (unbounded streaming TSFN → bounded 1024; prod axios
+   SSRF/credential-leak → vestigial dep pruned). See `docs/superpowers/audits/2026-06-15-epic5-capstone-findings.md`.
 
 *Rationale for the order:* (d) before (c) avoids testing a soon-to-change provider surface; (a) after (c)
 gives the risky logging sweep a test net; (b) split into a thin baseline (b-1) + capstone (b-2) rather

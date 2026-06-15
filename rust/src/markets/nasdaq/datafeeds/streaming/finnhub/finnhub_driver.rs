@@ -56,45 +56,6 @@ pub fn parse_finnhub_frame(text: &str, source: &str) -> Vec<MarketEvent> {
     out
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::markets::nasdaq::datafeeds::streaming::core::schema::TradeExtras;
-    #[test]
-    fn parses_trade_batch() {
-        let frame = r#"{"type":"trade","data":[{"s":"AAPL","p":191.5,"v":100,"t":1700000000000,"c":["@"]},{"s":"MSFT","p":420.0,"v":50,"t":1700000000001,"c":[]}]}"#;
-        let evs = parse_finnhub_frame(frame, "finnhub_main");
-        assert_eq!(evs.len(), 2);
-        match &evs[0] {
-            MarketEvent::Trade { data, .. } => {
-                assert_eq!(data.ticker, "AAPL");
-                assert_eq!(data.price, 191.5);
-                match &data.extras {
-                    TradeExtras::Finnhub(x) => {
-                        assert_eq!(x.volume, 100.0);
-                        assert_eq!(x.conditions, vec!["@".to_string()]);
-                    }
-                    _ => panic!("expected Finnhub extras"),
-                }
-            }
-            _ => panic!(),
-        }
-    }
-    #[test]
-    fn ignores_ping_and_unknown() {
-        assert!(parse_finnhub_frame(r#"{"type":"ping"}"#, "s").is_empty());
-        assert!(parse_finnhub_frame("not json", "s").is_empty());
-    }
-    #[test]
-    fn finnhub_base_url_default_and_override() {
-        assert_eq!(finnhub_ws_url(None, "TOK"), "wss://ws.finnhub.io?token=TOK");
-        assert_eq!(
-            finnhub_ws_url(Some("ws://127.0.0.1:9001"), "TOK"),
-            "ws://127.0.0.1:9001?token=TOK"
-        );
-    }
-}
-
 use crate::markets::nasdaq::datafeeds::streaming::core::driver::{
     AttemptOutcome, ProviderDriver, SubRequest,
 };
@@ -184,5 +145,44 @@ impl ProviderDriver for FinnhubDriver {
                 }
             }
         }.boxed()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::markets::nasdaq::datafeeds::streaming::core::schema::TradeExtras;
+    #[test]
+    fn parses_trade_batch() {
+        let frame = r#"{"type":"trade","data":[{"s":"AAPL","p":191.5,"v":100,"t":1700000000000,"c":["@"]},{"s":"MSFT","p":420.0,"v":50,"t":1700000000001,"c":[]}]}"#;
+        let evs = parse_finnhub_frame(frame, "finnhub_main");
+        assert_eq!(evs.len(), 2);
+        match &evs[0] {
+            MarketEvent::Trade { data, .. } => {
+                assert_eq!(data.ticker, "AAPL");
+                assert_eq!(data.price, 191.5);
+                match &data.extras {
+                    TradeExtras::Finnhub(x) => {
+                        assert_eq!(x.volume, 100.0);
+                        assert_eq!(x.conditions, vec!["@".to_string()]);
+                    }
+                    _ => panic!("expected Finnhub extras"),
+                }
+            }
+            _ => panic!(),
+        }
+    }
+    #[test]
+    fn ignores_ping_and_unknown() {
+        assert!(parse_finnhub_frame(r#"{"type":"ping"}"#, "s").is_empty());
+        assert!(parse_finnhub_frame("not json", "s").is_empty());
+    }
+    #[test]
+    fn finnhub_base_url_default_and_override() {
+        assert_eq!(finnhub_ws_url(None, "TOK"), "wss://ws.finnhub.io?token=TOK");
+        assert_eq!(
+            finnhub_ws_url(Some("ws://127.0.0.1:9001"), "TOK"),
+            "ws://127.0.0.1:9001?token=TOK"
+        );
     }
 }

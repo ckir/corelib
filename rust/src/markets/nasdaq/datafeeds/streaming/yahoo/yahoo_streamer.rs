@@ -17,7 +17,12 @@ use crate::markets::nasdaq::datafeeds::streaming::core::types::{CoreEvent, RawPr
 use crate::markets::nasdaq::datafeeds::streaming::yahoo::yahoo_driver::YahooDriver;
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
+use napi::Status;
 use napi_derive::napi;
+
+/// Bounded TSFN (Epic 5 ffi-tsfn-queue-unbounded): caps the off-heap queue at 1024; NonBlocking
+/// delivery drops on overflow. Used for the high-rate market-data callbacks only.
+type BoundedTsfn<T> = ThreadsafeFunction<T, Unknown<'static>, T, Status, true, false, 1024>;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -85,9 +90,9 @@ impl YahooConfig {
 pub struct YahooStreaming {
     inner: Arc<Mutex<YahooInner>>,
     on_log: Arc<ThreadsafeFunction<LogRecord>>,
-    on_pricing: Arc<ThreadsafeFunction<JsPricingData>>,
+    on_pricing: Arc<BoundedTsfn<JsPricingData>>,
     on_event: Arc<ThreadsafeFunction<EventRecord>>,
-    on_market_event: Option<Arc<ThreadsafeFunction<String>>>,
+    on_market_event: Option<Arc<BoundedTsfn<String>>>,
 }
 
 #[napi]
@@ -98,9 +103,19 @@ impl YahooStreaming {
     #[napi(constructor)]
     pub fn new(
         on_log: ThreadsafeFunction<LogRecord>,
-        on_pricing: ThreadsafeFunction<JsPricingData>,
+        on_pricing: ThreadsafeFunction<
+            JsPricingData,
+            Unknown<'static>,
+            JsPricingData,
+            Status,
+            true,
+            false,
+            1024,
+        >,
         on_event: ThreadsafeFunction<EventRecord>,
-        on_market_event: Option<ThreadsafeFunction<String>>,
+        on_market_event: Option<
+            ThreadsafeFunction<String, Unknown<'static>, String, Status, true, false, 1024>,
+        >,
     ) -> napi::Result<Self> {
         let host = WebsocketStreamerHost::new(
             unique_db_path("yahoo_streaming", "YAHOO_DB"),

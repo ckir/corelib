@@ -18,7 +18,12 @@ use crate::markets::nasdaq::datafeeds::streaming::core::types::{CoreEvent, RawPr
 use crate::{EventRecord, LogRecord};
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
+use napi::Status;
 use napi_derive::napi;
+
+/// Bounded TSFN (Epic 5 ffi-tsfn-queue-unbounded): caps the off-heap queue at 1024; NonBlocking
+/// delivery drops on overflow. Used for the high-rate market-data callbacks only.
+type BoundedTsfn<T> = ThreadsafeFunction<T, Unknown<'static>, T, Status, true, false, 1024>;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -95,9 +100,9 @@ struct AlpacaInner {
 pub struct AlpacaStreaming {
     inner: Arc<Mutex<AlpacaInner>>,
     on_log: Arc<ThreadsafeFunction<LogRecord>>,
-    on_pricing: Arc<ThreadsafeFunction<AlpacaPricingData>>,
+    on_pricing: Arc<BoundedTsfn<AlpacaPricingData>>,
     on_event: Arc<ThreadsafeFunction<EventRecord>>,
-    on_market_event: Option<Arc<ThreadsafeFunction<String>>>,
+    on_market_event: Option<Arc<BoundedTsfn<String>>>,
 }
 
 #[napi]
@@ -108,9 +113,19 @@ impl AlpacaStreaming {
     #[napi(constructor)]
     pub fn new(
         on_log: ThreadsafeFunction<LogRecord>,
-        on_pricing: ThreadsafeFunction<AlpacaPricingData>,
+        on_pricing: ThreadsafeFunction<
+            AlpacaPricingData,
+            Unknown<'static>,
+            AlpacaPricingData,
+            Status,
+            true,
+            false,
+            1024,
+        >,
         on_event: ThreadsafeFunction<EventRecord>,
-        on_market_event: Option<ThreadsafeFunction<String>>,
+        on_market_event: Option<
+            ThreadsafeFunction<String, Unknown<'static>, String, Status, true, false, 1024>,
+        >,
     ) -> napi::Result<Self> {
         let host = WebsocketStreamerHost::new(
             unique_db_path("alpaca_streaming", "ALPACA_DB"),
