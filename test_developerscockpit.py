@@ -38,6 +38,9 @@ class TestBumpTargetSet(unittest.TestCase):
             "ts-markets/package.json": '{\n  "version": "0.1.17",\n  "dependencies": { "@ckir/corelib": "workspace:*" }\n}\n',
             "ts-cloud/package.json": '{\n  "version": "0.1.17"\n}\n',
             "rust/Cargo.toml": '[package]\nname = "corelib-rust"\nversion = "0.1.17"\nedition = "2021"\n',
+            # Cargo.lock: the corelib-rust entry must bump; the sibling dep at the same
+            # version must NOT (proves the bump targets only the corelib-rust block).
+            "rust/Cargo.lock": '[[package]]\nname = "corelib-rust"\nversion = "0.1.17"\ndependencies = []\n\n[[package]]\nname = "look-alike-dep"\nversion = "0.1.17"\n',
             "README.md": "Install: download/v0.1.17/ckir-corelib-0.1.17.tgz and ckir-corelib-markets-0.1.17.tgz\n",
             # historical doc — MUST NOT be touched
             "docs/superpowers/old.md": "At the time this was version 0.1.17 (historical).\n",
@@ -48,7 +51,7 @@ class TestBumpTargetSet(unittest.TestCase):
             with open(p, "w", encoding="utf-8") as f:
                 f.write(content)
 
-    def test_bumps_six_files_leaves_history(self):
+    def test_bumps_target_files_leaves_history(self):
         root = tempfile.mkdtemp()
         cwd = os.getcwd()
         try:
@@ -70,6 +73,12 @@ class TestBumpTargetSet(unittest.TestCase):
                     text = f.read()
                 self.assertIn("0.1.18", text, f"{rel} not bumped")
                 self.assertNotIn("0.1.17", text, f"{rel} still has old version")
+            # Cargo.lock: only the corelib-rust entry bumps; the sibling at the same
+            # version is left untouched (targeted, not a blanket replace).
+            with open("rust/Cargo.lock", encoding="utf-8") as f:
+                lock = f.read()
+            self.assertIn('name = "corelib-rust"\nversion = "0.1.18"', lock)
+            self.assertIn('name = "look-alike-dep"\nversion = "0.1.17"', lock)
             # workspace:* ref untouched
             with open("ts-markets/package.json", encoding="utf-8") as f:
                 self.assertIn("workspace:*", f.read())

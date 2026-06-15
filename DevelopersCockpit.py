@@ -51,6 +51,7 @@ VERSION_JSON_FILES = [
     os.path.join("ts-cloud", "package.json"),
 ]
 VERSION_CARGO_FILE = os.path.join("rust", "Cargo.toml")
+VERSION_CARGO_LOCK_FILE = os.path.join("rust", "Cargo.lock")
 VERSION_README_FILE = "README.md"
 
 
@@ -91,6 +92,20 @@ def _bump_cargo_version(path, old, new):
     return n
 
 
+def _bump_cargo_lock_version(path, old, new):
+    """Sync the corelib-rust package's own version entry in Cargo.lock (matches what
+    cargo writes on the next build). Targets ONLY the corelib-rust [[package]] block —
+    `name = "corelib-rust"` immediately precedes its `version`. Returns #changes."""
+    with open(path, "r", encoding="utf-8") as f:
+        text = f.read()
+    pattern = r'(name = "corelib-rust"\nversion = ")' + re.escape(old) + r'(")'
+    new_text, n = re.subn(pattern, r"\g<1>" + new + r"\g<2>", text, count=1)
+    if n:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(new_text)
+    return n
+
+
 def _bump_readme_version(path, old, new):
     """Bump the install/release-URL refs only: `v<old>` (not followed by a digit, so
     `v0.1.17` never clobbers a `v0.1.170`) and `-<old>.tgz`. Returns #changes."""
@@ -109,7 +124,7 @@ def _bump_readme_version(path, old, new):
 
 def bump_version(level):
     """Lockstep-bump the version across the explicit target set (4 package.json +
-    Cargo.toml + README install refs). NEVER touches historical/planning docs.
+    Cargo.toml + Cargo.lock + README install refs). NEVER touches historical/planning docs.
     Returns (old, new, {path: change_count}). Does not git-commit/tag."""
     old = get_current_version()
     new = next_version(old, level)
@@ -119,6 +134,8 @@ def bump_version(level):
             changed[p] = _bump_json_version(p, old, new)
     if os.path.exists(VERSION_CARGO_FILE):
         changed[VERSION_CARGO_FILE] = _bump_cargo_version(VERSION_CARGO_FILE, old, new)
+    if os.path.exists(VERSION_CARGO_LOCK_FILE):
+        changed[VERSION_CARGO_LOCK_FILE] = _bump_cargo_lock_version(VERSION_CARGO_LOCK_FILE, old, new)
     if os.path.exists(VERSION_README_FILE):
         changed[VERSION_README_FILE] = _bump_readme_version(VERSION_README_FILE, old, new)
     return old, new, changed
