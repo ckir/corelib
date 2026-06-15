@@ -44,8 +44,8 @@ Phase A fully, THEN Phase B. (Phase A exonerates the engine → de-risks Phase B
 
 | # | Task | Key files | Status | Commit |
 |---|---|---|---|---|
-| B-T1 | FinnhubDriver reads subs fresh from redb (+ `load_subscriptions`, +`db`/`table` fields, + unit + no-resurrection loopback tests). **Fix Phase A A4 `FinnhubDriver{}` literal here.** | `finnhub/finnhub_driver.rs` | PENDING | |
-| B-T2 | Wire Finnhub facade: `db: g.host.db_handle(), table: g.host.table_name()` | `finnhub/finnhub_streamer.rs` | PENDING | |
+| B-T1 | FinnhubDriver reads subs fresh from redb (+ `load_subscriptions`, +`db`/`table` fields, + unit + no-resurrection loopback tests). Fixed A4 literal (seeded redb). | `finnhub/finnhub_driver.rs` | ✅ DONE | `f9800eea` |
+| B-T2 | Wire Finnhub facade: `db: g.host.db_handle(), table: g.host.table_name()` | `finnhub/finnhub_streamer.rs` | ✅ DONE | `f9800eea` (folded into B-T1 — crate won't compile split) |
 | B-T3 | Yahoo undecodable-frame debug log (length-only) + tracing-capture test | `yahoo/yahoo_driver.rs` | PENDING | |
 | B-T4 | Deterministic Node↔Rust loopback delivery test (integration tier) + characterize/root-cause if RED | `ts-markets/tests/integration/alpaca-loopback-delivery.integration.test.ts` (+ `_harness/` copy fallback; + finding doc if RED) | PENDING | |
 | B-T5 | ROADMAP: B1/B2 done; Epic closed (if B-T4 green on CI) or open-pending-B3 | `ROADMAP.md` | PENDING | |
@@ -59,3 +59,4 @@ Phase A fully, THEN Phase B. (Phase A exonerates the engine → de-risks Phase B
 - A4 `f5073c9` (2026-06-15): Finnhub pure-Rust loopback delivery test. Suite 98. Test-only fix: loopback base_url needs trailing `/` (tungstenite server rejects path-less `?token=` URI). Production finnhub_ws_url untouched.
 - A5 `611d1f0` (2026-06-15): Yahoo pure-Rust loopback delivery test (base64-protobuf). Suite 99. Test-only: dropped unused StreamExt import (server only sends).
 - A6 `f6385baf` (2026-06-15): core/mod.rs boundary rustdoc + ROADMAP Phase-A-DONE. **PHASE A COMPLETE.**
+- B-T1 + B-T2 `f9800eea` (2026-06-15): FinnhubDriver redb reconnect-resume (db/table fields, load_subscriptions, fresh-read in connect_once) + facade db_handle/table_name wiring (folded — crate won't compile split) + unit/resurrection tests + A4 literal seeded. Suite 101 green, lint green.
