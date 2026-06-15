@@ -32,7 +32,7 @@ Phase A fully, THEN Phase B. (Phase A exonerates the engine → de-risks Phase B
 | A1 | napi feature + `compile_error!` + `cfg_attr` the 5 wire types | `rust/Cargo.toml`, `rust/src/lib.rs`, `core/types.rs`, `yahoo_streaming_proto_handler.rs` | ✅ DONE | `2127b6e1` |
 | A2 | boundary lint test | `rust/tests/streaming_boundary_lint.rs` | ✅ DONE | `d7b145cb` |
 | A3 | Alpaca pure-Rust loopback delivery test | `alpaca/alpaca_driver.rs` | ✅ DONE | `ffcc8c1` |
-| A4 | Finnhub pure-Rust loopback delivery test | `finnhub/finnhub_driver.rs` | PENDING | |
+| A4 | Finnhub pure-Rust loopback delivery test | `finnhub/finnhub_driver.rs` | ✅ DONE | `f5073c9` |
 | A5 | Yahoo pure-Rust loopback delivery test | `yahoo/yahoo_driver.rs` | PENDING | |
 | A6 | rustdoc boundary note + ROADMAP Phase-A-done | `core/mod.rs`, `ROADMAP.md` | PENDING | |
 
@@ -54,3 +54,4 @@ Phase A fully, THEN Phase B. (Phase A exonerates the engine → de-risks Phase B
 - A1 `2127b6e1` (2026-06-15): cfg_attr 5 wire types + napi feature + compile_error guard. 95 tests green, index.d.ts unchanged, clippy clean, no shape divergence.
 - A2 `d7b145cb` (2026-06-15): boundary lint test (engine source set napi-free). Passes on current tree; negative check confirmed it bites + reverted clean.
 - A3 `ffcc8c1` (2026-06-15): Alpaca pure-Rust loopback delivery test. Engine delivers frame→CoreEvent Rust↔Rust. Full suite 97 green.
+- A4 `f5073c9` (2026-06-15): Finnhub pure-Rust loopback delivery test. Suite 98. Test-only fix: loopback base_url needs trailing `/` (tungstenite server rejects path-less `?token=` URI). Production finnhub_ws_url untouched.
