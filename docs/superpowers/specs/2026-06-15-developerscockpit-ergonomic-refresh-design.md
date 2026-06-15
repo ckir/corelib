@@ -102,11 +102,18 @@ Four tiers, ordered by how often you reach for them (agy's velocity grouping):
 
 ### 4.4 Version bump (`V`) — lockstep handler
 
-Evidence: all five manifests (`package.json`, `ts-core/`, `ts-markets/`, `ts-cloud/` package.json, `rust/Cargo.toml`) are in lockstep at `0.1.17`; no changesets, no release-workflow versioning. So `V` becomes a stdlib Python handler that: reads the current version (from `ts-core/package.json`, as `get_current_version` already does), prompts `patch/minor/major`, computes the next semver, and **writes all five manifests** in sync (JSON edit for the four package.json; line edit for `Cargo.toml`'s `version = "x"`). Prints the old→new. Does NOT git-commit/tag (that's `K`'s job).
+Evidence: all five manifests (`package.json`, `ts-core/`, `ts-markets/`, `ts-cloud/` package.json, `rust/Cargo.toml`) are in lockstep at `0.1.17`; no changesets, no release-workflow versioning. **And the version is also embedded in `README.md`** (the install snippets: the `v0.1.17` release-tag path and the `ckir-corelib[-markets]-0.1.17.tgz` filenames — 5 spots). So `V` becomes a stdlib Python handler that: reads the current version (from `ts-core/package.json`, as `get_current_version` already does), prompts `patch/minor/major`, computes the next semver, and **writes the new version across an EXPLICIT target set** in sync. Prints old→new + the per-file change count. Does NOT git-commit/tag (that's `K`'s job).
 
-**No sibling-ref / lockfile churn (verified, closes agy 🔴/🟡):** the inter-package deps use `workspace:*` (`ts-cloud`/`ts-markets` → `@ckir/corelib*`), not pinned `workspace:^x.y.z`, so a version bump needs **no** updates to `dependencies` ranges and does **not** desync `pnpm-lock.yaml` (workspace links are by name). The handler edits only the five `version` fields; no `pnpm install` required.
+**Target set (explicit — NEVER a blanket repo scan):**
+1. The four `package.json` `version` fields (JSON edit).
+2. `rust/Cargo.toml` — the `version = "x.y.z"` line (anchored line edit, the first `version =` under `[package]`).
+3. **`README.md`** — replace the old version token in the install/release-URL references (`v<old>` → `v<new>` and `-<old>.tgz` → `-<new>.tgz`).
 
-> **CONFIRM AT REVIEW:** this assumes manual lockstep versioning across the five manifests is the intended flow. If you use a different mechanism, say so and I'll adjust.
+**Do NOT touch historical/planning docs.** `0.1.17` also appears in `ANTIGRAVITY-TO-CLAUDE.md` and `docs/superpowers/**` — those are point-in-time records, not live version refs. The handler operates ONLY on the enumerated target set; it must not grep-and-replace the version across all `*.md`.
+
+**No sibling-ref / lockfile churn (verified, closes agy 🔴/🟡):** the inter-package deps use `workspace:*` (`ts-cloud`/`ts-markets` → `@ckir/corelib*`), not pinned `workspace:^x.y.z`, so a version bump needs **no** updates to `dependencies` ranges and does **not** desync `pnpm-lock.yaml` (workspace links are by name). The handler edits only the version fields/refs; no `pnpm install` required.
+
+> **CONFIRM AT REVIEW:** (a) manual lockstep versioning across these six files is the intended flow? (b) Are there OTHER live version-bearing files beyond the 5 manifests + `README.md` (e.g. a docs install guide, a badge) that should be in the target set? Name them and I'll add them; the design keeps the set explicit/configurable so adding a file is trivial.
 
 ### 4.5 Local package (`E`) — bug fix
 
@@ -132,6 +139,7 @@ It's an interactive single-file dev tool, so test the **pure/data parts**, not t
 - `ACTIONS` integrity: every action has exactly one of `cmd`/`handler`; all `key`s unique + uppercase; every action's `group` is one of the four tiers.
 - `next_version("0.1.17", "patch"|"minor"|"major")` → `"0.1.18"|"0.2.0"|"1.0.0"`.
 - `make_release_cmd()` emits no Python-list-repr (regression guard for the 4.5 bug); contains the expected archive verb per platform.
+- **Version bump:** against a temp fixture (copies of the six target files seeded at a known version), the bump rewrites the version in ALL six (4 package.json + Cargo.toml + README's `v<x>`/`-<x>.tgz` refs) to the new value, and a seeded historical-doc fixture (e.g. a `docs/…md` containing the old version) is **left untouched** — proving the explicit-target-set discipline.
 - A smoke check that the menu renders all four tiers without error.
 Run under the repo's Python (3.14 per the `__pycache__`). No new test framework — a `if __name__ == "__main__"`-guarded `--selftest` flag or a tiny `pytest`/`unittest` file (decide in plan).
 
@@ -139,6 +147,6 @@ Run under the repo's Python (3.14 per the `__pycache__`). No new test framework 
 
 1. Menu renders in four workflow tiers; letters preserved for existing items; color respects `NO_COLOR`/non-TTY.
 2. Commands delegate to current scripts; `verify:fast`, `verify:full`, `typecheck-all`, `test:integration` are reachable; no `pnpm -r run …` hand-rolls remain where an aggregate exists.
-3. `U` runs Rust tests with `--test-threads=1`; `E` produces a valid archive (no list-repr); `V` bumps all five manifests in lockstep; the dead `M`/broken `V` paths are gone.
+3. `U` runs Rust tests with `--test-threads=1`; `E` produces a valid archive (no list-repr); `V` bumps the version in lockstep across the six target files (4 package.json + `rust/Cargo.toml` + `README.md` install refs) while leaving historical/planning docs untouched; the dead `M`/broken `V` paths are gone.
 4. Data-driven dispatch — no per-letter `if/elif` chain; builders are `handler`s.
 5. Zero new runtime dependencies; runs on stdlib Python. Pure-part tests pass.
