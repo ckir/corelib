@@ -4,6 +4,7 @@
 # =============================================
 
 import os
+import re
 import subprocess
 import sys
 import json
@@ -39,6 +40,87 @@ def get_current_version():
     except Exception:
         pass
     return "0.1.0"
+
+
+VERSION_JSON_FILES = [
+    "package.json",
+    os.path.join("ts-core", "package.json"),
+    os.path.join("ts-markets", "package.json"),
+    os.path.join("ts-cloud", "package.json"),
+]
+VERSION_CARGO_FILE = os.path.join("rust", "Cargo.toml")
+VERSION_README_FILE = "README.md"
+
+
+def next_version(current, level):
+    """Compute the next semver. Raises ValueError on a bad level."""
+    major, minor, patch = (int(x) for x in current.split("."))
+    if level == "major":
+        return f"{major + 1}.0.0"
+    if level == "minor":
+        return f"{major}.{minor + 1}.0"
+    if level == "patch":
+        return f"{major}.{minor}.{patch + 1}"
+    raise ValueError(f"unknown bump level: {level}")
+
+
+def _bump_json_version(path, old, new):
+    """Replace the first `"version": "old"` (format-preserving). Returns #changes."""
+    with open(path, "r", encoding="utf-8") as f:
+        text = f.read()
+    pattern = r'("version"\s*:\s*)"' + re.escape(old) + r'"'
+    new_text, n = re.subn(pattern, r'\g<1>"' + new + '"', text, count=1)
+    if n:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(new_text)
+    return n
+
+
+def _bump_cargo_version(path, old, new):
+    """Replace the first `version = "old"` line under [package]. Space-invariant +
+    preserves the original prefix/spacing. Returns #changes."""
+    with open(path, "r", encoding="utf-8") as f:
+        text = f.read()
+    pattern = r'(?m)^(\s*version\s*=\s*)"' + re.escape(old) + r'"'
+    new_text, n = re.subn(pattern, r'\g<1>"' + new + '"', text, count=1)
+    if n:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(new_text)
+    return n
+
+
+def _bump_readme_version(path, old, new):
+    """Bump the install/release-URL refs only: `v<old>` (not followed by a digit, so
+    `v0.1.17` never clobbers a `v0.1.170`) and `-<old>.tgz`. Returns #changes."""
+    with open(path, "r", encoding="utf-8") as f:
+        text = f.read()
+    v_pat = r'v' + re.escape(old) + r'(?!\d)'
+    tgz_pat = r'-' + re.escape(old) + r'\.tgz'
+    n = len(re.findall(v_pat, text)) + len(re.findall(tgz_pat, text))
+    text = re.sub(v_pat, f'v{new}', text)
+    text = re.sub(tgz_pat, f'-{new}.tgz', text)
+    if n:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+    return n
+
+
+def bump_version(level):
+    """Lockstep-bump the version across the explicit target set (4 package.json +
+    Cargo.toml + README install refs). NEVER touches historical/planning docs.
+    Returns (old, new, {path: change_count}). Does not git-commit/tag."""
+    old = get_current_version()
+    new = next_version(old, level)
+    changed = {}
+    for p in VERSION_JSON_FILES:
+        if os.path.exists(p):
+            changed[p] = _bump_json_version(p, old, new)
+    if os.path.exists(VERSION_CARGO_FILE):
+        changed[VERSION_CARGO_FILE] = _bump_cargo_version(VERSION_CARGO_FILE, old, new)
+    if os.path.exists(VERSION_README_FILE):
+        changed[VERSION_README_FILE] = _bump_readme_version(VERSION_README_FILE, old, new)
+    return old, new, changed
+
 
 config = load_env()
 
