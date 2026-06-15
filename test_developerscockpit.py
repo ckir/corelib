@@ -98,5 +98,37 @@ class TestReleaseCmd(unittest.TestCase):
                 self.assertIn("tar -czf", cmd)
 
 
+class TestActionsIntegrity(unittest.TestCase):
+    def test_keys_unique_upper_single(self):
+        keys = [a.key for a in dc.ACTIONS]
+        self.assertEqual(len(keys), len(set(keys)), "duplicate keys")
+        self.assertTrue(all(len(k) == 1 and k.isupper() for k in keys))
+
+    def test_exactly_one_of_cmd_or_handler(self):
+        for a in dc.ACTIONS:
+            self.assertTrue(
+                bool(a.cmd) ^ bool(a.handler),
+                f"action {a.key} must have exactly one of cmd/handler",
+            )
+
+    def test_group_is_a_known_tier(self):
+        for a in dc.ACTIONS:
+            self.assertIn(a.group, dc.TIERS)
+
+    def test_pnpm_run_convention(self):
+        for a in dc.ACTIONS:
+            if a.cmd and a.cmd.startswith("pnpm ") and not a.cmd.startswith("pnpm exec"):
+                self.assertTrue(a.cmd.startswith("pnpm run "), f"{a.key}: {a.cmd!r}")
+
+    def test_rust_tests_single_threaded(self):
+        u = next(a for a in dc.ACTIONS if a.key == "U")
+        self.assertIn("--test-threads=1", u.cmd)
+
+    def test_has_new_workflow_items(self):
+        keys = {a.key for a in dc.ACTIONS}
+        self.assertTrue({"Y", "N", "I", "J"}.issubset(keys))
+        self.assertNotIn("M", keys)
+
+
 if __name__ == "__main__":
     unittest.main()
