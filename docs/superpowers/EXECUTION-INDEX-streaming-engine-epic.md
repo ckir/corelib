@@ -29,7 +29,7 @@ Phase A fully, THEN Phase B. (Phase A exonerates the engine → de-risks Phase B
 
 | # | Task | Key files | Status | Commit |
 |---|---|---|---|---|
-| A1 | napi feature + `compile_error!` + `cfg_attr` the 5 wire types | `rust/Cargo.toml`, `rust/src/lib.rs`, `core/types.rs`, `yahoo_streaming_proto_handler.rs` | PENDING | |
+| A1 | napi feature + `compile_error!` + `cfg_attr` the 5 wire types | `rust/Cargo.toml`, `rust/src/lib.rs`, `core/types.rs`, `yahoo_streaming_proto_handler.rs` | ✅ DONE | `2127b6e1` |
 | A2 | boundary lint test | `rust/tests/streaming_boundary_lint.rs` | PENDING | |
 | A3 | Alpaca pure-Rust loopback delivery test | `alpaca/alpaca_driver.rs` | PENDING | |
 | A4 | Finnhub pure-Rust loopback delivery test | `finnhub/finnhub_driver.rs` | PENDING | |
@@ -51,4 +51,4 @@ Phase A fully, THEN Phase B. (Phase A exonerates the engine → de-risks Phase B
 **Epic closes ONLY when B-T4's release loopback test is green on the standard CI matrix (no `INTEGRATION_LIVE` bypass).** B-T4 root-cause is REQUIRED (fix or positively explain the debug-build stall — not a caveat); time-box the fix effort, escalate to human if it balloons.
 
 ## DONE LOG (append one line per completed task)
-- (none yet)
+- A1 `2127b6e1` (2026-06-15): cfg_attr 5 wire types + napi feature + compile_error guard. 95 tests green, index.d.ts unchanged, clippy clean, no shape divergence.
