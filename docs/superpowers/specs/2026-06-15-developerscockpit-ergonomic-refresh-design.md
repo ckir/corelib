@@ -104,11 +104,17 @@ Four tiers, ordered by how often you reach for them (agy's velocity grouping):
 
 Evidence: all five manifests (`package.json`, `ts-core/`, `ts-markets/`, `ts-cloud/` package.json, `rust/Cargo.toml`) are in lockstep at `0.1.17`; no changesets, no release-workflow versioning. So `V` becomes a stdlib Python handler that: reads the current version (from `ts-core/package.json`, as `get_current_version` already does), prompts `patch/minor/major`, computes the next semver, and **writes all five manifests** in sync (JSON edit for the four package.json; line edit for `Cargo.toml`'s `version = "x"`). Prints the old→new. Does NOT git-commit/tag (that's `K`'s job).
 
+**No sibling-ref / lockfile churn (verified, closes agy 🔴/🟡):** the inter-package deps use `workspace:*` (`ts-cloud`/`ts-markets` → `@ckir/corelib*`), not pinned `workspace:^x.y.z`, so a version bump needs **no** updates to `dependencies` ranges and does **not** desync `pnpm-lock.yaml` (workspace links are by name). The handler edits only the five `version` fields; no `pnpm install` required.
+
 > **CONFIRM AT REVIEW:** this assumes manual lockstep versioning across the five manifests is the intended flow. If you use a different mechanism, say so and I'll adjust.
 
 ### 4.5 Local package (`E`) — bug fix
 
-Current: `f'... -Path {files.split()} ...'` emits a Python list repr. Fix: build the path set explicitly — Windows: `Compress-Archive -Path <comma-joined quoted paths> -DestinationPath release.zip -Force`; POSIX: `tar -czf release.tar.gz <space-joined paths>`. Keep the existing file set (`ts-core/dist ts-cloud/dist ts-markets/dist rust/target/release package.json LICENSE README.md`), skipping any that don't exist.
+Current: `f'... -Path {files.split()} ...'` emits a Python list repr. Fix: build the path set explicitly **and filter to paths that exist** (a missing path hard-fails the archive). `Compress-Archive` is a PowerShell cmdlet, not a `cmd.exe` builtin — so the Windows branch MUST wrap it in pwsh (the original cockpit did; preserve that), e.g.:
+- **Windows:** `pwsh -NoProfile -NonInteractive -Command "Compress-Archive -Path <comma-joined 'single-quoted' paths> -DestinationPath release.zip -Force"`
+- **POSIX:** `tar -czf release.tar.gz <space-joined paths>`
+
+Build the path list in Python from the existing file set (`ts-core/dist ts-cloud/dist ts-markets/dist rust/target/release package.json LICENSE README.md`), dropping any that don't exist before composing the command. (agy convergent 🔴/🟡 — cmd.exe vs pwsh + missing-file filtering.)
 
 ### 4.6 Cosmetics (zero-dep)
 
