@@ -186,3 +186,72 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod loopback_tests {
+    use super::*;
+    use crate::markets::nasdaq::datafeeds::streaming::core::driver::SubRequest;
+    use crate::markets::nasdaq::datafeeds::streaming::core::types::{CoreEvent, RawPricing};
+    use futures_util::{SinkExt, StreamExt};
+    use std::time::Duration;
+    use tokio::net::TcpListener;
+    use tokio::sync::mpsc;
+    use tokio_tungstenite::{accept_async, tungstenite::Message};
+
+    fn text(s: &str) -> Message {
+        Message::Text(s.to_string().into())
+    }
+
+    /// Minimal Finnhub WS server: (read one subscribe) → one trade frame. No auth, no handshake.
+    async fn serve_finnhub(listener: TcpListener) {
+        if let Ok((stream, _)) = listener.accept().await {
+            let mut ws = accept_async(stream).await.expect("ws accept");
+            let _ = ws.next().await; // subscribe frame from driver
+            ws.send(text(
+                r#"{"type":"trade","data":[{"s":"AAPL","p":191.5,"v":100,"t":1700000000000,"c":["@"]}]}"#,
+            ))
+            .await
+            .unwrap();
+            tokio::time::sleep(Duration::from_millis(300)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn pure_rust_loopback_delivers_finnhub_trade() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(serve_finnhub(listener));
+
+        let driver = FinnhubDriver {
+            token: "tok".into(),
+            name: "finnhub_main".into(),
+            base_url: Some(format!("ws://127.0.0.1:{port}/")),
+        };
+        let (tx, mut rx) = mpsc::channel::<CoreEvent>(64);
+        let (_sub_tx, mut sub_rx) = mpsc::channel::<SubRequest>(8);
+        let (_stop_tx, mut stop_rx) = mpsc::channel::<()>(1);
+        let syms = vec!["AAPL".to_string()];
+
+        let connect = driver.connect_once(&syms, &tx, &mut sub_rx, &mut stop_rx);
+        tokio::pin!(connect);
+
+        let got = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                tokio::select! {
+                    _ = &mut connect => return None,
+                    ev = rx.recv() => match ev {
+                        Some(CoreEvent::Pricing { raw: RawPricing::Finnhub(p), .. }) => return Some(p),
+                        Some(_) => continue, // skip Status(Connected)
+                        None => return None,
+                    },
+                }
+            }
+        })
+        .await
+        .expect("timed out waiting for pricing");
+
+        let p = got.expect("driver ended before delivering a pricing event");
+        assert_eq!(p.symbol, "AAPL");
+        assert_eq!(p.price, 191.5);
+    }
+}
