@@ -55,9 +55,12 @@ sequencing of 4 subprojects"). Five subprojects, each its own spec → plan → 
      layered engine; mind the dual-mode raw-payload `#[napi(object)]` seam).
    - **Streaming Engine Epic — CONSOLIDATED (2026-06-15; agy `CONSOLIDATE-BUT-KEEP-SPEC-ADD-COMPANION`).**
      The streaming leftovers are now ONE Epic, sequenced **Phase A → (Finnhub-resume, Yahoo-log) → interop closure**:
-     - **Phase A (module boundary) — SPEC + PLAN committed, NOT yet implemented (2026-06-15):** napi-free
-       engine/adapter boundary in-place (cfg_attr wire seam + `compile_error!` guard + boundary lint +
-       pure-Rust loopback delivery tests for all 3 providers). Spec
+     - **Phase A (module boundary) — ✅ DONE (2026-06-15):** napi-free engine/adapter boundary in-place —
+       the 5 wire types are `cfg_attr(feature="napi")`-gated (A1 `2127b6e1`), a `compile_error!` guards
+       `--no-default-features`, and `rust/tests/streaming_boundary_lint.rs` enforces the napi-free engine
+       source set (A2 `d7b145cb`). Pure-Rust tokio loopback delivery tests prove frame→CoreEvent for
+       Alpaca (A3 `ffcc8c1`), Finnhub (A4 `f5073c9`), Yahoo (A5 `611d1f0`) — engine EXONERATED, no Node.
+       Rust suite 99 green, clippy `-D warnings` clean, `index.d.ts` unchanged. Spec
        `docs/superpowers/specs/2026-06-15-phase-a-streaming-engine-module-boundary-design.md`; plan
        `docs/superpowers/plans/2026-06-15-phase-a-streaming-engine-module-boundary.md` (6 tasks, subagent-driven).
      - **Phase B (companion — spec PENDING):** the Node↔Rust loopback mock server (the *real* cross-runtime
