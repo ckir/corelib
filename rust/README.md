@@ -110,18 +110,21 @@ A cron-driven daemon for polling the official Nasdaq API. Supports load-balancin
 
 ## Internal Usage (via FFI)
 
-The native functions are typically accessed through the `Core` class in `@ckir/corelib`:
+The native functions are typically accessed through the `Core` object in `@ckir/corelib`:
 
 ```typescript
 import { Core } from '@ckir/corelib';
 
-// Example: Calling the version helper from Rust
-const version = Core.run("get_version");
-console.log(`Rust Core Version: ${version}`);
+// Guard before use — FFI is disabled on Cloudflare Workers
+if (Core.isFfiAvailable()) {
+  // Get the native library version
+  const version = Core.getVersion();
+  console.log(`Rust Core Version: ${version}`);
 
-// Example: Calling a data processing function
-const doubled = Core.run("log_and_double", "Testing...", 21);
-console.log(doubled); // 42
+  // Call a data processing function: logs in Rust and returns the doubled value
+  const doubled = Core.logAndDouble("Testing...", 21);
+  console.log(doubled); // 42
+}
 ```
 
 ## CI/CD and Release

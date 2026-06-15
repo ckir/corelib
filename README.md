@@ -8,10 +8,28 @@ This repository is structured as a pnpm monorepo, integrating TypeScript's flexi
 
 ### Key Features
 - **Isomorphic Core**: All foundational utilities in `ts-core` support Node.js, Bun, and Deno.
-- **Resilient HTTP**: Standardized fetch wrapper (`RequestUnlimited`) with automatic retries and consistent error serialization.
+- **Resilient HTTP**: Standardized fetch wrapper (`RequestUnlimited`) with automatic retries and consistent error serialization. `RequestProxied` extends this with self-healing, rotating proxy pools that automatically prune dead endpoints.
 - **Strict Logging**: Structured logging API with `(msg: string, extras?: object)` signature and telemetry support.
-- **Native Performance**: Performance-critical paths implemented in Rust via N-API/FFI.
+- **Native Rust Performance**: Performance-critical paths (streaming engines, WS clients) implemented in Rust via N-API/FFI — zero JS event-loop blocking via napi worker threads.
+- **Real-Time Streaming**: Live market data from Alpaca, Finnhub, and Yahoo Finance; the Rust engine owns the WebSocket, delivering data to JS as events via napi `ThreadsafeFunction`.
 - **Unified Configuration**: Centralized `ConfigManager` supporting overrides via files, environment variables, and CLI.
+
+---
+
+## Architecture
+
+```mermaid
+graph TD
+    A[Your App] -->|GitHub Release .tgz| B["@ckir/corelib (ts-core)"]
+    A -->|GitHub Release .tgz| C["@ckir/corelib-markets (ts-markets)"]
+    A -->|GitHub Release .tgz| D["@ckir/corelib-cloud (ts-cloud)"]
+    C --> B
+    D --> B
+    D --> C
+    B <-->|N-API FFI| E["corelib-rust (.node binary)"]
+    C -->|"streaming via FFI\n(napi ThreadsafeFunction)"| E
+    E -->|"WS: Alpaca / Finnhub / Yahoo"| F[Live Market Feeds]
+```
 
 ---
 
@@ -53,6 +71,20 @@ To fix this, add an **override** to your `package.json` so the manager knows to 
   "overrides": {
     "@ckir/corelib": "https://github.com/ckir/corelib/releases/download/v0.1.17/ckir-corelib-0.1.17.tgz"
   }
+}
+```
+
+**For npm (`package.json`):**
+```json
+"overrides": {
+  "@ckir/corelib": "https://github.com/ckir/corelib/releases/download/v0.1.17/ckir-corelib-0.1.17.tgz"
+}
+```
+
+**For yarn (`package.json`):**
+```json
+"resolutions": {
+  "@ckir/corelib": "https://github.com/ckir/corelib/releases/download/v0.1.17/ckir-corelib-0.1.17.tgz"
 }
 ```
 
@@ -110,7 +142,7 @@ const port = config.get("database.port"); // read at the use site, don't cache s
 
 ### 2. Market Data (`@ckir/corelib-markets`)
 ```typescript
-import { MarketMonitor, MarketSymbols, type MarketPhase } from '@ckir/corelib-markets';
+import { MarketMonitor, MarketSymbols, Historical, type MarketPhase } from '@ckir/corelib-markets';
 
 // 1. Resilient Status Poller
 const monitor = new MarketMonitor();
@@ -125,6 +157,32 @@ const aapl = await symbols.get("AAPL"); // Auto-refreshes if needed
 
 // 3. Resilient Historical Data (Yahoo Finance v3)
 const history = await Historical.getData("AAPL", { period1: "2023-01-01" });
+if (history.status === 'success') {
+  console.log(`Retrieved ${history.value.length} quotes`);
+}
+```
+
+### 2b. Real-Time Streaming (flagship — Rust WS engine, zero event-loop blocking)
+```typescript
+import { AlpacaStreaming } from '@ckir/corelib-markets';
+
+const stream = new AlpacaStreaming();
+
+// Credentials via init() or APCA_API_KEY_ID / APCA_API_SECRET_KEY env vars
+await stream.init({ keyId: 'YOUR_KEY', secretKey: 'YOUR_SECRET' });
+await stream.start();
+
+stream.subscribe(['AAPL', 'TSLA', 'NVDA']);
+
+stream.on('pricing', (data) => {
+  console.log(`${data.symbol}: $${data.price}`);
+});
+stream.on('connected',    () => console.log('connected'));
+stream.on('disconnected', () => console.log('disconnected'));
+stream.on('error',        (e) => console.error('error', e));
+
+// FinnhubStreaming and YahooStreaming follow the same EventEmitter pattern
+// (Finnhub uses token auth; Yahoo is unauthenticated — see ts-markets/README.md)
 ```
 
 ### 3. Edge Proxy Services (`@ckir/corelib-cloud`)

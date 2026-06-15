@@ -2,6 +2,9 @@
 
 The foundational package of the Corelib monorepo, providing essential utilities, resilient HTTP, structured logging, and database abstractions.
 
+> [!IMPORTANT]
+> Not on the public npm registry — install from GitHub Releases. See the [root install guide](../README.md#-installation-for-external-projects).
+
 ## Features
 
 - **Multi-Runtime Support**: Compatible with Node.js, Bun, and Deno.
@@ -14,8 +17,11 @@ The foundational package of the Corelib monorepo, providing essential utilities,
 
 ## Installation
 
+Install from the GitHub Release — see the [root install guide](../README.md#-installation-for-external-projects) for package manager overrides.
+
 ```bash
-pnpm add @ckir/corelib
+# pnpm
+pnpm add https://github.com/ckir/corelib/releases/download/v0.1.17/ckir-corelib-0.1.17.tgz
 ```
 
 ## Usage Examples
@@ -34,8 +40,8 @@ if (result.status === 'success') {
 }
 ```
 
-### 2. Proxied HTTP Requests (Rotation & Fallback)
-`RequestProxied` provides an identical API to `RequestUnlimited` but adds automatic rotation, full fallback, and automatic removal of dead proxies.
+### 2. Proxied HTTP Requests (Self-Healing, Rotating Pool)
+`RequestProxied` provides an identical API to `RequestUnlimited` but adds automatic rotation, full fallback, and automatic removal of dead proxies. The pool is self-healing — unhealthy endpoints are pruned on first failure and do not re-enter rotation.
 
 ```typescript
 import { RequestProxied } from '@ckir/corelib';
@@ -121,17 +127,24 @@ await db.transaction(async () => {
 ### 5. Configuration Management
 Manage complex configuration hierarchies with ease.
 
+Both the **static** and **instance** forms of `get()` are supported by design — use whichever fits your call site. They read from the same singleton store.
+
 ```typescript
 import { ConfigManager } from '@ckir/corelib';
 
+// ── Instance form (explicit singleton) ────────────────────────────────────
 const config = ConfigManager.getInstance();
 
 // Initialize (parses CLI, Env, and local defaults). Idempotent under
 // concurrency: simultaneous calls share one in-flight run.
 await config.initialize();
 
-// Get nested value with dot-notation
+// Instance get — nested value with dot-notation
 const dbPort = config.get('database.port');
+
+// ── Static form (convenience shorthand — same singleton, same data) ────────
+// Both of these are equivalent after the first initialize() settles:
+const port = ConfigManager.get('database.port');
 
 // Load external encrypted configuration
 await config.loadExternalConfig('https://remote-server.com/prod.json.enc');
@@ -164,7 +177,7 @@ if (!config.isInitialized) {
 > // ❌ captured once at import; may miss overrides applied during initialize()
 > const db = ConfigManager.getInstance().get('database');
 >
-> // ✅ read at the use site
+> // ✅ read at the use site (static or instance — both work)
 > const port = ConfigManager.get('database.port');
 > ```
 

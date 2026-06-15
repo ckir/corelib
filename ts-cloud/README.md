@@ -1,6 +1,9 @@
 # ts-cloud: Multi-Edge TypeScript Proxy Service
 
-A portable TypeScript service exposing identical HTTP endpoints across **Cloudflare Workers**, **AWS Lambda**, and **Google Cloud Run**. 
+A portable TypeScript service exposing identical HTTP endpoints across **Cloudflare Workers**, **AWS Lambda**, and **Google Cloud Run**.
+
+> [!IMPORTANT]
+> Not on the public npm registry — install from GitHub Releases. See the [root install guide](../README.md#-installation-for-external-projects).
 
 This project is part of the Corelib monorepo and is tightly coupled with `@ckir/corelib` and `@ckir/corelib-markets`, utilizing their core abstractions for database connectivity, resilient HTTP requests, and structured logging.
 
@@ -133,6 +136,62 @@ curl -X POST https://your-service-url/api/v1/sql \
        "sql": "SELECT * FROM users WHERE active = ?",
        "params": [true]
      }'
+```
+
+## Configuration Boilerplate
+
+### Cloudflare Workers (`wrangler.toml`)
+
+The project ships with a `wrangler.toml`. Below is its current structure — adjust `name`, `main`, and the commented `[vars]` block to suit your account. The `[alias]` stubs are **required** to keep Node-only server deps (pino, postgres, @libsql/client) out of the Cloudflare bundle:
+
+```toml
+name = "ts-cloud"
+main = "src/platform/cloudflare/worker.ts"
+compatibility_date = "2025-02-04"
+compatibility_flags = ["nodejs_compat"]
+
+# Stubs for Node-only deps that must not execute on the edge.
+# Keep these — removing them breaks the Cloudflare bundle.
+[alias]
+"pino"                                = "./src/platform/cloudflare/server-dep-stub.mjs"
+"pino-pretty"                         = "./src/platform/cloudflare/server-dep-stub.mjs"
+"pino-lambda"                         = "./src/platform/cloudflare/server-dep-stub.mjs"
+"pino-socket"                         = "./src/platform/cloudflare/server-dep-stub.mjs"
+"@google-cloud/pino-logging-gcp-config" = "./src/platform/cloudflare/server-dep-stub.mjs"
+"postgres"                            = "./src/platform/cloudflare/server-dep-stub.mjs"
+"@libsql/client"                      = "./src/platform/cloudflare/server-dep-stub.mjs"
+
+[dev]
+port = 3000
+
+[vars]
+PLATFORM = "cloudflare"
+# CORELIB_TURSO_URL   = ""   # set via wrangler secret put CORELIB_TURSO_URL
+# CORELIB_TURSO_TOKEN = ""   # set via wrangler secret put CORELIB_TURSO_TOKEN
+```
+
+### AWS Lambda
+
+No `samconfig` is included — deploy using the AWS CLI after building:
+
+```bash
+pnpm run build
+cd dist/aws && zip -r function.zip handler.js
+aws lambda update-function-code --function-name YOUR_FUNCTION_NAME --zip-file fileb://function.zip
+```
+
+Set `CORELIB_TURSO_URL` and `CORELIB_TURSO_TOKEN` as Lambda environment variables in the console or via `aws lambda update-function-configuration`.
+
+### Google Cloud Run
+
+No `cloudrun` deploy config is included — deploy directly from source:
+
+```bash
+gcloud run deploy ts-cloud \
+  --source . \
+  --command "node" \
+  --args "dist/cloudrun/server.js" \
+  --set-env-vars "CORELIB_TURSO_URL=libsql://your-db.turso.io,CORELIB_TURSO_TOKEN=your-token"
 ```
 
 ## Development & Build
