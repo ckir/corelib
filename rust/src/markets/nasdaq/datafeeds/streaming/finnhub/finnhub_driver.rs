@@ -295,13 +295,20 @@ mod loopback_tests {
         let _db_path = std::env::temp_dir().join(format!(
             "test_finnhub_loop_{}_{}.redb",
             std::process::id(),
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
         ));
         let db = std::sync::Arc::new(redb::Database::create(_db_path).unwrap());
         {
-            let t: redb::TableDefinition<&str, bool> = redb::TableDefinition::new("finnhub_subscriptions");
+            let t: redb::TableDefinition<&str, bool> =
+                redb::TableDefinition::new("finnhub_subscriptions");
             let w = db.begin_write().unwrap();
-            { let mut tab = w.open_table(t).unwrap(); tab.insert("AAPL", true).unwrap(); }
+            {
+                let mut tab = w.open_table(t).unwrap();
+                tab.insert("AAPL", true).unwrap();
+            }
             w.commit().unwrap();
         }
 
@@ -438,7 +445,10 @@ mod resurrection_tests {
         }
         tokio::time::sleep(Duration::from_millis(400)).await;
         let got = collected.lock().unwrap().clone();
-        assert!(got.contains(&"AAPL".to_string()), "must resubscribe the survivor: {got:?}");
+        assert!(
+            got.contains(&"AAPL".to_string()),
+            "must resubscribe the survivor: {got:?}"
+        );
         assert!(
             !got.contains(&"MSFT".to_string()),
             "must NOT resurrect the unsubscribed symbol: {got:?}"

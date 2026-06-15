@@ -33,7 +33,8 @@ fn samples() -> &'static ArrayQueue<u64> {
 
 pub fn mark_sent(seq: u64) {
     let us = epoch().elapsed().as_micros() as u64;
-    sent_us()[(seq as usize) & (SLOTS - 1)].store(us.max(1), Ordering::Relaxed); // never store 0 (= empty sentinel)
+    sent_us()[(seq as usize) & (SLOTS - 1)].store(us.max(1), Ordering::Relaxed);
+    // never store 0 (= empty sentinel)
 }
 
 /// JS calls this immediately on receipt of tick `seq`. All timing is Rust-side vs the SAME EPOCH `Instant`.
@@ -69,7 +70,10 @@ mod tests {
         mark_sent(seq);
         napi_latency_ack(seq as i64);
         // a sample must now be drainable; pop it directly (drain is env-gated)
-        assert!(samples().pop().is_some(), "ack after mark_sent must record a sample");
+        assert!(
+            samples().pop().is_some(),
+            "ack after mark_sent must record a sample"
+        );
     }
 
     #[test]
@@ -79,6 +83,10 @@ mod tests {
         sent_us()[(seq as usize) & (SLOTS - 1)].store(0, Ordering::Relaxed);
         let before = samples().len();
         napi_latency_ack(seq as i64);
-        assert_eq!(samples().len(), before, "ack without mark_sent must not record");
+        assert_eq!(
+            samples().len(),
+            before,
+            "ack without mark_sent must not record"
+        );
     }
 }

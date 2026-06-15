@@ -482,9 +482,13 @@ mod loopback_tests {
     async fn serve_alpaca(listener: TcpListener) {
         if let Ok((stream, _)) = listener.accept().await {
             let mut ws = accept_async(stream).await.expect("ws accept");
-            ws.send(text(r#"[{"T":"success","msg":"connected"}]"#)).await.unwrap();
+            ws.send(text(r#"[{"T":"success","msg":"connected"}]"#))
+                .await
+                .unwrap();
             let _ = ws.next().await; // auth frame from driver
-            ws.send(text(r#"[{"T":"success","msg":"authenticated"}]"#)).await.unwrap();
+            ws.send(text(r#"[{"T":"success","msg":"authenticated"}]"#))
+                .await
+                .unwrap();
             let _ = ws.next().await; // subscribe frame from driver
             ws.send(text(
                 r#"[{"T":"q","S":"AAPL","bp":191.0,"ap":192.0,"bs":1,"as":2,"t":"2024-01-02T15:00:00Z"}]"#,

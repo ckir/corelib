@@ -589,7 +589,10 @@ mod undecodable_log_tests {
             note_undecodable("yahoo", 42);
         });
         let out = String::from_utf8(sink.lock().unwrap().clone()).unwrap();
-        assert!(out.contains("bytes=42"), "log must carry the byte length: {out}");
+        assert!(
+            out.contains("bytes=42"),
+            "log must carry the byte length: {out}"
+        );
         assert!(
             out.contains("undecodable frame skipped"),
             "log must carry the message: {out}"

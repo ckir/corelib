@@ -47,36 +47,40 @@ function waitFor(pred: () => boolean, timeoutMs: number): Promise<void> {
 // Requires the native FFI addon (AlpacaStreaming). Skip where it isn't loaded —
 // e.g. the offline pre-flight integration sweep, which doesn't build/copy the .node.
 // It still runs (and gates) in the matrix Integration job that builds the addon.
-it.skipIf(!isFfiAvailable())("[b3.alpaca] a frame round-trips Node ws -> Rust -> on_pricing", async () => {
-	server = new AlpacaLoopbackServer();
-	await server.listen();
+it.skipIf(!isFfiAvailable())(
+	"[b3.alpaca] a frame round-trips Node ws -> Rust -> on_pricing",
+	async () => {
+		server = new AlpacaLoopbackServer();
+		await server.listen();
 
-	stream = new AlpacaStreaming();
-	const pricing = new Promise<any>((res) => stream?.once("pricing", res));
+		stream = new AlpacaStreaming();
+		const pricing = new Promise<any>((res) => stream?.once("pricing", res));
 
-	// dummy creds ONLY; temp db; baseUrl points at the loopback (never production).
-	const dbPath = `${tmpdir()}/b3_alpaca_${process.pid}_${Date.now()}.redb`;
-	await stream.init({
-		baseUrl: server.url,
-		keyId: "dummy-key",
-		secretKey: "dummy-secret",
-		dbPath,
-	});
-	stream.subscribe(["AAPL"]); // persisted to redb -> driver subscribes on connect
-	await stream.start();
+		// dummy creds ONLY; temp db; baseUrl points at the loopback (never production).
+		const dbPath = `${tmpdir()}/b3_alpaca_${process.pid}_${Date.now()}.redb`;
+		await stream.init({
+			baseUrl: server.url,
+			keyId: "dummy-key",
+			secretKey: "dummy-secret",
+			dbPath,
+		});
+		stream.subscribe(["AAPL"]); // persisted to redb -> driver subscribes on connect
+		await stream.start();
 
-	// Once the driver has authed + subscribed, the server marks it streaming-ready.
-	await waitFor(() => server?.streamingCount > 0, 10_000);
-	server.streamTradeAll("AAPL", 191.5);
+		// Once the driver has authed + subscribed, the server marks it streaming-ready.
+		await waitFor(() => server?.streamingCount > 0, 10_000);
+		server.streamTradeAll("AAPL", 191.5);
 
-	const data = (await Promise.race([
-		pricing,
-		new Promise((_r, rej) =>
-			setTimeout(() => rej(new Error("no pricing in 10s")), 10_000),
-		),
-	])) as { symbol: string; messageType: string; price: number };
+		const data = (await Promise.race([
+			pricing,
+			new Promise((_r, rej) =>
+				setTimeout(() => rej(new Error("no pricing in 10s")), 10_000),
+			),
+		])) as { symbol: string; messageType: string; price: number };
 
-	expect(data.symbol).toBe("AAPL");
-	expect(data.messageType).toBe("trade");
-	expect(data.price).toBe(191.5);
-}, 30_000);
+		expect(data.symbol).toBe("AAPL");
+		expect(data.messageType).toBe("trade");
+		expect(data.price).toBe(191.5);
+	},
+	30_000,
+);
