@@ -12,6 +12,17 @@
 // and external usage.
 // =============================================
 
+// The napi feature is mandatory for this crate: the streamer facades, the FFI entry
+// points, and the wire-type derives all require it. Building `--no-default-features`
+// would strip the napi derive off the wire structs while the adapter still calls napi
+// conversions on them, yielding cryptic deep-macro errors. Fail legibly instead.
+#[cfg(not(feature = "napi"))]
+compile_error!(
+    "The 'napi' feature is mandatory to compile the corelib-rust cdylib. \
+     Do not build this crate with --no-default-features; the napi-free streaming \
+     engine becomes buildable only once it is lifted into the corelib-streaming crate."
+);
+
 /// Public observability module (Epic 4 flight recorder).
 pub mod observability;
 

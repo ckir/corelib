@@ -1,11 +1,10 @@
 //! Engine channel payload + single-definition raw FFI pricing structs.
 use crate::markets::nasdaq::datafeeds::streaming::core::schema::{MarketEvent, ProviderStatus};
 use crate::markets::nasdaq::datafeeds::streaming::yahoo::yahoo_streaming_proto_handler::JsPricingData;
-use napi_derive::napi;
 use serde::{Deserialize, Serialize};
 
 /// A unified representation of Alpaca pricing data, consolidating Trades, Quotes, and Bars.
-#[napi(object)]
+#[cfg_attr(feature = "napi", napi_derive::napi(object))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AlpacaPricingData {
     /// The ticker symbol of the instrument (e.g., "AAPL").
@@ -26,7 +25,7 @@ pub struct AlpacaPricingData {
 
 /// Flat per-provider pricing payload sent to JS `on_pricing` (mirrors AlpacaPricingData shape;
 /// Finnhub timestamps are numeric epoch ms, so `timestamp` is f64).
-#[napi(object)]
+#[cfg_attr(feature = "napi", napi_derive::napi(object))]
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct FinnhubPricingData {
     pub symbol: String,

@@ -7,7 +7,6 @@
 // and session-specific metadata extraction.
 // =============================================
 
-use napi_derive::napi;
 use prost::Message;
 use serde::{Deserialize, Serialize};
 
@@ -122,7 +121,7 @@ pub struct PricingData {
 ///
 /// This struct mirrors `PricingData` but uses `f64` for all floating-point numbers
 /// to ensure precision when passed to JavaScript.
-#[napi(object)]
+#[cfg_attr(feature = "napi", napi_derive::napi(object))]
 #[derive(Clone, Serialize, Deserialize)]
 pub struct JsPricingData {
     /// The unique identifier (symbol) for the security.
@@ -235,7 +234,7 @@ impl From<PricingData> for JsPricingData {
 }
 
 /// Categorizes the type of financial instrument providing the data.
-#[napi]
+#[cfg_attr(feature = "napi", napi_derive::napi)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, prost::Enumeration)]
 #[repr(i32)]
 pub enum QuoteType {
@@ -278,7 +277,7 @@ pub enum QuoteType {
 }
 
 /// Represents the specific trading session of the quote.
-#[napi]
+#[cfg_attr(feature = "napi", napi_derive::napi)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, prost::Enumeration)]
 #[repr(i32)]
 pub enum MarketHours {
