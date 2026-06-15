@@ -21,6 +21,6 @@
         "docs:clean": "cargo clean --doc",
         "format": "cargo fmt",
         "lint": "cargo clippy --all-targets -- -D warnings",
-        "test": "cargo test --all-features"        
+        "test": "cargo test --all-features -- --test-threads=1"
     }
 }
