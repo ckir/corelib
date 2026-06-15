@@ -156,35 +156,40 @@ def display_menu():
     for choice in choices:
         print(f"{choice['letter']}: {choice['desc']}")
 
-while True:
-    display_menu()
-    try:
-        action = input("\nEnter the letter (Q to quit): ").strip().upper()
-    except EOFError:
-        break
+def main():
+    while True:
+        display_menu()
+        try:
+            action = input("\nEnter the letter (Q to quit): ").strip().upper()
+        except EOFError:
+            break
 
-    selected = next((c for c in choices if c['letter'] == action), None)
-    if not selected:
-        print("[CLI] Invalid action; try again.")
-        continue
-    
-    if selected['letter'] == 'Q':
-        print("[CLI] Quitting...")
-        sys.exit(0)
+        selected = next((c for c in choices if c['letter'] == action), None)
+        if not selected:
+            print("[CLI] Invalid action; try again.")
+            continue
 
-    if selected['letter'] == 'R':
-        build_rust_windows()
-    elif selected['letter'] == 'X':
-        build_rust_linux()
-    else:
-        cmd = selected.get('cmd')
-        if selected['letter'] == 'P': cmd = get_health_cmd()
-        elif selected['letter'] == 'E': cmd = get_release_cmd()
-        elif selected['letter'] == 'K': cmd = get_tag_push_cmd()
+        if selected['letter'] == 'Q':
+            print("[CLI] Quitting...")
+            sys.exit(0)
 
-        if cmd:
-            run_cmd(cmd)
+        if selected['letter'] == 'R':
+            build_rust_windows()
+        elif selected['letter'] == 'X':
+            build_rust_linux()
         else:
-            print("[CLI] Command not defined for this action.")
-    
-    input("\nPress Enter to continue...")
+            cmd = selected.get('cmd')
+            if selected['letter'] == 'P': cmd = get_health_cmd()
+            elif selected['letter'] == 'E': cmd = get_release_cmd()
+            elif selected['letter'] == 'K': cmd = get_tag_push_cmd()
+
+            if cmd:
+                run_cmd(cmd)
+            else:
+                print("[CLI] Command not defined for this action.")
+
+        input("\nPress Enter to continue...")
+
+
+if __name__ == "__main__":
+    main()
