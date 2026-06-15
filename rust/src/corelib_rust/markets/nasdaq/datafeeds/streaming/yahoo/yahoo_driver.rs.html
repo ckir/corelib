@@ -589,13 +589,16 @@
 <a href=#589 id=589 data-nosnippet>589</a>            note_undecodable(<span class="string">"yahoo"</span>, <span class="number">42</span>);
 <a href=#590 id=590 data-nosnippet>590</a>        });
 <a href=#591 id=591 data-nosnippet>591</a>        <span class="kw">let </span>out = String::from_utf8(sink.lock().unwrap().clone()).unwrap();
-<a href=#592 id=592 data-nosnippet>592</a>        <span class="macro">assert!</span>(out.contains(<span class="string">"bytes=42"</span>), <span class="string">"log must carry the byte length: {out}"</span>);
-<a href=#593 id=593 data-nosnippet>593</a>        <span class="macro">assert!</span>(
-<a href=#594 id=594 data-nosnippet>594</a>            out.contains(<span class="string">"undecodable frame skipped"</span>),
-<a href=#595 id=595 data-nosnippet>595</a>            <span class="string">"log must carry the message: {out}"
-<a href=#596 id=596 data-nosnippet>596</a>        </span>);
-<a href=#597 id=597 data-nosnippet>597</a>        <span class="comment">// Redaction is STRUCTURAL: note_undecodable takes only `usize`, so it cannot
-<a href=#598 id=598 data-nosnippet>598</a>        // log frame contents. This test pins the message + length shape.
-<a href=#599 id=599 data-nosnippet>599</a>    </span>}
-<a href=#600 id=600 data-nosnippet>600</a>}
+<a href=#592 id=592 data-nosnippet>592</a>        <span class="macro">assert!</span>(
+<a href=#593 id=593 data-nosnippet>593</a>            out.contains(<span class="string">"bytes=42"</span>),
+<a href=#594 id=594 data-nosnippet>594</a>            <span class="string">"log must carry the byte length: {out}"
+<a href=#595 id=595 data-nosnippet>595</a>        </span>);
+<a href=#596 id=596 data-nosnippet>596</a>        <span class="macro">assert!</span>(
+<a href=#597 id=597 data-nosnippet>597</a>            out.contains(<span class="string">"undecodable frame skipped"</span>),
+<a href=#598 id=598 data-nosnippet>598</a>            <span class="string">"log must carry the message: {out}"
+<a href=#599 id=599 data-nosnippet>599</a>        </span>);
+<a href=#600 id=600 data-nosnippet>600</a>        <span class="comment">// Redaction is STRUCTURAL: note_undecodable takes only `usize`, so it cannot
+<a href=#601 id=601 data-nosnippet>601</a>        // log frame contents. This test pins the message + length shape.
+<a href=#602 id=602 data-nosnippet>602</a>    </span>}
+<a href=#603 id=603 data-nosnippet>603</a>}
 </code></pre></div></section></main></body></html>
