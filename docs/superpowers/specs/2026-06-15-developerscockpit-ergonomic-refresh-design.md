@@ -50,18 +50,18 @@ Four tiers, ordered by how often you reach for them (agy's velocity grouping):
 ```
  DEVELOPERS COCKPIT  v0.1.17   runtime=node
  ── [1] INNER LOOP ──────────────────────────────
-   W  Watch all              pnpm watch-all
-   B  Build all              pnpm build-all
+   W  Watch all              pnpm run watch-all
+   B  Build all              pnpm run build-all
    R  Build Rust (local)     napi build:local → copy to ts-core   [handler]
-   F  Format all             pnpm format-all                      (mutates)
+   F  Format all             pnpm run format-all                      (mutates)
  ── [2] QUALITY GATE ────────────────────────────
-   Y  Verify fast       ★    pnpm verify:fast   (format+lint+typecheck; mutates)
-   N  Typecheck         ★    pnpm typecheck-all (no mutation)
-   L  Lint all               pnpm lint-all                        (mutates)
-   T  Unit tests             pnpm test-all:run
+   Y  Verify fast       ★    pnpm run verify:fast   (format+lint+typecheck; mutates)
+   N  Typecheck         ★    pnpm run typecheck-all (no mutation)
+   L  Lint all               pnpm run lint-all                        (mutates)
+   T  Unit tests             pnpm run test-all:run
    U  Rust tests        ⚙    cargo test --manifest-path rust/Cargo.toml -- --test-threads=1
-   I  Integration tests ★    pnpm test:integration
-   J  Verify full       ★    pnpm verify:full   (build + test)
+   I  Integration tests ★    pnpm run test:integration
+   J  Verify full       ★    pnpm run verify:full   (build + test)
  ── [3] SHIP & RELEASE ──────────────────────────
    X  Build Rust (Linux)     docker (Dockerfile.linux → cloud dist)  [handler]
    V  Version bump      ⚙    lockstep bump of all 5 manifests        [handler]
@@ -71,8 +71,8 @@ Four tiers, ordered by how often you reach for them (agy's velocity grouping):
    G  Verify release          pwsh TestRelease.ps1
  ── [4] HOUSEKEEPING ────────────────────────────
    P  Health check           tool versions                          [handler]
-   C  Clean all              pnpm clean-all
-   D  Docs                   pnpm docs
+   C  Clean all              pnpm run clean-all
+   D  Docs                   pnpm run docs
    A  Dependency graph (SVG) npx depcruise … | dot -T svg
    Q  Quit
 ```
@@ -83,20 +83,22 @@ Four tiers, ordered by how often you reach for them (agy's velocity grouping):
 
 | Item | Old | New |
 |---|---|---|
-| W Watch | `pnpm -r run watch --parallel` | `pnpm watch-all` |
-| B Build | `pnpm -r run build` | `pnpm build-all` |
-| F Format | `pnpm -r run format` | `pnpm format-all` |
-| L Lint | `pnpm -r run lint` | `pnpm lint-all` |
-| T Unit tests | `pnpm -r run test` (watch) | `pnpm test-all:run` (one-shot) |
+| W Watch | `pnpm -r run watch --parallel` | `pnpm run watch-all` |
+| B Build | `pnpm -r run build` | `pnpm run build-all` |
+| F Format | `pnpm -r run format` | `pnpm run format-all` |
+| L Lint | `pnpm -r run lint` | `pnpm run lint-all` |
+| T Unit tests | `pnpm -r run test` (watch) | `pnpm run test-all:run` (one-shot) |
 | U Rust tests | `cargo test --manifest-path rust/Cargo.toml` | **+ ` -- --test-threads=1`** (mandatory) |
-| Y Verify fast | — | `pnpm verify:fast` ★ |
-| N Typecheck | — | `pnpm typecheck-all` ★ |
-| I Integration | — | `pnpm test:integration` ★ |
-| J Verify full | — | `pnpm verify:full` ★ |
+| Y Verify fast | — | `pnpm run verify:fast` ★ |
+| N Typecheck | — | `pnpm run typecheck-all` ★ |
+| I Integration | — | `pnpm run test:integration` ★ |
+| J Verify full | — | `pnpm run verify:full` ★ |
 | V Version bump | `pnpm -r run version patch` (broken) | lockstep handler (4.4) |
 | E Local package | `{files.split()}` list-repr bug | fixed builder (4.5) |
 | M Lint to file | `pnpm -r run lint --fix > …` | **dropped** |
 | C/D/A/H/G/K/P/R/X | (unchanged or already correct) | kept; R/X/P/K builders retained |
+
+**pnpm invocation convention (REQUIRED):** always `pnpm run <script>`, never bare `pnpm <script>`. `pnpm docs` invokes pnpm's built-in *open-package-homepage* command (opens npmjs in a browser) instead of the `docs` script — the original cockpit correctly used `pnpm run docs`. Explicit `run` avoids this and every other built-in-name collision. All script rows above and the menu use `pnpm run …` accordingly.
 
 ### 4.4 Version bump (`V`) — lockstep handler
 
