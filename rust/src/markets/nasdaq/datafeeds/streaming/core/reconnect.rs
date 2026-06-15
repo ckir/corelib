@@ -69,7 +69,7 @@ mod tests {
         };
         let d = p.next_delay(0).as_secs_f64();
         assert!(
-            d >= 5.0 && d <= 10.0,
+            (5.0..=10.0).contains(&d),
             "jittered delay {d} out of 0.5..1.0x range"
         );
     }
