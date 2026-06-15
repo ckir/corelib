@@ -53,16 +53,28 @@ sequencing of 4 subprojects"). Five subprojects, each its own spec → plan → 
      prerequisite when revived: **Phase A — extract `corelib-streaming` (napi-free engine), `corelib-rust`
      becomes a thin `#[napi]` adapter** (valuable to corelib on its own merits — a testable, cleanly
      layered engine; mind the dual-mode raw-payload `#[napi(object)]` seam).
+   - **Streaming Engine Epic — CONSOLIDATED (2026-06-15; agy `CONSOLIDATE-BUT-KEEP-SPEC-ADD-COMPANION`).**
+     The streaming leftovers are now ONE Epic, sequenced **Phase A → (Finnhub-resume, Yahoo-log) → interop closure**:
+     - **Phase A (module boundary) — SPEC + PLAN committed, NOT yet implemented (2026-06-15):** napi-free
+       engine/adapter boundary in-place (cfg_attr wire seam + `compile_error!` guard + boundary lint +
+       pure-Rust loopback delivery tests for all 3 providers). Spec
+       `docs/superpowers/specs/2026-06-15-phase-a-streaming-engine-module-boundary-design.md`; plan
+       `docs/superpowers/plans/2026-06-15-phase-a-streaming-engine-module-boundary.md` (6 tasks, subagent-driven).
+     - **Phase B (companion — spec PENDING):** the Node↔Rust loopback mock server (the *real* cross-runtime
+       interop closure that Phase A's Rust-only loopback does NOT cover) + Finnhub reconnect-resume + Yahoo
+       undecodable-frame debug-log (the two driver follow-ups below). Sequenced after A so the exonerated
+       engine shrinks the interop search space; the Epic stays OPEN until interop closure.
+     - **Crate lift** (`corelib-streaming`, napi-free) stays deferred until finstream is prioritized.
    - *Deferred (Phase 2a plan-pass, agy):* **Finnhub reconnect-resume of in-session subscriptions.** Finnhub
      resumes from the `symbols` snapshot passed at `start()`, so dynamic subscribes added mid-session are lost
      on reconnect (pre-existing Phase 1 behavior — not a 2a regression). Apply the same redb-fresh-read pattern
      `AlpacaDriver` uses (driver holds the host `Arc<Database>` handle, reads persisted subs each `connect_once`)
-     to `FinnhubDriver`. Revive when Finnhub reconnect-durability matters.
+     to `FinnhubDriver`. Revive when Finnhub reconnect-durability matters. **→ folded into Streaming Engine Epic Phase B.**
    - *Deferred (Phase 2b convergent review, agy 🟢):* **Debug-log undecodable Yahoo frames.** The new
      `YahooDriver` silently skips frames `parse_yahoo_message` can't decode (consistent with how
      Alpaca/Finnhub behave on the shared engine; the old bespoke Yahoo streamer trace-logged them).
      Add a debug-level fallback log in the driver pump when the mapper returns `None` for plain text.
-     Revive when diagnosing a Yahoo wire-protocol change.
+     Revive when diagnosing a Yahoo wire-protocol change. **→ folded into Streaming Engine Epic Phase B.**
 3. **(c) Integration / e2e tests — COMPLETE** (2026-06-13, merged to `main` commit `71ec1dd`, branch
    `feat/integration-test-tier`): exhaustive CI-only integration tier from
    `docs/superpowers/specs/2026-06-12-integration-tests-design.md` (PLAN-READY after 3 agy passes;
@@ -101,7 +113,8 @@ than one global audit.
   recorded frames deterministically. *Why deferred:* MSW cannot intercept FFI-driven sockets, so v1
   covers streaming in the opt-in live tier only. *Revive when:* deterministic streaming coverage is
   needed in CI; first verify the Rust streamer accepts an endpoint override. *(agy highest-conviction
-  suggestion, 2026-06-12.)*
+  suggestion, 2026-06-12.)* **→ folded into Streaming Engine Epic Phase B — this IS the cross-runtime
+  interop closure. The endpoint-override prerequisite is now SATISFIED: all 3 drivers expose `base_url`.**
 
 ## Tooling / dev-workflow
 
@@ -126,9 +139,8 @@ than one global audit.
   - *Port in flight:* the same Part A is being ported to **MarketMonitor** (its 4-cell matrix with the
     ~18-min Linux corelib-Rust compile + Playwright e2e is a bigger pre-flight win); agy divergent brief
     queued in `MarketMonitor/CLAUDE-TO-ANTIGRAVITY.md` (2026-06-13). Part B is already global — no port.
-- **Tighten the rust lint gate** — `lint-all` currently runs `cargo clippy` (warn-only via the rust
-  package's `lint` script). *Revive when:* the crate is warning-clean and ready for
-  `cargo clippy -- -D warnings` in the fast loop.
+- ✅ **Tighten the rust lint gate — DONE (Epic 5, 2026-06-15).** The rust gate now runs
+  `cargo clippy --all-targets -- -D warnings` (lefthook `format-lint` + CI); the crate is warning-clean.
 
 ## Audit findings (2026-06-13)
 
@@ -186,6 +198,6 @@ Clusters ordered by max severity (high → medium → low):
 
 - ✅ **Cross-process redb file-lock collision** — races/edge · **VALIDATED & CLOSED (Epic 2)** — `probes/rust/tests/redb_cross_process.rs` spawns a 2nd process opening a redb path held by the 1st; empirically confirmed redb takes an OS-level cross-process lock on Windows → the 2nd open returns `Err(HostError::DbOpen)` ("Database already open. Cannot acquire lock."), **no abort cascade** (a `#[cfg(windows)]` assert guards against regression; the universal no-abort invariant holds on all OSes). Validates `engine-redb-open-expect-abort-01`'s fix under a real multi-process race.
 
-- **FFI backpressure / event-loop starvation under market-data flood** — perf · unprobed: under a peak pricing burst while the JS event loop is briefly blocked, the TSFN queue buffers frames; memory limits + latency degradation + whether the Rust client applies TCP backpressure (vs OOM) are unknown.
+- **FFI backpressure / event-loop starvation under market-data flood** — perf · 🟡 **partially addressed (Epic 5)**: the streaming TSFN is now bounded (`max_queue_size=1024`, NonBlocking drop-on-overflow), removing the unbounded-buffer OOM risk under a burst. **Residual (unprobed):** the latency-degradation / drop-rate profile under sustained peak load, and whether the Rust client applies TCP backpressure. *Revive when:* a production burst shows drops or latency spikes.
 
-- **Long-running marshaling memory-leak profile** — perf/edge · unprobed: continuous per-tick JS string/buffer allocation across napi ref swaps risks V8 young-gen bloat; needs a multi-hour profiling harness (out of scope for a bounded audit).
+- ✅ **Long-running marshaling memory-leak profile — RESOLVED (Epic 5 soak, 2026-06-15): NOT a leak.** A soak run showed an allocator high-water plateau (RSS stabilizes; V8 heap flat) — the per-tick allocation churn does not accumulate. No multi-hour harness needed. *Revive only if* a future RSS-growth report contradicts the plateau.
