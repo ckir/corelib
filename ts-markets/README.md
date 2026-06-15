@@ -1,6 +1,9 @@
 # @ckir/corelib-markets
 
-Financial market utilities and data providers for the Corelib monorepo, featuring high-resilience wrappers for Nasdaq and real-time streaming via Yahoo Finance.
+Financial market utilities and data providers for the Corelib monorepo, featuring high-resilience wrappers for Nasdaq and real-time streaming via Alpaca, Finnhub, and Yahoo Finance.
+
+> [!IMPORTANT]
+> Not on the public npm registry — install from GitHub Releases. See the [root install guide](../README.md#-installation-for-external-projects).
 
 ## Features
 
@@ -8,14 +11,17 @@ Financial market utilities and data providers for the Corelib monorepo, featurin
 - **Market Status & Scheduling**: Intelligent pollers and sleep-calculators based on market phases.
 - **Market Monitor**: Adaptive poller with heuristic fallback during API failures.
 - **CNN Fear & Greed Index**: Retrieval and filtering of the popular sentiment indicator.
-- **Nasdaq 100 Symbols**: Fast, cached access to the Nasdaq 10 constituent symbols.
-- **Yahoo Real-Time Streaming**: High-performance ticker streaming powered by Rust FFI.
+- **Nasdaq 100 Symbols**: Fast, cached access to the Nasdaq 100 constituent symbols.
+- **Real-Time Streaming**: Zero event-loop-blocking live feeds via Alpaca, Finnhub, and Yahoo Finance — the Rust WebSocket engine delivers data to JS via napi `ThreadsafeFunction`.
 - **Market Symbols**: Persistent symbol database with auto-refresh and environment-aware search sequencing.
 
 ## Installation
 
+Install from the GitHub Release — see the [root install guide](../README.md#-installation-for-external-projects) for package manager overrides (required because `@ckir/corelib` is a peer dependency also not on npm).
+
 ```bash
-pnpm add @ckir/corelib-markets
+# pnpm
+pnpm add https://github.com/ckir/corelib/releases/download/v0.1.17/ckir-corelib-markets-0.1.17.tgz
 ```
 
 ## Usage Examples
@@ -113,7 +119,109 @@ if (result.status === 'success') {
 }
 ```
 
-### 5. Nasdaq 100 Symbols
+### 5. Real-Time Streaming (Rust WS Engine)
+
+The flagship feature of `@ckir/corelib-markets`. All three streaming providers share the same architecture:
+
+**Architecture:** The Rust crate owns the WebSocket connection. Data arrives on a Rust worker thread and is forwarded to JS via napi `ThreadsafeFunction` — the JS event loop is never blocked. Each wrapper is a standard Node.js `EventEmitter`. Construction is synchronous (calls into the native addon); `init()` + `start()` are async. Wrap `new XxxStreaming()` in `try/catch`.
+
+#### Alpaca (authenticated; IEX real-time feed)
+
+```typescript
+import { AlpacaStreaming } from '@ckir/corelib-markets';
+
+const stream = new AlpacaStreaming();
+
+// Credentials via init() or APCA_API_KEY_ID / APCA_API_SECRET_KEY env vars
+await stream.init({
+  keyId: 'YOUR_KEY',
+  secretKey: 'YOUR_SECRET',
+  silenceSeconds: 60,   // auto-reconnect after N seconds of silence (default: 60)
+  // dbPath: '/tmp/alpaca.redb'  // optional: override persistence DB path
+});
+
+await stream.start();
+
+// Simple array → mapped to quotes channel; or pass { trades?, quotes?, bars? }
+stream.subscribe(['AAPL', 'TSLA', 'NVDA']);
+
+stream.on('pricing', (data) => {
+  console.log(`${data.symbol}: $${data.price}`);
+});
+stream.on('market',       (event) => console.log('market event', event));
+stream.on('connected',    ()      => console.log('connected'));
+stream.on('disconnected', ()      => console.log('disconnected'));
+stream.on('reconnecting', ()      => console.log('reconnecting'));
+stream.on('log',          (r)     => console.log(`[${r.level}] ${r.msg}`));
+stream.on('error',        (e)     => console.error('error', e));
+
+// stream.unsubscribe(['AAPL']);
+// stream.clean();   // wipe persistence DB (auto-runs in development mode)
+stream.stop();
+```
+
+#### Finnhub (authenticated; token required)
+
+```typescript
+import { FinnhubStreaming, type FinnhubPricingData } from '@ckir/corelib-markets';
+
+const stream = new FinnhubStreaming();
+
+// Token via init() or FINNHUB_API_KEY env var
+await stream.init({
+  token: 'YOUR_FINNHUB_API_KEY',
+  // name?: string     — optional label
+  // baseUrl?: string  — override WS endpoint
+});
+
+await stream.start();
+
+await stream.subscribe(['AAPL', 'MSFT', 'NVDA']);
+
+stream.on('pricing', (data: FinnhubPricingData) => {
+  // Payload fields are camelCase in JS (napi convention): messageType, not message_type.
+  // data.timestamp is a numeric epoch in milliseconds.
+  console.log(`[${data.messageType}] ${data.symbol}: $${data.price} @ ${data.timestamp}`);
+});
+stream.on('connected',    () => console.log('connected'));
+stream.on('disconnected', (r) => console.log('disconnected', r));
+stream.on('reconnecting', (d) => console.log('reconnecting', d));
+stream.on('log',          (r) => console.log(`[${r.level}] ${r.msg}`));
+stream.on('error',        (e) => console.error('error', e));
+
+await stream.stop();
+```
+
+#### Yahoo Finance (unauthenticated)
+
+```typescript
+import { YahooStreaming } from '@ckir/corelib-markets';
+
+const stream = new YahooStreaming();
+
+await stream.init({
+  silenceSeconds: 45,   // auto-reconnect threshold (default: 60)
+  // dbPath: '/tmp/yahoo_streaming.redb'
+});
+
+await stream.start();
+
+stream.subscribe(['AAPL', 'TSLA', 'NVDA', 'BTC-USD']);
+
+// Yahoo's raw payload is the proto-decoded JsPricingData: the ticker is `id` (not `symbol`).
+stream.on('pricing',          (data) => console.log(`${data.id}: $${data.price}`));
+stream.on('silence-reconnect', ()    => console.log('silent too long, reconnecting'));
+stream.on('connected',         ()    => console.log('connected'));
+stream.on('disconnected',      ()    => console.log('disconnected'));
+stream.on('error',             (e)   => console.error('error', e));
+
+// stream.clean();   // wipe persistence DB (auto-runs in development mode)
+stream.stop();
+```
+
+**Events emitted by all three:** `pricing`, `log` (`{level, msg, extras?}`), `connected`, `disconnected`, `reconnecting`, `error`. Alpaca/Yahoo also emit `market` (unified market event, parsed JSON object) and `silence-reconnect`.
+
+### 6. Nasdaq 100 Symbols
 Fast, cached retrieval of the Nasdaq 100 constituent symbols.
 
 ```typescript
@@ -123,103 +231,7 @@ const symbols = await getSymbolsTop100();
 console.log(`Nasdaq 100 constituents (${symbols.length}):`, symbols);
 ```
 
-### 5. Real-Time Streaming (FFI)
-High-performance ticker updates using the Rust bridge. Requires `@ckir/corelib` with FFI support.
-
-#### Yahoo Finance Stream
-```ts
-import { YahooStreaming } from '@ckir/corelib-markets';
-
-const stream = new YahooStreaming();
-
-// Initialize with a 45s silence threshold before auto-reconnect
-await stream.init({ silenceSeconds: 45 });
-await stream.start();
-
-// Subscribe to multiple symbols
-stream.subscribe(["AAPL", "TSLA", "NVDA", "BTC-USD"]);
-
-stream.on("pricing", (data) => {
-  console.log(`Price Update: ${data.symbol} = ${data.price}`);
-});
-
-stream.on("silence-reconnect", () => {
-  console.log("Yahoo stream silent for too long, reconnecting...");
-});
-
-// Clean up temporary session data (runs automatically in development mode)
-stream.clean();
-
-// Stop the stream
-stream.stop();
-```
-
-#### Alpaca Finance Stream
-```ts
-import { AlpacaStreaming } from '@ckir/corelib-markets';
-
-const stream = new AlpacaStreaming();
-
-// Initialize with optional credentials (or use APCA_API_KEY_ID / APCA_API_SECRET_KEY env vars)
-await stream.init({ 
-  keyId: "YOUR_KEY", 
-  secretKey: "YOUR_SECRET",
-  silenceSeconds: 60 
-});
-
-await stream.start();
-
-// Subscribe to symbols
-stream.subscribe(["AAPL", "MSFT"]);
-
-stream.on("pricing", (data) => {
-  console.log(`[${data.message_type}] ${data.symbol}: $${data.price}`);
-});
-
-stream.on("event", (event) => {
-  console.log(`Stream Event: ${event.type}`, event.data);
-});
-
-// Stop the stream
-stream.stop();
-```
-
-#### Finnhub Finance Stream
-```ts
-import { FinnhubStreaming } from '@ckir/corelib-markets';
-
-const stream = new FinnhubStreaming();
-
-// Initialize with optional token (falls back to FINNHUB_API_KEY env var)
-await stream.init({ token: "YOUR_FINNHUB_API_KEY" });
-
-await stream.start();
-
-// Subscribe to symbols
-stream.subscribe(["AAPL", "MSFT", "NVDA"]);
-
-stream.on("pricing", (data) => {
-  // data.timestamp is a numeric epoch in milliseconds
-  console.log(`[${data.message_type}] ${data.symbol}: $${data.price} (vol: ${data.volume}) @ ${data.timestamp}`);
-});
-
-// Connection lifecycle events
-stream.on("connected", () => console.log("Finnhub connected"));
-stream.on("disconnected", (reason) => console.log("Finnhub disconnected:", reason));
-stream.on("reconnecting", (detail) => console.log("Finnhub reconnecting:", detail));
-stream.on("error", (msg) => console.error("Finnhub error:", msg));
-
-stream.on("log", (record) => {
-  console.log(`[${record.level}] ${record.msg}`);
-});
-
-// Stop the stream
-await stream.stop();
-```
-
-Events emitted: `pricing` (`FinnhubPricingData`), `log` (`{level, msg, extras?}`), `connected`, `disconnected`, `reconnecting`, `error`. The `pricing` event's `timestamp` field is a numeric epoch in milliseconds (as provided by Finnhub).
-
-### 6. Persistent Symbol Database (MarketSymbols)
+### 7. Persistent Symbol Database (MarketSymbols)
 Automated Nasdaq symbol directory with auto-refresh and environment-aware search sequencing.
 
 #### Features
@@ -268,7 +280,7 @@ await symbols.refresh();
 await symbols.close();
 ```
 
-### 6. Resilient Nasdaq API
+### 8. Resilient Nasdaq API
 Low-level wrapper for custom Nasdaq API interactions.
 
 ```typescript
@@ -282,7 +294,7 @@ if (result.status === 'success') {
 }
 ```
 
-### 7. Integration with Core (Logging & Config)
+### 9. Integration with Core (Logging & Config)
 `ts-markets` is designed to seamlessly use the logging and configuration systems provided by `@ckir/corelib`.
 
 ```typescript
