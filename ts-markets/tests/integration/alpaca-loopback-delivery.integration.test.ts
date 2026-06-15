@@ -7,11 +7,12 @@
 // Dummy credentials only; never reads APCA_* env (cannot hit production).
 // =============================================
 import { tmpdir } from "node:os";
+import { isFfiAvailable } from "@ckir/corelib";
+import { AlpacaStreaming } from "@ckir/corelib-markets";
 import { afterEach, expect, it } from "vitest";
 // @ts-expect-error - JS harness, no types. If this path won't resolve under the
 // integration vitest project, copy the harness to ./_harness/ and import "./_harness/alpaca-loopback.mjs".
 import { AlpacaLoopbackServer } from "../../../probes/_harness/alpaca-loopback.mjs";
-import { AlpacaStreaming } from "@ckir/corelib-markets";
 
 let server: InstanceType<typeof AlpacaLoopbackServer> | undefined;
 let stream: AlpacaStreaming | undefined;
@@ -43,12 +44,15 @@ function waitFor(pred: () => boolean, timeoutMs: number): Promise<void> {
 	});
 }
 
-it("[b3.alpaca] a frame round-trips Node ws -> Rust -> on_pricing", async () => {
+// Requires the native FFI addon (AlpacaStreaming). Skip where it isn't loaded —
+// e.g. the offline pre-flight integration sweep, which doesn't build/copy the .node.
+// It still runs (and gates) in the matrix Integration job that builds the addon.
+it.skipIf(!isFfiAvailable())("[b3.alpaca] a frame round-trips Node ws -> Rust -> on_pricing", async () => {
 	server = new AlpacaLoopbackServer();
 	await server.listen();
 
 	stream = new AlpacaStreaming();
-	const pricing = new Promise<any>((res) => stream!.once("pricing", res));
+	const pricing = new Promise<any>((res) => stream?.once("pricing", res));
 
 	// dummy creds ONLY; temp db; baseUrl points at the loopback (never production).
 	const dbPath = `${tmpdir()}/b3_alpaca_${process.pid}_${Date.now()}.redb`;
@@ -62,12 +66,14 @@ it("[b3.alpaca] a frame round-trips Node ws -> Rust -> on_pricing", async () => 
 	await stream.start();
 
 	// Once the driver has authed + subscribed, the server marks it streaming-ready.
-	await waitFor(() => server!.streamingCount > 0, 10_000);
+	await waitFor(() => server?.streamingCount > 0, 10_000);
 	server.streamTradeAll("AAPL", 191.5);
 
 	const data = (await Promise.race([
 		pricing,
-		new Promise((_r, rej) => setTimeout(() => rej(new Error("no pricing in 10s")), 10_000)),
+		new Promise((_r, rej) =>
+			setTimeout(() => rej(new Error("no pricing in 10s")), 10_000),
+		),
 	])) as { symbol: string; messageType: string; price: number };
 
 	expect(data.symbol).toBe("AAPL");
