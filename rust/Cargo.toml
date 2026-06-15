@@ -39,8 +39,13 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 crossbeam-queue = "0.3"
 
 [features]
-default = ["finnhub"]
+default = ["finnhub", "napi"]
 finnhub = []
+# Gates the `#[napi(object)]` / `#[napi]` derive on the streaming WIRE types only.
+# Default-on: corelib-rust is the napi cdylib and always builds with it. The feature
+# exists to MARK the FFI seam and to make the future corelib-streaming crate lift
+# mechanical (that crate builds with `--no-default-features` -> napi-free wire structs).
+napi = []
 
 [dev-dependencies]
 wiremock = "0.6.5"

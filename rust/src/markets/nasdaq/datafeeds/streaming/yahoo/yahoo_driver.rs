@@ -10,6 +10,12 @@ use crate::markets::nasdaq::datafeeds::streaming::yahoo::yahoo_streaming_proto_h
 };
 use chrono::{DateTime, TimeZone, Utc};
 
+/// Length-only debug note for frames the mapper rejects. Takes ONLY the byte count —
+/// it is structurally impossible to leak the (base64-protobuf) frame contents.
+pub(crate) fn note_undecodable(provider: &str, bytes: usize) {
+    tracing::debug!(target: "corelib_rust::stream", provider, bytes, "undecodable frame skipped");
+}
+
 /// QuoteType discriminator for option instruments (proto enum `QuoteType::Option`).
 const QUOTE_TYPE_OPTION: i32 = 13;
 
@@ -233,6 +239,8 @@ impl ProviderDriver for YahooDriver {
                             silence.reset();
                             if let Some((raw, uni)) = parse_yahoo_message(&t, &self.name) {
                                 let _ = tx.send(CoreEvent::Pricing { raw: RawPricing::Yahoo(raw), uni }).await;
+                            } else {
+                                note_undecodable("yahoo", t.len());
                             }
                         }
                         Some(Ok(Message::Ping(p))) => { let _ = ws.send(Message::Pong(p)).await; }
@@ -447,5 +455,146 @@ mod driver_tests {
         let mut subs = d.load_subscriptions();
         subs.sort();
         assert_eq!(subs, vec!["AAPL".to_string(), "BTC-USD".to_string()]);
+    }
+}
+
+#[cfg(test)]
+mod loopback_tests {
+    use super::*;
+    use crate::markets::nasdaq::datafeeds::streaming::core::driver::SubRequest;
+    use crate::markets::nasdaq::datafeeds::streaming::core::types::{CoreEvent, RawPricing};
+    use crate::markets::nasdaq::datafeeds::streaming::yahoo::yahoo_streaming_proto_handler::PricingData;
+    use base64::{engine::general_purpose, Engine as _};
+    use futures_util::SinkExt;
+    use prost::Message as _;
+    use std::time::Duration;
+    use tokio::net::TcpListener;
+    use tokio::sync::mpsc;
+    use tokio_tungstenite::{accept_async, tungstenite::Message};
+
+    fn text(s: &str) -> Message {
+        Message::Text(s.to_string().into())
+    }
+
+    /// Empty temp redb (Yahoo sends no subscribe when there are no persisted symbols;
+    /// the server pushes a pricing frame immediately).
+    fn tmp_db() -> Arc<redb::Database> {
+        let path = std::env::temp_dir().join(format!(
+            "test_yahoo_loop_{}_{}.redb",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        Arc::new(redb::Database::create(path).unwrap())
+    }
+
+    /// Minimal Yahoo WS server: push one base64-protobuf pricing envelope. No auth.
+    async fn serve_yahoo(listener: TcpListener) {
+        if let Ok((stream, _)) = listener.accept().await {
+            let mut ws = accept_async(stream).await.expect("ws accept");
+            let p = PricingData {
+                id: "AAPL".into(),
+                price: 191.5,
+                time: 1_700_000_000_000,
+                quote_type: 8,
+                ..Default::default()
+            };
+            let mut buf = Vec::new();
+            p.encode(&mut buf).unwrap();
+            let b64 = general_purpose::STANDARD.encode(&buf);
+            let env = serde_json::json!({ "type": "pricing", "message": b64 }).to_string();
+            ws.send(text(&env)).await.unwrap();
+            tokio::time::sleep(Duration::from_millis(300)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn pure_rust_loopback_delivers_yahoo_pricing() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(serve_yahoo(listener));
+
+        let driver = YahooDriver {
+            name: "yahoo".into(),
+            base_url: Some(format!("ws://127.0.0.1:{port}")),
+            silence_seconds: 60,
+            db: tmp_db(),
+            table: "yahoo_subscriptions",
+        };
+        let (tx, mut rx) = mpsc::channel::<CoreEvent>(64);
+        let (_sub_tx, mut sub_rx) = mpsc::channel::<SubRequest>(8);
+        let (_stop_tx, mut stop_rx) = mpsc::channel::<()>(1);
+
+        let connect = driver.connect_once(&[] as &[String], &tx, &mut sub_rx, &mut stop_rx);
+        tokio::pin!(connect);
+
+        let got = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                tokio::select! {
+                    _ = &mut connect => return None,
+                    ev = rx.recv() => match ev {
+                        Some(CoreEvent::Pricing { raw: RawPricing::Yahoo(p), .. }) => return Some(p),
+                        Some(_) => continue, // skip Status(Connected)
+                        None => return None,
+                    },
+                }
+            }
+        })
+        .await
+        .expect("timed out waiting for pricing");
+
+        let p = got.expect("driver ended before delivering a pricing event");
+        assert_eq!(p.id, "AAPL");
+        assert_eq!(p.price, 191.5);
+    }
+}
+
+#[cfg(test)]
+mod undecodable_log_tests {
+    use super::note_undecodable;
+    use std::io::Write;
+    use std::sync::{Arc, Mutex};
+    use tracing_subscriber::fmt::MakeWriter;
+
+    #[derive(Clone)]
+    struct VecWriter(Arc<Mutex<Vec<u8>>>);
+    impl Write for VecWriter {
+        fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(b);
+            Ok(b.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    impl<'a> MakeWriter<'a> for VecWriter {
+        type Writer = VecWriter;
+        fn make_writer(&'a self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
+    #[test]
+    fn undecodable_logs_length_only_message() {
+        let sink = Arc::new(Mutex::new(Vec::<u8>::new()));
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(VecWriter(Arc::clone(&sink)))
+            .with_max_level(tracing::Level::DEBUG)
+            .without_time()
+            .with_ansi(false)
+            .finish();
+        tracing::subscriber::with_default(subscriber, || {
+            note_undecodable("yahoo", 42);
+        });
+        let out = String::from_utf8(sink.lock().unwrap().clone()).unwrap();
+        assert!(out.contains("bytes=42"), "log must carry the byte length: {out}");
+        assert!(
+            out.contains("undecodable frame skipped"),
+            "log must carry the message: {out}"
+        );
+        // Redaction is STRUCTURAL: note_undecodable takes only `usize`, so it cannot
+        // log frame contents. This test pins the message + length shape.
     }
 }

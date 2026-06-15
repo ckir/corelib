@@ -440,3 +440,102 @@ mod driver_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod loopback_tests {
+    use super::*;
+    use crate::markets::nasdaq::datafeeds::streaming::core::driver::SubRequest;
+    use crate::markets::nasdaq::datafeeds::streaming::core::types::{CoreEvent, RawPricing};
+    use futures_util::{SinkExt, StreamExt};
+    use std::time::Duration;
+    use tokio::net::TcpListener;
+    use tokio::sync::mpsc;
+    use tokio_tungstenite::{accept_async, tungstenite::Message};
+
+    fn text(s: &str) -> Message {
+        Message::Text(s.to_string().into())
+    }
+
+    /// Temp redb seeded with one quote subscription so the driver emits an initial subscribe.
+    fn tmp_db_seeded() -> Arc<redb::Database> {
+        let path = std::env::temp_dir().join(format!(
+            "test_alpaca_loop_{}_{}.redb",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let db = redb::Database::create(path).unwrap();
+        let t: redb::TableDefinition<&str, bool> =
+            redb::TableDefinition::new("alpaca_subscriptions");
+        let w = db.begin_write().unwrap();
+        {
+            let mut tab = w.open_table(t).unwrap();
+            tab.insert("quotes:AAPL", true).unwrap();
+        }
+        w.commit().unwrap();
+        Arc::new(db)
+    }
+
+    /// Minimal Alpaca WS server: connected → (read auth) → authenticated → (read subscribe) → one quote.
+    async fn serve_alpaca(listener: TcpListener) {
+        if let Ok((stream, _)) = listener.accept().await {
+            let mut ws = accept_async(stream).await.expect("ws accept");
+            ws.send(text(r#"[{"T":"success","msg":"connected"}]"#)).await.unwrap();
+            let _ = ws.next().await; // auth frame from driver
+            ws.send(text(r#"[{"T":"success","msg":"authenticated"}]"#)).await.unwrap();
+            let _ = ws.next().await; // subscribe frame from driver
+            ws.send(text(
+                r#"[{"T":"q","S":"AAPL","bp":191.0,"ap":192.0,"bs":1,"as":2,"t":"2024-01-02T15:00:00Z"}]"#,
+            ))
+            .await
+            .unwrap();
+            tokio::time::sleep(Duration::from_millis(300)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn pure_rust_loopback_delivers_alpaca_quote() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(serve_alpaca(listener));
+
+        let driver = AlpacaDriver {
+            name: "alpaca_main".into(),
+            base_url: Some(format!("ws://127.0.0.1:{port}")),
+            key_id: "k".into(),
+            secret_key: "s".into(),
+            silence_seconds: 60,
+            db: tmp_db_seeded(),
+            table: "alpaca_subscriptions",
+        };
+        let (tx, mut rx) = mpsc::channel::<CoreEvent>(64);
+        let (_sub_tx, mut sub_rx) = mpsc::channel::<SubRequest>(8);
+        let (_stop_tx, mut stop_rx) = mpsc::channel::<()>(1);
+
+        let connect = driver.connect_once(&[] as &[String], &tx, &mut sub_rx, &mut stop_rx);
+        tokio::pin!(connect);
+
+        let got = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                tokio::select! {
+                    _ = &mut connect => return None,
+                    ev = rx.recv() => match ev {
+                        Some(CoreEvent::Pricing { raw: RawPricing::Alpaca(p), .. }) => return Some(p),
+                        Some(_) => continue, // skip Status(Connected)
+                        None => return None,
+                    },
+                }
+            }
+        })
+        .await
+        .expect("timed out waiting for pricing");
+
+        let p = got.expect("driver ended before delivering a pricing event");
+        assert_eq!(p.symbol, "AAPL");
+        assert_eq!(p.message_type, "quote");
+        assert_eq!(p.bid_price, 191.0);
+        assert_eq!(p.ask_price, 192.0);
+    }
+}

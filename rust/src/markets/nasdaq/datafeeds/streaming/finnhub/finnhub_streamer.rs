@@ -257,6 +257,8 @@ impl FinnhubStreaming {
             token: g.token.clone(),
             name: g.name.clone(),
             base_url: g.base_url.clone(),
+            db: g.host.db_handle(), // driver reads persisted subs from redb on every (re)connect
+            table: g.host.table_name(),
         };
         let symbols = g.host.get_persisted_subscriptions(); // resume-on-restart (redb)
                                                             // Arc-clone the TSFNs so the pump closure can hold them (TSFN is Send+Sync, not Clone).
