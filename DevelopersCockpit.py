@@ -4,10 +4,13 @@
 # =============================================
 
 import os
+import re
 import subprocess
 import sys
 import json
 import platform
+from dataclasses import dataclass
+from typing import Callable, Optional
 
 # Detect OS for command separators
 IS_WINDOWS = platform.system() == "Windows"
@@ -40,29 +43,89 @@ def get_current_version():
         pass
     return "0.1.0"
 
+
+VERSION_JSON_FILES = [
+    "package.json",
+    os.path.join("ts-core", "package.json"),
+    os.path.join("ts-markets", "package.json"),
+    os.path.join("ts-cloud", "package.json"),
+]
+VERSION_CARGO_FILE = os.path.join("rust", "Cargo.toml")
+VERSION_README_FILE = "README.md"
+
+
+def next_version(current, level):
+    """Compute the next semver. Raises ValueError on a bad level."""
+    major, minor, patch = (int(x) for x in current.split("."))
+    if level == "major":
+        return f"{major + 1}.0.0"
+    if level == "minor":
+        return f"{major}.{minor + 1}.0"
+    if level == "patch":
+        return f"{major}.{minor}.{patch + 1}"
+    raise ValueError(f"unknown bump level: {level}")
+
+
+def _bump_json_version(path, old, new):
+    """Replace the first `"version": "old"` (format-preserving). Returns #changes."""
+    with open(path, "r", encoding="utf-8") as f:
+        text = f.read()
+    pattern = r'("version"\s*:\s*)"' + re.escape(old) + r'"'
+    new_text, n = re.subn(pattern, r'\g<1>"' + new + '"', text, count=1)
+    if n:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(new_text)
+    return n
+
+
+def _bump_cargo_version(path, old, new):
+    """Replace the first `version = "old"` line under [package]. Space-invariant +
+    preserves the original prefix/spacing. Returns #changes."""
+    with open(path, "r", encoding="utf-8") as f:
+        text = f.read()
+    pattern = r'(?m)^(\s*version\s*=\s*)"' + re.escape(old) + r'"'
+    new_text, n = re.subn(pattern, r'\g<1>"' + new + '"', text, count=1)
+    if n:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(new_text)
+    return n
+
+
+def _bump_readme_version(path, old, new):
+    """Bump the install/release-URL refs only: `v<old>` (not followed by a digit, so
+    `v0.1.17` never clobbers a `v0.1.170`) and `-<old>.tgz`. Returns #changes."""
+    with open(path, "r", encoding="utf-8") as f:
+        text = f.read()
+    v_pat = r'v' + re.escape(old) + r'(?!\d)'
+    tgz_pat = r'-' + re.escape(old) + r'\.tgz'
+    n = len(re.findall(v_pat, text)) + len(re.findall(tgz_pat, text))
+    text = re.sub(v_pat, f'v{new}', text)
+    text = re.sub(tgz_pat, f'-{new}.tgz', text)
+    if n:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+    return n
+
+
+def bump_version(level):
+    """Lockstep-bump the version across the explicit target set (4 package.json +
+    Cargo.toml + README install refs). NEVER touches historical/planning docs.
+    Returns (old, new, {path: change_count}). Does not git-commit/tag."""
+    old = get_current_version()
+    new = next_version(old, level)
+    changed = {}
+    for p in VERSION_JSON_FILES:
+        if os.path.exists(p):
+            changed[p] = _bump_json_version(p, old, new)
+    if os.path.exists(VERSION_CARGO_FILE):
+        changed[VERSION_CARGO_FILE] = _bump_cargo_version(VERSION_CARGO_FILE, old, new)
+    if os.path.exists(VERSION_README_FILE):
+        changed[VERSION_README_FILE] = _bump_readme_version(VERSION_README_FILE, old, new)
+    return old, new, changed
+
+
 config = load_env()
 
-choices = [
-    {'letter': 'P', 'desc': 'Check Prerequisites & Health'},
-    {'letter': 'C', 'desc': 'Clean project & Reinstall Prerequisites (Fresh Start)', 'cmd': 'pnpm run clean-all'},
-    {'letter': 'W', 'desc': 'Watch TypeScript', 'cmd': 'pnpm -r run watch --parallel'},
-    {'letter': 'B', 'desc': 'Build TypeScript', 'cmd': 'pnpm -r run build'},
-    {'letter': 'L', 'desc': 'Lint TypeScript Code', 'cmd': 'pnpm -r run lint'},
-    {'letter': 'M', 'desc': 'Lint to File', 'cmd': f'pnpm -r run lint --fix > lint-output.txt'},
-    {'letter': 'T', 'desc': 'Run Typescript Tests', 'cmd': 'pnpm -r run test'},
-    {'letter': 'R', 'desc': 'Build Rust (Windows/Local)', 'cmd': None},
-    {'letter': 'X', 'desc': 'Build Linux Rust FFI (via Docker for Cloud Deployment)', 'cmd': None},
-    {'letter': 'U', 'desc': 'Run Rust Tests', 'cmd': 'cargo test --manifest-path rust/Cargo.toml'},
-    {'letter': 'F', 'desc': 'Format Code', 'cmd': 'pnpm -r run format'},
-    {'letter': 'V', 'desc': 'Bump version', 'cmd': 'pnpm -r run version patch'},
-    {'letter': 'K', 'desc': 'Tag & Push Version to Origin', 'cmd': None},
-    {'letter': 'H', 'desc': 'Trigger GitHub Release Workflow', 'cmd': 'gh workflow run release.yml'},
-    {'letter': 'G', 'desc': 'Verify GitHub Release Assets', 'cmd': 'pwsh -ExecutionPolicy Bypass -File ./TestRelease.ps1'},
-    {'letter': 'D', 'desc': 'Generate Documentation', 'cmd': 'pnpm run docs'},
-    {'letter': 'A', 'desc': 'Analyze Module Dependencies (SVG)', 'cmd': 'npx depcruise --config .dependency-cruiser.js --output-type dot ts-core/src ts-markets/src ts-cloud/src | dot -T svg > full-modules.svg'},
-    {'letter': 'E', 'desc': 'Create Local release package (Zip/Tar)'},
-    {'letter': 'Q', 'desc': 'Quit', 'cmd': None},
-]
 
 def run_cmd(cmd, ignore_error=False):
     print(f"[CLI] Running: {cmd}")
@@ -133,58 +196,150 @@ def get_health_cmd():
     # Run tools individually so one failure doesn't stop the whole health check
     return f' {CMD_SEP} '.join([f'{t} || echo "[CLI] Tool {t.split()[0]} failed check"' for t in tools])
 
-def get_release_cmd():
-    platform_name = config.get('PLATFORM', 'linux').lower()
-    files = 'ts-core/dist ts-cloud/dist ts-markets/dist rust/target/release package.json LICENSE README.md'
-    if platform_name == 'windows' or IS_WINDOWS:
-        return f'pwsh -Command "Compress-Archive -Path {files.split()} -DestinationPath release.zip -Force"'
-    else:
-        return f'tar -czf release.tar.gz {files}'
+def make_release_cmd():
+    """Build a local release archive command. Filters to paths that exist (a missing
+    path hard-fails the archive). Windows uses pwsh (Compress-Archive is a cmdlet, not a
+    cmd.exe builtin); POSIX uses tar. Returns None if nothing to archive."""
+    candidates = [
+        "ts-core/dist", "ts-cloud/dist", "ts-markets/dist",
+        "rust/target/release", "package.json", "LICENSE", "README.md",
+    ]
+    existing = [f for f in candidates if os.path.exists(f)]
+    if not existing:
+        return None
+    if IS_WINDOWS:
+        quoted = ",".join(f"'{f}'" for f in existing)
+        inner = f"Compress-Archive -Path {quoted} -DestinationPath release.zip -Force"
+        return f'pwsh -NoProfile -NonInteractive -Command "{inner}"'
+    return f'tar -czf release.tar.gz {" ".join(existing)}'
 
 def get_tag_push_cmd():
     version = get_current_version()
     tag = f"v{version}"
     return f'git tag {tag} {CMD_SEP} git push origin {tag}'
 
-def display_menu():
-    config_str = ' | '.join([f"{k}={v}" for k, v in config.items()])
-    version = get_current_version()
-    title = f"Developers Cockpit [v{version}] [Config: {config_str}]"
-    print(f"\n[CLI] {title}")
-    print("-" * len(title))
-    print("Select an option:")
-    for choice in choices:
-        print(f"{choice['letter']}: {choice['desc']}")
+def health_check():
+    run_cmd(get_health_cmd(), ignore_error=True)
 
-while True:
-    display_menu()
-    try:
-        action = input("\nEnter the letter (Q to quit): ").strip().upper()
-    except EOFError:
-        break
 
-    selected = next((c for c in choices if c['letter'] == action), None)
-    if not selected:
-        print("[CLI] Invalid action; try again.")
-        continue
-    
-    if selected['letter'] == 'Q':
-        print("[CLI] Quitting...")
-        sys.exit(0)
-
-    if selected['letter'] == 'R':
-        build_rust_windows()
-    elif selected['letter'] == 'X':
-        build_rust_linux()
+def make_release():
+    cmd = make_release_cmd()
+    if cmd:
+        run_cmd(cmd)
     else:
-        cmd = selected.get('cmd')
-        if selected['letter'] == 'P': cmd = get_health_cmd()
-        elif selected['letter'] == 'E': cmd = get_release_cmd()
-        elif selected['letter'] == 'K': cmd = get_tag_push_cmd()
+        print("[CLI] No build artifacts found to package (run a build first).")
 
-        if cmd:
-            run_cmd(cmd)
-        else:
-            print("[CLI] Command not defined for this action.")
-    
-    input("\nPress Enter to continue...")
+
+def tag_and_push():
+    run_cmd(get_tag_push_cmd())
+
+
+def version_bump():
+    old = get_current_version()
+    print(f"[CLI] Current version: {old}")
+    level = input("[CLI] Bump level [patch/minor/major] (Enter=patch): ").strip().lower() or "patch"
+    if level not in ("patch", "minor", "major"):
+        print("[CLI] Invalid level; aborting bump.")
+        return
+    old, new, changed = bump_version(level)
+    print(f"[CLI] {old} -> {new}")
+    for path, count in changed.items():
+        print(f"[CLI]   {path}: {count} change(s)")
+    print("[CLI] Not committed/tagged — use 'K' to tag & push.")
+
+
+TIERS = ["INNER LOOP", "QUALITY GATE", "SHIP & RELEASE", "HOUSEKEEPING"]
+
+
+@dataclass
+class Action:
+    key: str
+    group: str
+    desc: str
+    cmd: Optional[str] = None
+    handler: Optional[Callable[[], None]] = None
+    note: str = ""
+
+
+ACTIONS = [
+    # [1] INNER LOOP
+    Action("W", "INNER LOOP", "Watch all", cmd="pnpm run watch-all"),
+    Action("B", "INNER LOOP", "Build all", cmd="pnpm run build-all"),
+    Action("R", "INNER LOOP", "Build Rust (local)", handler=build_rust_windows),
+    Action("F", "INNER LOOP", "Format all", cmd="pnpm run format-all", note="mutates"),
+    # [2] QUALITY GATE
+    Action("Y", "QUALITY GATE", "Verify fast (format+lint+typecheck)", cmd="pnpm run verify:fast", note="mutates"),
+    Action("N", "QUALITY GATE", "Typecheck all", cmd="pnpm run typecheck-all"),
+    Action("L", "QUALITY GATE", "Lint all", cmd="pnpm run lint-all", note="mutates"),
+    Action("T", "QUALITY GATE", "Unit tests", cmd="pnpm run test-all:run"),
+    Action("U", "QUALITY GATE", "Rust tests", cmd="cargo test --manifest-path rust/Cargo.toml -- --test-threads=1"),
+    Action("I", "QUALITY GATE", "Integration tests", cmd="pnpm run test:integration"),
+    Action("J", "QUALITY GATE", "Verify full (build+test)", cmd="pnpm run verify:full"),
+    # [3] SHIP & RELEASE
+    Action("X", "SHIP & RELEASE", "Build Rust (Linux/Docker)", handler=build_rust_linux),
+    Action("V", "SHIP & RELEASE", "Version bump (lockstep)", handler=version_bump),
+    Action("K", "SHIP & RELEASE", "Tag & push version", handler=tag_and_push),
+    Action("H", "SHIP & RELEASE", "Trigger GitHub release", cmd="gh workflow run release.yml"),
+    Action("E", "SHIP & RELEASE", "Local release package (zip/tar)", handler=make_release),
+    Action("G", "SHIP & RELEASE", "Verify release assets", cmd="pwsh -ExecutionPolicy Bypass -File ./TestRelease.ps1"),
+    # [4] HOUSEKEEPING
+    Action("P", "HOUSEKEEPING", "Health check (tool versions)", handler=health_check),
+    Action("C", "HOUSEKEEPING", "Clean & reinstall", cmd="pnpm run clean-all"),
+    Action("D", "HOUSEKEEPING", "Generate docs", cmd="pnpm run docs"),
+    Action("A", "HOUSEKEEPING", "Dependency graph (SVG)",
+           cmd="npx depcruise --config .dependency-cruiser.js --output-type dot ts-core/src ts-markets/src ts-cloud/src | dot -T svg > full-modules.svg"),
+    Action("Q", "HOUSEKEEPING", "Quit", handler=lambda: sys.exit(0)),
+]
+
+
+NO_COLOR = "NO_COLOR" in os.environ
+
+
+def _color(code, text):
+    if NO_COLOR or not sys.stdout.isatty():
+        return text
+    return f"\033[{code}m{text}\033[0m"
+
+
+def render_menu():
+    version = get_current_version()
+    config_str = " | ".join(f"{k}={v}" for k, v in config.items())
+    print()
+    banner = f"DEVELOPERS COCKPIT  v{version}"
+    if config_str:
+        banner += f"   [{config_str}]"
+    print(_color("1;36", banner))
+    for tier in TIERS:
+        header = f"-- [{TIERS.index(tier) + 1}] {tier} "
+        print(_color("1;33", header + "-" * max(4, 52 - len(header))))
+        for a in ACTIONS:
+            if a.group == tier:
+                note = _color("0;90", f"  ({a.note})") if a.note else ""
+                print(f"  {_color('1;32', a.key)}  {a.desc}{note}")
+
+
+def main():
+    while True:
+        render_menu()
+        try:
+            key = input("\nEnter the letter (Q to quit): ").strip().upper()
+        except EOFError:
+            break
+        action = next((a for a in ACTIONS if a.key == key), None)
+        if action is None:
+            print("[CLI] Invalid action; try again.")
+            continue
+        try:
+            if action.handler is not None:
+                action.handler()
+            else:
+                run_cmd(action.cmd)
+        except SystemExit:
+            raise
+        except Exception as e:  # keep the menu alive on any command error
+            print(f"[CLI] Error: {e}")
+        input("\nPress Enter to continue...")
+
+
+if __name__ == "__main__":
+    main()
