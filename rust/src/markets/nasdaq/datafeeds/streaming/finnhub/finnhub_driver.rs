@@ -64,6 +64,8 @@ use crate::markets::nasdaq::datafeeds::streaming::core::types::{CoreEvent, RawPr
 use crate::markets::nasdaq::datafeeds::streaming::finnhub::finnhub_streamer::market_event_to_finnhub_pricing;
 use futures::future::{BoxFuture, FutureExt};
 use futures_util::{SinkExt, StreamExt};
+use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
@@ -80,6 +82,27 @@ pub struct FinnhubDriver {
     pub token: String,
     pub name: String,
     pub base_url: Option<String>,
+    pub db: Arc<Database>,   // shared host redb handle (host.db_handle())
+    pub table: &'static str, // host.table_name() — "finnhub_subscriptions"
+}
+
+impl FinnhubDriver {
+    /// Read the FULL persisted bare-key subscription set from redb. Called on every (re)connect
+    /// so dynamic mid-session subscribes survive reconnects (single source of truth = redb).
+    pub fn load_subscriptions(&self) -> Vec<String> {
+        let table: TableDefinition<&str, bool> = TableDefinition::new(self.table);
+        let mut out = Vec::new();
+        if let Ok(rtx) = self.db.begin_read() {
+            if let Ok(t) = rtx.open_table(table) {
+                if let Ok(iter) = t.iter() {
+                    for item in iter.flatten() {
+                        out.push(item.0.value().to_string());
+                    }
+                }
+            }
+        }
+        out
+    }
 }
 
 impl ProviderDriver for FinnhubDriver {
@@ -106,7 +129,8 @@ impl ProviderDriver for FinnhubDriver {
             };
             // signal the supervisor to reset backoff
             let _ = tx.send(CoreEvent::Status(ProviderStatus::Connected { provider: ProviderKind::Finnhub })).await;
-            let mut current: Vec<String> = symbols.to_vec();
+            let _ = symbols; // resume is read fresh from redb each attempt (reconnect-safe)
+            let mut current: Vec<String> = self.load_subscriptions();
             for s in &current {
                 let m = serde_json::json!({ "type": "subscribe", "symbol": s }).to_string();
                 if ws.send(Message::Text(m.into())).await.is_err() { return AttemptOutcome::ConnectedThenDropped; }
@@ -185,6 +209,52 @@ mod tests {
             "ws://127.0.0.1:9001?token=TOK"
         );
     }
+
+    #[test]
+    fn load_subscriptions_reads_bare_keys_and_unsubscribe_drops() {
+        use std::sync::Arc;
+        let path = std::env::temp_dir().join(format!(
+            "test_finnhub_subs_{}_{}.redb",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let db = Arc::new(redb::Database::create(path).unwrap());
+        let t: redb::TableDefinition<&str, bool> =
+            redb::TableDefinition::new("finnhub_subscriptions");
+        // seed A + B
+        {
+            let w = db.begin_write().unwrap();
+            {
+                let mut tab = w.open_table(t).unwrap();
+                tab.insert("AAPL", true).unwrap();
+                tab.insert("MSFT", true).unwrap();
+            }
+            w.commit().unwrap();
+        }
+        let d = FinnhubDriver {
+            token: "tok".into(),
+            name: "finnhub_main".into(),
+            base_url: None,
+            db: Arc::clone(&db),
+            table: "finnhub_subscriptions",
+        };
+        let mut subs = d.load_subscriptions();
+        subs.sort();
+        assert_eq!(subs, vec!["AAPL".to_string(), "MSFT".to_string()]);
+        // unsubscribe MSFT (committed) must NOT resurrect on the next read
+        {
+            let w = db.begin_write().unwrap();
+            {
+                let mut tab = w.open_table(t).unwrap();
+                tab.remove("MSFT").unwrap();
+            }
+            w.commit().unwrap();
+        }
+        assert_eq!(d.load_subscriptions(), vec!["AAPL".to_string()]);
+    }
 }
 
 #[cfg(test)]
@@ -222,10 +292,25 @@ mod loopback_tests {
         let port = listener.local_addr().unwrap().port();
         tokio::spawn(serve_finnhub(listener));
 
+        let _db_path = std::env::temp_dir().join(format!(
+            "test_finnhub_loop_{}_{}.redb",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        let db = std::sync::Arc::new(redb::Database::create(_db_path).unwrap());
+        {
+            let t: redb::TableDefinition<&str, bool> = redb::TableDefinition::new("finnhub_subscriptions");
+            let w = db.begin_write().unwrap();
+            { let mut tab = w.open_table(t).unwrap(); tab.insert("AAPL", true).unwrap(); }
+            w.commit().unwrap();
+        }
+
         let driver = FinnhubDriver {
             token: "tok".into(),
             name: "finnhub_main".into(),
             base_url: Some(format!("ws://127.0.0.1:{port}/")),
+            db: std::sync::Arc::clone(&db),
+            table: "finnhub_subscriptions",
         };
         let (tx, mut rx) = mpsc::channel::<CoreEvent>(64);
         let (_sub_tx, mut sub_rx) = mpsc::channel::<SubRequest>(8);
@@ -253,5 +338,110 @@ mod loopback_tests {
         let p = got.expect("driver ended before delivering a pricing event");
         assert_eq!(p.symbol, "AAPL");
         assert_eq!(p.price, 191.5);
+    }
+}
+
+#[cfg(test)]
+mod resurrection_tests {
+    use super::*;
+    use crate::markets::nasdaq::datafeeds::streaming::core::driver::SubRequest;
+    use crate::markets::nasdaq::datafeeds::streaming::core::types::CoreEvent;
+    use futures_util::StreamExt;
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+    use tokio::net::TcpListener;
+    use tokio::sync::mpsc;
+    use tokio_tungstenite::{accept_async, tungstenite::Message};
+
+    /// Collects the `symbol` of every Finnhub `{"type":"subscribe","symbol":..}` frame.
+    async fn serve_collect(listener: TcpListener, collected: Arc<Mutex<Vec<String>>>) {
+        if let Ok((stream, _)) = listener.accept().await {
+            let mut ws = accept_async(stream).await.unwrap();
+            let deadline = tokio::time::sleep(Duration::from_millis(800));
+            tokio::pin!(deadline);
+            loop {
+                tokio::select! {
+                    _ = &mut deadline => break,
+                    msg = ws.next() => match msg {
+                        Some(Ok(Message::Text(t))) => {
+                            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&t) {
+                                if v["type"] == "subscribe" {
+                                    if let Some(s) = v["symbol"].as_str() {
+                                        collected.lock().unwrap().push(s.to_string());
+                                    }
+                                }
+                            }
+                        }
+                        Some(Ok(_)) => {}
+                        Some(Err(_)) | None => break,
+                    }
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn reconnect_after_unsubscribe_does_not_resurrect() {
+        let path = std::env::temp_dir().join(format!(
+            "test_finnhub_resurrect_{}_{}.redb",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let db = Arc::new(redb::Database::create(path).unwrap());
+        let tbl: redb::TableDefinition<&str, bool> =
+            redb::TableDefinition::new("finnhub_subscriptions");
+        // seed A + B, then unsubscribe B (committed delete) BEFORE the (re)connect.
+        {
+            let w = db.begin_write().unwrap();
+            {
+                let mut tab = w.open_table(tbl).unwrap();
+                tab.insert("AAPL", true).unwrap();
+                tab.insert("MSFT", true).unwrap();
+            }
+            w.commit().unwrap();
+        }
+        {
+            let w = db.begin_write().unwrap();
+            {
+                let mut tab = w.open_table(tbl).unwrap();
+                tab.remove("MSFT").unwrap();
+            }
+            w.commit().unwrap();
+        }
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let collected = Arc::new(Mutex::new(Vec::<String>::new()));
+        tokio::spawn(serve_collect(listener, Arc::clone(&collected)));
+
+        let driver = FinnhubDriver {
+            token: "tok".into(),
+            name: "finnhub_main".into(),
+            base_url: Some(format!("ws://127.0.0.1:{port}/")),
+            db: Arc::clone(&db),
+            table: "finnhub_subscriptions",
+        };
+        let (tx, _rx) = mpsc::channel::<CoreEvent>(64); // keep _rx alive so sends don't fail
+        let (_sub_tx, mut sub_rx) = mpsc::channel::<SubRequest>(8);
+        let (stop_tx, mut stop_rx) = mpsc::channel::<()>(1);
+        let connect = driver.connect_once(&[] as &[String], &tx, &mut sub_rx, &mut stop_rx);
+        tokio::pin!(connect);
+        // let it connect + send its initial subscribe, then stop the attempt.
+        tokio::select! {
+            _ = &mut connect => {}
+            _ = tokio::time::sleep(Duration::from_millis(500)) => {
+                let _ = stop_tx.try_send(());
+                let _ = (&mut connect).await;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        let got = collected.lock().unwrap().clone();
+        assert!(got.contains(&"AAPL".to_string()), "must resubscribe the survivor: {got:?}");
+        assert!(
+            !got.contains(&"MSFT".to_string()),
+            "must NOT resurrect the unsubscribed symbol: {got:?}"
+        );
     }
 }
