@@ -41,7 +41,9 @@ The Epic-5 gap is recorded in that probe (lines 25-30): in some environments `ST
 
 **Persistence semantics:** the facade's `subscribe`/`unsubscribe` must already persist to redb for resume to work; confirm during implementation that `FinnhubStreaming` writes subscriptions to the host table (Alpaca/Yahoo do). If it does not, add the persist write — that is part of this item.
 
-**Oracle:** a Rust driver test seeding redb + asserting `load_subscriptions()` returns the persisted bare keys (mirror `yahoo_driver.rs::driver_tests::load_subscriptions_reads_bare_keys`), plus a reconnect-resume assertion: persisted subs are re-sent on a second `connect_once`.
+**Unsubscribe-resurrection trap (required, agy convergent 🟡):** because `connect_once` reads redb fresh, an `unsubscribe` followed immediately by a reconnect must NOT resurrect the dropped symbol. The facade's `unsubscribe` redb delete must **commit synchronously before** the supervisor's next `connect_once` can read — i.e. the delete is a committed redb write-txn, not a lazy/async write. redb txns are synchronous + durable on `commit()`, so the requirement is simply that the facade commits the delete inline (matching Alpaca/Yahoo, which already use this fresh-read pattern). The plan must add a test for: persist A+B → unsubscribe B (commit) → second `connect_once` re-sends only A.
+
+**Oracle:** a Rust driver test seeding redb + asserting `load_subscriptions()` returns the persisted bare keys (mirror `yahoo_driver.rs::driver_tests::load_subscriptions_reads_bare_keys`); a reconnect-resume assertion (persisted subs re-sent on a second `connect_once`); and the unsubscribe-no-resurrection test above.
 
 ## 5. B2 (d) — Yahoo debug-log for undecodable frames
 
@@ -60,17 +62,17 @@ Some(Ok(Message::Text(t))) => {
 }
 ```
 
-**Oracle:** a focused assertion is awkward (it's a log side effect); acceptance is a code-review check that the `else` logs **length only** (no `t` contents, no base64) + the existing Yahoo tests stay green. This is the one item without a strong automated oracle; keep it minimal.
+**Oracle (automated — agy convergent 🟡, upgraded from code-review):** a Rust test using a capturing `tracing` subscriber (e.g. a custom `tracing_subscriber` layer collecting events, or `tracing-test` if added as a dev-dep) that drives an undecodable frame through the pump/mapper path and asserts: (1) exactly one `debug` event on target `corelib_rust::stream`; (2) the recorded `bytes` field equals the input length; (3) the captured event contains **no** substring of the original frame/base64 (redaction proof). This guards against a future refactor silently dropping the log or leaking contents.
 
 ## 6. B3 (b) — Node↔Rust cross-runtime interop closure (the load-bearing item)
 
 **Objective:** turn the existing non-asserting `AlpacaLoopbackServer` ↔ real-`AlpacaStreaming` path into a **deterministic, CI-gated** assertion that a known frame round-trips end-to-end with exact integrity — and fix whatever currently makes `RECEIVED=0` so it passes reliably.
 
-**Step 1 — Characterize (do this first, it may collapse the whole item).** Run the existing `transport-backpressure-child.mjs` / a minimal driver harness against a **release** `napi build` (the CI build profile) on Linux and Windows. Record `STREAM_READY` and `RECEIVED`. Two outcomes:
-- **(A) Release is clean** (`STREAM_READY=1`, `RECEIVED>0`): the Epic-5 `RECEIVED=0` was a **debug-build Windows tokio-timer artifact**, not a release defect. Then B3 reduces to *promotion* (Step 3) gated on the release binary, plus documenting the debug-build caveat.
-- **(B) Release still drops** (`RECEIVED=0`): a genuine interop defect → Step 2.
+**Step 0 — Config-mapping + secret guard (do before any networked run; agy convergent 🔴).** Verify that the `AlpacaStreaming` JS config's endpoint override (`baseUrl`) actually reaches the Rust `base_url` field (check the facade's config mapping / serde rename, as `finnhub-no-endpoint-override` did for Finnhub). **If the mapping is absent, the loopback test would silently connect to the production Alpaca endpoint** — a failure and a credential-exposure path. The mapping's existence is a precondition for Steps 1-3; adding it (if missing) is part of B3. The B3 test MUST construct `AlpacaStreaming` with **hardcoded dummy credentials** and MUST NOT read `APCA_*` env vars, so production keys cannot enter the test even if the override regressed.
 
-**Step 2 — Root-cause (only if outcome B).** With Phase A having exonerated the engine (the Rust driver delivers `CoreEvent`s against a Rust loopback), the fault is isolated to the napi/Node boundary. Investigate, in order of likelihood: the supervisor's reconnect/timer scheduling under the napi `tokio_rt`; the `ThreadsafeFunction` delivery (the bounded-1024 NonBlocking path from Epic 5) under the loopback's timing; the Node-`ws` ↔ tokio-tungstenite handshake/framing. **Time-box** the investigation (see Risks); the deliverable on a deep/won't-fix root cause is a documented finding + a `INTEGRATION_LIVE`-gated test, not an open-ended dig.
+**Step 1 — Characterize release vs debug.** Run the existing `transport-backpressure-child.mjs` / a minimal driver harness against BOTH a **release** `napi build` (the CI profile) AND a **debug** build, on Linux and Windows. Record `STREAM_READY` and `RECEIVED` for each. Possible findings: release-clean+debug-clean; release-clean+debug-stalls (the probe's recorded Windows hypothesis); or both-drop. Whichever profile drops, proceed to Step 2 — characterization scopes the dig, it does not end the item.
+
+**Step 2 — Root-cause the stall (REQUIRED whenever any profile drops; agy convergent 🔴).** Root-causing is **not** optional even if release is clean: the probe's hypothesis is a tokio-timer-driver stall after the first connection attempt on the Windows debug build, and timer/thread starvation across the napi boundary can be latent on release under load — and local developers iterate on debug builds, so a test that silently stalls there is a productivity trap. With Phase A having exonerated the engine (the Rust driver delivers `CoreEvent`s against a Rust loopback), the fault is isolated to the napi/Node boundary. Investigate, in order of likelihood: the supervisor's reconnect/timer scheduling under the napi `tokio_rt`; the `ThreadsafeFunction` delivery (the bounded-1024 NonBlocking path from Epic 5) under the loopback's timing; the Node-`ws` ↔ tokio-tungstenite handshake/framing. **Acceptable outcomes: (i) fix it, or (ii) positively identify it as a benign, documented profile-specific artifact** (e.g. a known napi-rs debug-build behaviour) — NOT "observe `RECEIVED=0` and add a caveat." **Time-box** the dig (see Risks); the time-box bounds the *fix effort*, not the requirement to understand the cause.
 
 **Step 3 — Promote to a deterministic CI test.** Add a new integration test under `ts-markets/tests/integration/` (sibling to `AlpacaStreaming.live.integration.test.ts`) that:
 1. Starts `AlpacaLoopbackServer` (reuse `probes/_harness/alpaca-loopback.mjs`).
@@ -78,11 +80,11 @@ Some(Ok(Message::Text(t))) => {
 3. Subscribes a symbol; the server streams one canned trade frame (`streamTradeAll("AAPL", …)` once `streamingCount > 0`).
 4. **Asserts** the `on_pricing` callback fires within a timeout with the exact payload (`symbol === "AAPL"`, expected price), and tears down cleanly (no leaked sockets/threads).
 
-This test runs in the **standard integration tier** (not `INTEGRATION_LIVE`-gated) so it gates CI — *that* is the interop closure. If Step 1 found the debug-build caveat, the test asserts against the release addon the CI matrix builds.
+This test runs in the **standard integration tier** (not `INTEGRATION_LIVE`-gated) so it gates CI — *that* is the interop closure. It asserts against the release addon the CI matrix builds; per Step 2 the debug-build behaviour must be fixed or positively explained, not merely caveated.
 
 **Determinism requirements:** bind `127.0.0.1:0`; wait on `streamingCount > 0` before streaming (no fixed sleeps); generous per-step timeouts; one canned frame; full teardown in `afterEach`/`finally`. Redaction: dummy keys only; assert on shapes/values, never log URLs-with-creds.
 
-**Acceptance for the Epic:** this CI test green on the matrix = `probe-harness-loopback-no-delivery` closed = the Streaming Engine Epic closes.
+**Acceptance for the Epic (agy convergent 🟡 — no bypass):** the Epic closes **only** when this deterministic test is green on the standard CI matrix **without** the `INTEGRATION_LIVE` bypass. The Step-2 time-box fallback (a documented finding + an `INTEGRATION_LIVE`-gated test) may unblock dependent work, but it leaves **B3 OPEN** — it is never a basis for declaring the Epic closed. The cross-runtime interop is the single highest-value deliverable of this Epic.
 
 ---
 
@@ -97,7 +99,7 @@ Phase A (boundary + pure-Rust loopback, engine exonerated)   ← prerequisite
                                             (depends on Phase A exoneration to isolate fault)
 ```
 
-B1 and B2 are independent and can land in either order. B3 **must** follow Phase A. The Epic does not close until B3 Step 3 is green in CI.
+B1 and B2 are independent and can land in either order. B3 **should follow Phase A's merge** — not for compilation (Phase A does not change the JS-facing API or the `AlpacaPricingData` shape, so B3 compiles against today's facade) but for the **fault-isolation leverage**: the merged pure-Rust loopback proves the engine delivers, so any B3 failure is the napi/Node boundary. The Epic does not close until B3 Step 3 is green on the standard CI matrix (no `INTEGRATION_LIVE` bypass).
 
 ## 8. Verification & gates
 
@@ -111,16 +113,18 @@ B1 and B2 are independent and can land in either order. B3 **must** follow Phase
 
 | Risk | Severity | Mitigation |
 |---|---|---|
-| **B3 root-cause balloons** (deep napi/tokio interop dig) | High | Phase A exoneration shrinks the search space; **time-box** Step 2; the fallback deliverable is a documented finding + `INTEGRATION_LIVE`-gated test, not infinite debugging. The Epic can ship B1/B2 + a characterized-but-gated B3 if the root cause is intractable now. |
-| Release is clean but debug stalls → false sense the harness is broken | Med | Step 1 explicitly tests the **release** profile (CI's build); document the debug-build caveat in the test. |
+| **B3 root-cause balloons** (deep napi/tokio interop dig) | High | Phase A exoneration shrinks the search space; **time-box the FIX effort** (not the requirement to understand the cause). If the fix is intractable now, the fallback is a documented finding + an `INTEGRATION_LIVE`-gated test that **unblocks dependent work but leaves B3/the Epic OPEN** — never a basis to close the Epic. |
+| Release clean but debug stalls silently → local-dev productivity trap | Med→High | Step 1 tests BOTH profiles; Step 2 **requires** fixing or positively explaining the debug stall — a caveat alone is not acceptable (agy 🔴). |
+| `baseUrl` override not mapped to Rust `base_url` → test hits PROD Alpaca | High (secret) | Step 0 verifies the mapping before any networked run; the test uses hardcoded dummy creds and never reads `APCA_*` env (agy 🔴). |
+| B1 unsubscribe-then-reconnect resurrects a dropped symbol | Med | Facade `unsubscribe` commits the redb delete **inline** before the supervisor can re-read (§4); covered by the no-resurrection test. |
 | B1 widens (facade doesn't persist subs) | Med | Confirm `FinnhubStreaming` persists to redb early; if not, the persist write is part of B1 (bounded). |
 | Loopback integration test flakiness (timing) | Med | Wait on `streamingCount > 0`; ephemeral port; generous timeouts; one canned frame; full teardown. |
-| B2 logs leak frame contents | Med (redaction) | Log **byte length only**; code-review gate. |
+| B2 logs leak frame contents | Med (redaction) | Log **byte length only**; automated tracing-capture test asserts no-contents (§5). |
 
 ## 10. Success criteria
 
 1. **B1:** `FinnhubDriver` reads subscriptions fresh from redb on every `connect_once`; a Rust test proves persisted subs survive a simulated reconnect. Facade persists subscribe/unsubscribe to the host table.
-2. **B2:** `YahooDriver` emits a `debug`-level, **length-only** log for undecodable frames; existing Yahoo tests green.
-3. **B3:** the Node↔Rust loopback path is characterized (release vs debug); a **deterministic integration test** asserts a frame round-trips `Node ws → Rust driver → TSFN → on_pricing` with exact integrity and runs in the CI integration tier (or, if root cause is intractable, a documented finding + a gated test + Epic-open note).
+2. **B2:** `YahooDriver` emits a `debug`-level, **length-only** log for undecodable frames; an automated tracing-capture test asserts the event fires, `bytes` matches, and no payload contents leak.
+3. **B3:** the `baseUrl`→`base_url` mapping is verified (Step 0); the path is characterized on release AND debug; the debug stall is fixed or positively explained (not caveated); and a **deterministic integration test** asserts a frame round-trips `Node ws → Rust driver → TSFN → on_pricing` with exact integrity, green on the **standard** CI matrix (no `INTEGRATION_LIVE` bypass).
 4. Full Rust gate green single-threaded; clippy `-D warnings` clean; TS gate green; verified on the remote matrix via a `dev-offload.yml` dispatch.
-5. ROADMAP updated: B1/B2/B3 marked done; the Streaming Engine Epic marked **closed** (interop closure achieved) or explicitly **open-pending-B3** with the documented finding; only the `corelib-streaming` crate lift remains deferred.
+5. ROADMAP updated: B1/B2 marked done; the Streaming Engine Epic marked **closed** only when B3's standard-CI test is green — otherwise **open-pending-B3** with the documented finding. Only the `corelib-streaming` crate lift remains deferred beyond that.
