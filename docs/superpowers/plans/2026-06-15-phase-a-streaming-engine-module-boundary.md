@@ -161,10 +161,10 @@ const ENGINE_FILES: &[&str] = &[
 fn strip_noise(src: &str) -> String {
     let mut out = String::with_capacity(src.len());
     let mut in_block = false;
+    let mut in_str = false; // persists across lines (Rust string literals can span lines)
     for line in src.lines() {
         let b = line.as_bytes();
         let mut i = 0usize;
-        let mut in_str = false;
         while i < b.len() {
             if in_block {
                 if i + 1 < b.len() && b[i] == b'*' && b[i + 1] == b'/' {
@@ -271,9 +271,11 @@ mod loopback_tests {
     use super::*;
     use crate::markets::nasdaq::datafeeds::streaming::core::driver::SubRequest;
     use crate::markets::nasdaq::datafeeds::streaming::core::types::{CoreEvent, RawPricing};
+    use futures_util::{SinkExt, StreamExt};
     use std::time::Duration;
     use tokio::net::TcpListener;
-    use tokio_tungstenite::accept_async;
+    use tokio::sync::mpsc;
+    use tokio_tungstenite::{accept_async, tungstenite::Message};
 
     fn text(s: &str) -> Message {
         Message::Text(s.to_string().into())
@@ -337,7 +339,7 @@ mod loopback_tests {
         let (_sub_tx, mut sub_rx) = mpsc::channel::<SubRequest>(8);
         let (_stop_tx, mut stop_rx) = mpsc::channel::<()>(1);
 
-        let connect = driver.connect_once(&[], &tx, &mut sub_rx, &mut stop_rx);
+        let connect = driver.connect_once(&[] as &[String], &tx, &mut sub_rx, &mut stop_rx);
         tokio::pin!(connect);
 
         let got = tokio::time::timeout(Duration::from_secs(5), async {
@@ -396,9 +398,11 @@ mod loopback_tests {
     use super::*;
     use crate::markets::nasdaq::datafeeds::streaming::core::driver::SubRequest;
     use crate::markets::nasdaq::datafeeds::streaming::core::types::{CoreEvent, RawPricing};
+    use futures_util::{SinkExt, StreamExt};
     use std::time::Duration;
     use tokio::net::TcpListener;
-    use tokio_tungstenite::accept_async;
+    use tokio::sync::mpsc;
+    use tokio_tungstenite::{accept_async, tungstenite::Message};
 
     fn text(s: &str) -> Message {
         Message::Text(s.to_string().into())
@@ -493,9 +497,11 @@ mod loopback_tests {
     use crate::markets::nasdaq::datafeeds::streaming::core::types::{CoreEvent, RawPricing};
     use crate::markets::nasdaq::datafeeds::streaming::yahoo::yahoo_streaming_proto_handler::PricingData;
     use base64::{engine::general_purpose, Engine as _};
+    use futures_util::{SinkExt, StreamExt};
     use prost::Message as _;
     use std::time::Duration;
     use tokio::net::TcpListener;
+    use tokio::sync::mpsc;
     use tokio_tungstenite::{accept_async, tungstenite::Message};
 
     fn text(s: &str) -> Message {
@@ -553,7 +559,7 @@ mod loopback_tests {
         let (_sub_tx, mut sub_rx) = mpsc::channel::<SubRequest>(8);
         let (_stop_tx, mut stop_rx) = mpsc::channel::<()>(1);
 
-        let connect = driver.connect_once(&[], &tx, &mut sub_rx, &mut stop_rx);
+        let connect = driver.connect_once(&[] as &[String], &tx, &mut sub_rx, &mut stop_rx);
         tokio::pin!(connect);
 
         let got = tokio::time::timeout(Duration::from_secs(5), async {
