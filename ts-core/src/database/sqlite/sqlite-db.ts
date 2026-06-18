@@ -1,6 +1,7 @@
 import { serializeError } from "serialize-error";
 import { nextCid } from "../../utils/flight-recorder";
 import { type DatabaseResult, wrapError } from "../core/result";
+import { redactParams } from "../redact";
 import {
 	getActiveTransaction,
 	runInTransaction,
@@ -37,6 +38,10 @@ export class SqliteDb {
 			sql,
 			hasParams: params != null,
 			nested: txDriver != null,
+			// Params logged ONLY when the project opted in with a redactor (default: off).
+			...(this.config.paramRedactor && params != null
+				? { params: redactParams(params, this.config.paramRedactor) }
+				: {}),
 		});
 
 		try {

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockLogger } from "../test-utils/logger-mock.js";
 import { wrapSuccess } from "./core/result.js";
-import { createDatabase } from "./index.js";
+import { createDatabase, defaultRedactor } from "./index.js";
 
 // Mock logger
 const mockLogger = createMockLogger() as any;
@@ -109,6 +109,27 @@ describe("Database Integration Tests (Mocked Drivers)", () => {
 					qid: expect.any(Number),
 					durationMs: expect.any(Number),
 					affectedRows: expect.any(Number),
+				}),
+			);
+		});
+
+		it("logs redacted params only when paramRedactor is opted in", async () => {
+			const db = await createDatabase({
+				dialect: "sqlite",
+				url: "libsql://:memory:",
+				mode: "stateful",
+				logger: mockLogger,
+				paramRedactor: defaultRedactor,
+			});
+			await db.query("INSERT INTO t (sym, tok) VALUES (?, ?)", [
+				"AAPL",
+				"eyJa.eyJb.sIg",
+			]);
+			// Opted in → params present; secret-shaped value masked, the symbol kept.
+			expect(mockLogger.trace).toHaveBeenCalledWith(
+				"query: exec",
+				expect.objectContaining({
+					params: ["AAPL", expect.stringMatching(/^<redacted/)],
 				}),
 			);
 		});

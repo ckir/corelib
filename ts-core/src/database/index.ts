@@ -13,6 +13,7 @@ export * from "./core/result.js";
 export * from "./core/transaction-context.js";
 export * from "./core/types.js";
 export * from "./postgres/index.js";
+export * from "./redact.js";
 export * from "./sqlite/index.js";
 
 /**

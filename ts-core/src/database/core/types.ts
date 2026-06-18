@@ -26,10 +26,20 @@ export interface BaseDbConfig {
 	logger?: LibraryLogger;
 	/** Query timeout in milliseconds. */
 	timeoutMs?: number;
+	/**
+	 * Opt-in param logging for the Flight-Recorder query traces. When set, each query's
+	 * params are passed through this redactor and logged under `params` on `query: exec`.
+	 * Unset (the default) means params are NOT logged. Use the exported `defaultRedactor`
+	 * (or a stricter one); the consuming project owns the residual leak risk.
+	 */
+	paramRedactor?: ParamRedactor;
 }
 
 /** Parameters for SQL queries (positional or named). */
 export type QueryParams = unknown[] | Record<string, unknown>;
+
+/** A param-redaction policy: receives ONE param value, returns its log-safe representation. */
+export type ParamRedactor = (value: unknown) => unknown;
 
 /** Standard data structure for successful query results. */
 export interface QueryResponse<T = unknown> {
