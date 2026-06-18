@@ -1,12 +1,13 @@
 import { ConfigManager, endPoint } from "@ckir/corelib";
-import { loadFixture } from "@itest/_harness/server";
+import { IS_LIVE, loadFixture } from "@itest/_harness/server";
 import { beforeAll, describe, expect, it } from "vitest";
 
 beforeAll(async () => {
 	await ConfigManager.getInstance().initialize([]); // bypass vitest argv (Task 1)
 });
 
-describe("RequestUnlimited (external, replay)", () => {
+// Replay-only: drives the MSW fixture replay, which live mode disables. Skip in live runs.
+describe.skipIf(IS_LIVE)("RequestUnlimited (external, replay)", () => {
 	it("[itestCore.endpoint.success] returns a success result with body+status for a 200", async () => {
 		loadFixture("itest-core", "endpoint-success");
 		const res = await endPoint<{ ok: boolean }>("https://itest.local/core/ok");

@@ -1,10 +1,12 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { assertNoMisses, beginItest, endItest, registerFixture, resetItest } from "./server";
+import { assertNoMisses, beginItest, endItest, IS_LIVE, registerFixture, resetItest } from "./server";
 
 beforeAll(() => beginItest());
 afterEach(() => resetItest());
 
-describe("itest server (replay)", () => {
+// Replay-only: these exercise the MSW interception harness itself, which live
+// mode disables (beginItest is a no-op when IS_LIVE). Skip them in live runs.
+describe.skipIf(IS_LIVE)("itest server (replay)", () => {
   it("serves a registered fixture", async () => {
     registerFixture({
       request: { method: "GET", url: "https://itest.local/ok", headers: {} },
