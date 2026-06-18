@@ -98,6 +98,19 @@ describe("Database Integration Tests (Mocked Drivers)", () => {
 				"query: exec",
 				expect.objectContaining({ params: expect.anything() }),
 			);
+			// flight-recorder: qid pairs exec↔ok; ok carries duration + write outcome
+			expect(mockLogger.trace).toHaveBeenCalledWith(
+				"query: exec",
+				expect.objectContaining({ qid: expect.any(Number) }),
+			);
+			expect(mockLogger.trace).toHaveBeenCalledWith(
+				"query: ok",
+				expect.objectContaining({
+					qid: expect.any(Number),
+					durationMs: expect.any(Number),
+					affectedRows: expect.any(Number),
+				}),
+			);
 		});
 	});
 
@@ -126,6 +139,15 @@ describe("Database Integration Tests (Mocked Drivers)", () => {
 			const result = await db.query("INVALID SQL");
 			expect(result.status).toBe("error");
 			expect(mockLogger.error).toHaveBeenCalled();
+			// flight-recorder: a failed query gets a paired trace terminus (no silent hang)
+			expect(mockLogger.trace).toHaveBeenCalledWith(
+				"query: error",
+				expect.objectContaining({
+					qid: expect.any(Number),
+					durationMs: expect.any(Number),
+					errorMsg: "error",
+				}),
+			);
 		});
 
 		it("should handle transaction success", async () => {

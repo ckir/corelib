@@ -8,6 +8,9 @@ import type { QueryParams, QueryResponse } from "../core/types";
 import type { SqliteConfig } from "./sqlite-config";
 import { SqliteDriver } from "./sqlite-driver";
 
+/** Process-wide monotonic query id — pairs `query: exec` with its `query: ok`/`query: error` terminus. */
+let queryCounter = 0;
+
 /**
  * Public SqliteDb implementation.
  * Provides high-level API for SQLite/LibSQL, handling connections, transactions, and result normalization.
@@ -27,9 +30,12 @@ export class SqliteDb {
 		sql: string,
 		params?: QueryParams,
 	): Promise<DatabaseResult<QueryResponse<T>>> {
+		const qid = ++queryCounter;
 		const txDriver = getActiveTransaction();
 		const activeDriver = txDriver || this.driver;
+		const startedAt = performance.now();
 		this.config.logger?.trace("query: exec", {
+			qid,
 			sql,
 			hasParams: params != null,
 			nested: txDriver != null,
@@ -41,8 +47,14 @@ export class SqliteDb {
 			}
 
 			const result = await activeDriver.query<T>(sql, params);
+			const durationMs = performance.now() - startedAt;
 
 			if (result.status === "error") {
+				this.config.logger?.trace("query: error", {
+					qid,
+					durationMs,
+					errorMsg: result.reason?.message ?? "unknown error",
+				});
 				this.config.logger?.error("Query execution failed", {
 					sql,
 					reason: result.reason,
@@ -50,11 +62,21 @@ export class SqliteDb {
 			}
 			if (result.status === "success") {
 				this.config.logger?.trace("query: ok", {
+					qid,
+					durationMs,
 					rows: result.value?.rows?.length ?? 0,
+					affectedRows: result.value?.affectedRows ?? 0,
+					lastInsertId: result.value?.lastInsertId,
 				});
 			}
 			return result;
 		} catch (e) {
+			const durationMs = performance.now() - startedAt;
+			this.config.logger?.trace("query: error", {
+				qid,
+				durationMs,
+				errorMsg: e instanceof Error ? e.message : String(e),
+			});
 			this.config.logger?.error("Query catastrophic failure", {
 				sql,
 				error: serializeError(e),
