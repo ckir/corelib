@@ -52,9 +52,9 @@ const getRequire = () => {
 };
 
 async function loadFFI() {
-	coreLogger.debug("loadFFI: start", { runtime });
+	coreLogger.trace("loadFFI: start", { runtime });
 	if (runtime === "cloudflare") {
-		coreLogger.debug("loadFFI: skipped (edge runtime)", { runtime });
+		coreLogger.trace("loadFFI: skipped (edge runtime)", { runtime });
 		return null; // FFI not supported/needed on Cloudflare Workers for now
 	}
 
@@ -118,7 +118,7 @@ async function loadFFI() {
 	} catch (_e) {
 		// Ignore
 	}
-	coreLogger.debug("loadFFI: resolved", { found: libPath != null, libPath });
+	coreLogger.trace("loadFFI: resolved", { found: libPath != null, libPath });
 
 	if (!libPath) {
 		// Instead of throwing, we return null so the package can still be used without FFI features

@@ -237,11 +237,11 @@ describe("RequestUnlimited", () => {
 
 			await endPoint("https://api.test.com/retry-logic");
 
-			expect(mockDebug).toHaveBeenCalledWith(
+			expect(mockTrace).toHaveBeenCalledWith(
 				"endPoint: request",
 				expect.objectContaining({ url: expect.any(String) }),
 			);
-			expect(mockDebug).toHaveBeenCalledWith(
+			expect(mockTrace).toHaveBeenCalledWith(
 				"endPoint: ok",
 				expect.objectContaining({ status: expect.any(Number) }),
 			);
@@ -252,16 +252,16 @@ describe("RequestUnlimited", () => {
 		});
 
 		it("redacts URL query params / credentials from §12 logs", async () => {
-			mockDebug.mockClear();
+			mockTrace.mockClear();
 
 			await endPoint("https://api.test.com/success?token=SECRET123");
 
 			// Logged URL is origin + pathname only — no query string, no secret.
-			expect(mockDebug).toHaveBeenCalledWith(
+			expect(mockTrace).toHaveBeenCalledWith(
 				"endPoint: request",
 				expect.objectContaining({ url: "https://api.test.com/success" }),
 			);
-			const loggedUrls = mockDebug.mock.calls
+			const loggedUrls = mockTrace.mock.calls
 				.filter((c) => c[0] === "endPoint: request" || c[0] === "endPoint: ok")
 				.map((c) => (c[1] as { url?: string })?.url ?? "");
 			for (const u of loggedUrls) {

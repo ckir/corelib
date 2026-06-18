@@ -5,10 +5,11 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-const { mockLogger, mockDebug } = vi.hoisted(() => {
+const { mockLogger, mockDebug, mockTrace } = vi.hoisted(() => {
+	const trace = vi.fn();
 	const debug = vi.fn();
 	const child = {
-		trace: vi.fn(),
+		trace,
 		debug,
 		info: vi.fn(),
 		warn: vi.fn(),
@@ -16,7 +17,7 @@ const { mockLogger, mockDebug } = vi.hoisted(() => {
 		fatal: vi.fn(),
 	};
 	const base = {
-		trace: vi.fn(),
+		trace,
 		debug,
 		info: vi.fn(),
 		warn: vi.fn(),
@@ -24,7 +25,7 @@ const { mockLogger, mockDebug } = vi.hoisted(() => {
 		fatal: vi.fn(),
 		child: vi.fn(() => child),
 	};
-	return { mockLogger: base, mockDebug: debug };
+	return { mockLogger: base, mockDebug: debug, mockTrace: trace };
 });
 vi.mock("../loggers", () => ({ default: mockLogger }));
 
@@ -48,13 +49,13 @@ describe("Core FFI", () => {
 		expect(() => Core.run()).not.toThrow();
 	});
 
-	it("logs §12 debug during FFI load-path resolution", () => {
-		// loadFFI() ran at module import; coreLogger.debug calls were captured.
-		expect(mockDebug).toHaveBeenCalledWith(
+	it("logs §12 trace during FFI load-path resolution", () => {
+		// loadFFI() ran at module import; coreLogger.trace calls were captured.
+		expect(mockTrace).toHaveBeenCalledWith(
 			"loadFFI: start",
 			expect.objectContaining({ runtime: expect.any(String) }),
 		);
-		expect(mockDebug).toHaveBeenCalledWith(
+		expect(mockTrace).toHaveBeenCalledWith(
 			"loadFFI: resolved",
 			expect.objectContaining({ found: true }),
 		);

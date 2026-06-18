@@ -30,7 +30,7 @@ export class PostgresDb {
 	): Promise<DatabaseResult<QueryResponse<T>>> {
 		const txDriver = getActiveTransaction();
 		const activeDriver = txDriver || this.driver;
-		this.config.logger?.debug("query: exec", {
+		this.config.logger?.trace("query: exec", {
 			sql,
 			hasParams: params != null,
 			nested: txDriver != null,
@@ -50,7 +50,7 @@ export class PostgresDb {
 				});
 			}
 			if (result.status === "success") {
-				this.config.logger?.debug("query: ok", {
+				this.config.logger?.trace("query: ok", {
 					rows: result.value?.rows?.length ?? 0,
 				});
 			}
@@ -85,7 +85,7 @@ export class PostgresDb {
 		const driver = existingDriver || this.driver;
 		const isNested = !!existingDriver;
 		const savepointName = `sp_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-		this.config.logger?.debug("tx: begin", { isNested });
+		this.config.logger?.trace("tx: begin", { isNested });
 
 		try {
 			await driver.connect();
@@ -109,7 +109,7 @@ export class PostgresDb {
 					} else {
 						await driver.commitTransaction();
 					}
-					this.config.logger?.debug("tx: commit", { isNested });
+					this.config.logger?.trace("tx: commit", { isNested });
 				} else {
 					this.config.logger?.warn("Transaction rollback initiated", {
 						reason: result.reason,

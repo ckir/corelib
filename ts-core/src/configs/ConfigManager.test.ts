@@ -116,8 +116,8 @@ describe("ConfigManager", () => {
 		}
 
 		// boot decision chain
-		expect(debugSpy).toHaveBeenCalledWith("initialize: start");
-		expect(debugSpy).toHaveBeenCalledWith(
+		expect(traceSpy).toHaveBeenCalledWith("initialize: start");
+		expect(traceSpy).toHaveBeenCalledWith(
 			"initialize: committed",
 			expect.objectContaining({ keys: expect.any(Number) }),
 		);

@@ -245,7 +245,7 @@ export class ConfigManager extends EventEmitter {
 	 * 1. Load Defaults 2. Detect CLI -C 3. Process Hierarchy 4. Env 5. CLI overrides.
 	 */
 	private async runInitSequence(args?: string[]): Promise<void> {
-		ConfigManager._logger.debug("initialize: start");
+		ConfigManager._logger.trace("initialize: start");
 		// 2. Parse argv with a dedicated parser (no commander): extract the
 		// external-config path (-C/--config) and collect arbitrary --kebab
 		// overrides. Guarded so edge runtimes without process.argv yield [].
@@ -288,7 +288,7 @@ export class ConfigManager extends EventEmitter {
 			overrides[key] = value;
 		}
 
-		ConfigManager._logger.debug("initialize: resolved", {
+		ConfigManager._logger.trace("initialize: resolved", {
 			hasConfigPath: configPath != null,
 			overrideCount: Object.keys(overrides).length,
 		});
@@ -305,7 +305,7 @@ export class ConfigManager extends EventEmitter {
 			this.applyEnvOverrides(tempConfig);
 			this.applyCliOverrides(overrides, tempConfig);
 			clearAndFill(this._config, tempConfig);
-			ConfigManager._logger.debug("initialize: committed", {
+			ConfigManager._logger.trace("initialize: committed", {
 				keys: Object.keys(this._config ?? {}).length,
 			});
 			this.emit("initialized", this._config);
@@ -422,7 +422,7 @@ export class ConfigManager extends EventEmitter {
 	private async fetchExternalConfig(
 		source: string,
 	): Promise<Record<string, unknown>> {
-		ConfigManager._logger.debug("external config", {
+		ConfigManager._logger.trace("external config", {
 			source: source.startsWith("http") ? "http" : "file",
 		});
 		let content: string;
@@ -441,12 +441,12 @@ export class ConfigManager extends EventEmitter {
 		const lowerSource = source.toLowerCase();
 
 		if (lowerSource.endsWith(".enc")) {
-			ConfigManager._logger.debug("decrypting .enc config");
+			ConfigManager._logger.trace("decrypting .enc config");
 			const decrypted = this.validateConfigObject(
 				await decryptConfig(content),
 				source,
 			);
-			ConfigManager._logger.debug("decryption ok");
+			ConfigManager._logger.trace("decryption ok");
 			return decrypted;
 		}
 

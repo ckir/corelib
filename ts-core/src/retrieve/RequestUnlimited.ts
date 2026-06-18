@@ -189,7 +189,7 @@ export async function endPoint<T = unknown>(
 		MAX_BACKOFF_LIMIT_MS,
 		3000,
 	);
-	requestUnlimitedLogger.debug("endPoint: request", {
+	requestUnlimitedLogger.trace("endPoint: request", {
 		url: safeUrl(url),
 		timeout: cfgTimeout,
 		retryLimit: cfgRetryLimit,
@@ -226,7 +226,7 @@ export async function endPoint<T = unknown>(
 		const responseObject = await ky(url, kyOptions);
 		const response = await serializeResponse<T>(responseObject);
 
-		requestUnlimitedLogger.debug("endPoint: ok", {
+		requestUnlimitedLogger.trace("endPoint: ok", {
 			url: safeUrl(url),
 			status: responseObject.status,
 		});
@@ -276,7 +276,7 @@ export async function endPoints<T = unknown>(
 	urls: (string | URL | Request)[],
 	options: KyOptions = {},
 ): Promise<RequestResult<T>[]> {
-	requestUnlimitedLogger.debug("endPoints: batch", { count: urls.length });
+	requestUnlimitedLogger.trace("endPoints: batch", { count: urls.length });
 	const promises = urls.map((url) => endPoint<T>(url, options));
 	const results = await Promise.allSettled(promises);
 
@@ -289,7 +289,7 @@ export async function endPoints<T = unknown>(
 	});
 
 	const ok = mapped.filter((r) => r.status === "success").length;
-	requestUnlimitedLogger.debug("endPoints: done", {
+	requestUnlimitedLogger.trace("endPoints: done", {
 		ok,
 		failed: mapped.length - ok,
 	});

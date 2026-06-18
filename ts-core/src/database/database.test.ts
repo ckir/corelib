@@ -89,12 +89,12 @@ describe("Database Integration Tests (Mocked Drivers)", () => {
 			if (result.status === "success") {
 				expect(result.value.rows[0].num).toBe(1);
 			}
-			expect(mockLogger.debug).toHaveBeenCalledWith(
+			expect(mockLogger.trace).toHaveBeenCalledWith(
 				"query: exec",
 				expect.objectContaining({ sql: expect.any(String) }),
 			);
 			// REDACTION guard: params values must never be logged
-			expect(mockLogger.debug).not.toHaveBeenCalledWith(
+			expect(mockLogger.trace).not.toHaveBeenCalledWith(
 				"query: exec",
 				expect.objectContaining({ params: expect.anything() }),
 			);
@@ -139,10 +139,10 @@ describe("Database Integration Tests (Mocked Drivers)", () => {
 				return wrapSuccess(true);
 			});
 			expect(result.status).toBe("success");
-			expect(mockLogger.debug).toHaveBeenCalledWith("tx: begin", {
+			expect(mockLogger.trace).toHaveBeenCalledWith("tx: begin", {
 				isNested: false,
 			});
-			expect(mockLogger.debug).toHaveBeenCalledWith("tx: commit", {
+			expect(mockLogger.trace).toHaveBeenCalledWith("tx: commit", {
 				isNested: false,
 			});
 		});
