@@ -182,12 +182,48 @@ describe("Database Integration Tests (Mocked Drivers)", () => {
 				return wrapSuccess(true);
 			});
 			expect(result.status).toBe("success");
-			expect(mockLogger.trace).toHaveBeenCalledWith("tx: begin", {
-				isNested: false,
+			// tx:begin/commit carry a txId (flight-recorder: groups the tx's queries).
+			expect(mockLogger.trace).toHaveBeenCalledWith(
+				"tx: begin",
+				expect.objectContaining({ txId: expect.any(Number), isNested: false }),
+			);
+			expect(mockLogger.trace).toHaveBeenCalledWith(
+				"tx: commit",
+				expect.objectContaining({ txId: expect.any(Number), isNested: false }),
+			);
+		});
+
+		it("threads traceId from getTraceId onto query logs", async () => {
+			const db = await createDatabase({
+				dialect: "postgres",
+				url: "dummy",
+				mode: "stateful",
+				logger: mockLogger,
+				getTraceId: () => "trace-xyz",
 			});
-			expect(mockLogger.trace).toHaveBeenCalledWith("tx: commit", {
-				isNested: false,
+			await db.query("SELECT 1 as num");
+			expect(mockLogger.trace).toHaveBeenCalledWith(
+				"query: exec",
+				expect.objectContaining({ traceId: "trace-xyz" }),
+			);
+		});
+
+		it("stamps the same txId on queries run inside a transaction", async () => {
+			const db = await createDatabase({
+				dialect: "postgres",
+				url: "dummy",
+				mode: "stateful",
+				logger: mockLogger,
 			});
+			await db.transaction(async () => {
+				await db.query("SELECT 1 as num");
+				return wrapSuccess(true);
+			});
+			// the query inside the tx logs a txId (correlates it to tx:begin/commit)
+			expect(mockLogger.trace).toHaveBeenCalledWith(
+				"query: exec",
+				expect.objectContaining({ txId: expect.any(Number) }),
+			);
 		});
 
 		it("should rollback on transaction error", async () => {

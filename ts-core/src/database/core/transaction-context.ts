@@ -39,14 +39,29 @@ async function loadAsyncLocalStorage<T>(): Promise<
 	}
 }
 
+/** Active-transaction context carried via AsyncLocalStorage. */
+interface TransactionContext {
+	driver: DbDriver;
+	/** Flight-recorder id for the transaction; stamped on every query run within it. */
+	txId: number;
+}
+
 // Global storage singleton (dynamically initialized)
-export const transactionStorage = await loadAsyncLocalStorage<DbDriver>();
+export const transactionStorage =
+	await loadAsyncLocalStorage<TransactionContext>();
 
 /**
  * Gets the active transaction driver from context.
  */
 export function getActiveTransaction(): DbDriver | undefined {
-	return transactionStorage?.getStore();
+	return transactionStorage?.getStore()?.driver;
+}
+
+/**
+ * Gets the active transaction's flight-recorder id, or undefined outside a transaction.
+ */
+export function getActiveTxId(): number | undefined {
+	return transactionStorage?.getStore()?.txId;
 }
 
 /**
@@ -55,10 +70,11 @@ export function getActiveTransaction(): DbDriver | undefined {
  */
 export async function runInTransaction<T>(
 	driver: DbDriver,
+	txId: number,
 	callback: () => Promise<T>,
 ): Promise<T> {
 	if (!transactionStorage) {
 		return callback();
 	}
-	return transactionStorage.run(driver, callback);
+	return transactionStorage.run({ driver, txId }, callback);
 }

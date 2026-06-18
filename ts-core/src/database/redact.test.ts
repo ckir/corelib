@@ -44,9 +44,9 @@ describe("redactParams", () => {
 	});
 
 	it("redacts positional params and caps the array", () => {
-		expect(
-			redactParams([1, "AAPL", "eyJa.eyJb.sIg"], defaultRedactor),
-		).toEqual([1, "AAPL", expect.stringMatching(/^<redacted/)]);
+		expect(redactParams([1, "AAPL", "eyJa.eyJb.sIg"], defaultRedactor)).toEqual(
+			[1, "AAPL", expect.stringMatching(/^<redacted/)],
+		);
 
 		const many = Array.from({ length: 70 }, (_, i) => i);
 		const out = redactParams(many, defaultRedactor) as unknown[];

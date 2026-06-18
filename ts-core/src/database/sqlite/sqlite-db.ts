@@ -1,12 +1,13 @@
 import { serializeError } from "serialize-error";
 import { nextCid } from "../../utils/flight-recorder";
 import { type DatabaseResult, wrapError } from "../core/result";
-import { redactParams } from "../redact";
 import {
 	getActiveTransaction,
+	getActiveTxId,
 	runInTransaction,
 } from "../core/transaction-context";
 import type { QueryParams, QueryResponse } from "../core/types";
+import { redactParams } from "../redact";
 import type { SqliteConfig } from "./sqlite-config";
 import { SqliteDriver } from "./sqlite-driver";
 
@@ -33,8 +34,17 @@ export class SqliteDb {
 		const txDriver = getActiveTransaction();
 		const activeDriver = txDriver || this.driver;
 		const startedAt = performance.now();
+		// Flight-recorder correlation: traceId follows one logical op across queries
+		// (app-provided via getTraceId); txId groups queries within the current transaction.
+		const traceId = this.config.getTraceId?.();
+		const txId = getActiveTxId();
+		const corr = {
+			...(traceId != null ? { traceId } : {}),
+			...(txId != null ? { txId } : {}),
+		};
 		this.config.logger?.trace("query: exec", {
 			qid,
+			...corr,
 			sql,
 			hasParams: params != null,
 			nested: txDriver != null,
@@ -55,6 +65,7 @@ export class SqliteDb {
 			if (result.status === "error") {
 				this.config.logger?.trace("query: error", {
 					qid,
+					...corr,
 					durationMs,
 					errorMsg: result.reason?.message ?? "unknown error",
 				});
@@ -66,6 +77,7 @@ export class SqliteDb {
 			if (result.status === "success") {
 				this.config.logger?.trace("query: ok", {
 					qid,
+					...corr,
 					durationMs,
 					rows: result.value?.rows?.length ?? 0,
 					affectedRows: result.value?.affectedRows ?? 0,
@@ -77,6 +89,7 @@ export class SqliteDb {
 			const durationMs = performance.now() - startedAt;
 			this.config.logger?.trace("query: error", {
 				qid,
+				...corr,
 				durationMs,
 				errorMsg: e instanceof Error ? e.message : String(e),
 			});
@@ -108,8 +121,9 @@ export class SqliteDb {
 		const existingDriver = getActiveTransaction() as SqliteDriver | undefined;
 		const driver = existingDriver || this.driver;
 		const isNested = !!existingDriver;
+		const txId = nextCid();
 		const savepointName = `sp_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-		this.config.logger?.trace("tx: begin", { isNested });
+		this.config.logger?.trace("tx: begin", { txId, isNested });
 
 		try {
 			await driver.connect();
@@ -124,7 +138,7 @@ export class SqliteDb {
 				await driver.beginTransaction();
 			}
 
-			return await runInTransaction(driver, async () => {
+			return await runInTransaction(driver, txId, async () => {
 				const result = await callback();
 
 				if (result.status === "success") {
@@ -133,9 +147,10 @@ export class SqliteDb {
 					} else {
 						await driver.commitTransaction();
 					}
-					this.config.logger?.trace("tx: commit", { isNested });
+					this.config.logger?.trace("tx: commit", { txId, isNested });
 				} else {
 					this.config.logger?.warn("Transaction rollback initiated", {
+						txId,
 						reason: result.reason,
 						isNested,
 					});

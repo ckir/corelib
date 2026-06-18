@@ -33,6 +33,12 @@ export interface BaseDbConfig {
 	 * (or a stricter one); the consuming project owns the residual leak risk.
 	 */
 	paramRedactor?: ParamRedactor;
+	/**
+	 * Optional provider for a logical-operation trace id, threaded onto query logs so an AI can
+	 * follow one operation across many queries/requests. The consuming app populates it (e.g.
+	 * from an AsyncLocalStorage request/operation context); corelib stays ALS-ignorant.
+	 */
+	getTraceId?: () => string | undefined;
 }
 
 /** Parameters for SQL queries (positional or named). */
