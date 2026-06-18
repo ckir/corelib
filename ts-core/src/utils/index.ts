@@ -60,6 +60,7 @@ export const getRequire = () => {
 };
 
 export { includeExcludeCron } from "./cron";
+export { type FlightRecorderExtras, nextCid } from "./flight-recorder";
 export { detectRuntime, type Runtime } from "./runtime";
 export { getSysInfo, SysInfo } from "./SysInfo";
 

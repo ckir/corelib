@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { logger } from "@ckir/corelib";
+import { logger, nextCid } from "@ckir/corelib";
 import { serializeError } from "serialize-error";
 import { ApiNasdaqQuotes } from "../../../ApiNasdaqQuotes";
 
@@ -137,9 +137,13 @@ export class NasdaqPolling extends EventEmitter {
 			return;
 		}
 
+		// cid ties every line of this poll cycle together (flight-recorder).
+		const cid = nextCid();
 		const symbolList = Array.from(this.subscriptions);
-		nasdaqPollingLogger.debug("poll: cycle", {
-			symbols: this.subscriptions.size,
+		const startedAt = performance.now();
+		nasdaqPollingLogger.trace("poll: start", {
+			cid,
+			requested: symbolList.length,
 		});
 
 		try {
@@ -151,6 +155,7 @@ export class NasdaqPolling extends EventEmitter {
 			for (let i = 0; i < results.length; i++) {
 				const result = results[i];
 				nasdaqPollingLogger.trace("poll: result", {
+					cid,
 					symbol: symbolList[i],
 					status: result.status,
 				});
@@ -162,6 +167,8 @@ export class NasdaqPolling extends EventEmitter {
 					validResults.push(result.value);
 				} else if (result.status === "error") {
 					nasdaqPollingLogger.error("Error fetching quote", {
+						cid,
+						symbol: symbolList[i],
 						error: serializeError(result.reason),
 					});
 					this.emit("error", result.reason);
@@ -169,9 +176,16 @@ export class NasdaqPolling extends EventEmitter {
 			}
 
 			const failed = results.length - validResults.length;
-			nasdaqPollingLogger.debug("poll: done", {
+			// `missing` = symbols requested that returned no result at all — a
+			// distinct signal from a returned-but-failed quote.
+			const missing = symbolList.length - results.length;
+			nasdaqPollingLogger.trace("poll: done", {
+				cid,
+				durationMs: performance.now() - startedAt,
+				requested: symbolList.length,
 				ok: validResults.length,
 				failed,
+				missing,
 			});
 
 			/**
@@ -182,7 +196,13 @@ export class NasdaqPolling extends EventEmitter {
 			}
 		} catch (error) {
 			const serialized = serializeError(error);
+			nasdaqPollingLogger.trace("poll: error", {
+				cid,
+				durationMs: performance.now() - startedAt,
+				errorMsg: error instanceof Error ? error.message : String(error),
+			});
 			nasdaqPollingLogger.error("Polling execution failed", {
+				cid,
 				error: serialized,
 			});
 			this.emit("error", serialized);

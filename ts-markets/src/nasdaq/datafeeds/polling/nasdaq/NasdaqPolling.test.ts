@@ -34,6 +34,7 @@ vi.mock("@ckir/corelib", async () => {
 	return {
 		default: mockLogger,
 		logger: mockLogger,
+		nextCid: () => 1,
 	};
 });
 
@@ -170,21 +171,31 @@ describe("NasdaqPolling", () => {
 			await poller.poll();
 
 			expect(dataSpy).toHaveBeenCalledWith(mockData);
-			expect(mockDebug).toHaveBeenCalledWith(
-				"poll: cycle",
-				expect.objectContaining({ symbols: expect.any(Number) }),
-			);
-			expect(mockDebug).toHaveBeenCalledWith(
-				"poll: done",
+			expect(mockTrace).toHaveBeenCalledWith(
+				"poll: start",
 				expect.objectContaining({
-					ok: expect.any(Number),
-					failed: expect.any(Number),
+					cid: expect.any(Number),
+					requested: expect.any(Number),
 				}),
 			);
-			// per-item trace carries the symbol identity (results mirror input order)
+			expect(mockTrace).toHaveBeenCalledWith(
+				"poll: done",
+				expect.objectContaining({
+					cid: expect.any(Number),
+					durationMs: expect.any(Number),
+					ok: expect.any(Number),
+					failed: expect.any(Number),
+					missing: expect.any(Number),
+				}),
+			);
+			// per-item trace carries cid + symbol identity (results mirror input order)
 			expect(mockTrace).toHaveBeenCalledWith(
 				"poll: result",
-				expect.objectContaining({ symbol: "AAPL", status: "success" }),
+				expect.objectContaining({
+					cid: expect.any(Number),
+					symbol: "AAPL",
+					status: "success",
+				}),
 			);
 		});
 

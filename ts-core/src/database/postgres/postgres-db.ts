@@ -1,4 +1,5 @@
 import { serializeError } from "serialize-error";
+import { nextCid } from "../../utils/flight-recorder";
 import { type DatabaseResult, wrapError } from "../core/result";
 import {
 	getActiveTransaction,
@@ -7,9 +8,6 @@ import {
 import type { QueryParams, QueryResponse } from "../core/types";
 import type { PostgresConfig } from "./postgres-config";
 import { PostgresDriver } from "./postgres-driver";
-
-/** Process-wide monotonic query id — pairs `query: exec` with its `query: ok`/`query: error` terminus. */
-let queryCounter = 0;
 
 /**
  * Public PostgresDb implementation.
@@ -31,7 +29,7 @@ export class PostgresDb {
 		sql: string,
 		params?: QueryParams,
 	): Promise<DatabaseResult<QueryResponse<T>>> {
-		const qid = ++queryCounter;
+		const qid = nextCid();
 		const txDriver = getActiveTransaction();
 		const activeDriver = txDriver || this.driver;
 		const startedAt = performance.now();
