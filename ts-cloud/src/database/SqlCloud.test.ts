@@ -79,6 +79,8 @@ describe("SqlCloud Router", () => {
 			expect.objectContaining({
 				url: "test-url",
 				authToken: "test-token",
+				// flight-recorder: rid→traceId hook is wired onto every query.
+				getTraceId: expect.any(Function),
 			}),
 		);
 		expect(mockLogger.debug).toHaveBeenCalledWith(

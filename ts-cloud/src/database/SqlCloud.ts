@@ -7,6 +7,7 @@ import type { SqliteConfig } from "@ckir/corelib";
 import { createDatabase } from "@ckir/corelib";
 import { Hono } from "hono";
 import { serializeError } from "serialize-error";
+import { getRequestId } from "../core/request-context";
 import type { AppEnv } from "../core/types";
 
 /**
@@ -66,6 +67,13 @@ sqlRouter.post("/", async (c: any) => {
 			url: bindings.CORELIB_TURSO_URL,
 			authToken: bindings.CORELIB_TURSO_TOKEN,
 			logger,
+			// Flight-recorder: stamp this request's rid onto the query logs as traceId, so
+			// an AI can tie a SQL query back to the request that issued it. Undefined outside
+			// a request context (Tier-3 omits traceId cleanly).
+			getTraceId: () => {
+				const rid = getRequestId();
+				return rid != null ? String(rid) : undefined;
+			},
 		};
 		const db = await createDatabase(dbConfig);
 

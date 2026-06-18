@@ -21,6 +21,7 @@ describe("Router", () => {
 
 	it("should return 200 and emit logs for /api/v1/tests/logger", async () => {
 		const logger = {
+			trace: vi.fn(),
 			info: vi.fn(),
 			warn: vi.fn(),
 			error: vi.fn(),
@@ -49,11 +50,21 @@ describe("Router", () => {
 			expect.stringContaining("Error level"),
 			expect.any(Object),
 		);
-		expect(logger.debug).toHaveBeenCalledWith(
-			"router: request",
+		// flight-recorder: request:start/end pair via rid; end carries status + duration.
+		expect(logger.trace).toHaveBeenCalledWith(
+			"request: start",
 			expect.objectContaining({
+				rid: expect.any(Number),
 				method: expect.any(String),
 				path: expect.any(String),
+			}),
+		);
+		expect(logger.trace).toHaveBeenCalledWith(
+			"request: end",
+			expect.objectContaining({
+				rid: expect.any(Number),
+				status: expect.any(Number),
+				durationMs: expect.any(Number),
 			}),
 		);
 	});

@@ -5,13 +5,14 @@
  * Optimized for deployment on edge environments (Cloudflare Workers, AWS Lambda, etc.).
  */
 
-import type { StrictLogger } from "@ckir/corelib";
+import { nextCid, type StrictLogger } from "@ckir/corelib";
 import { Hono } from "hono";
 import { sqlRouter } from "../database/SqlCloud";
 import { nasdaqRouter } from "../markets/nasdaq/ApiNasdaqUnlimitedCloud";
 import { historicalRouter } from "../markets/nasdaq/HistoricalCloud";
 import { marketStatusRouter } from "../markets/nasdaq/MarketStatusCloud";
 import { kyRouter } from "../retrieve/RequestUnlimitedCloud";
+import { runInRequest } from "./request-context";
 import type { AppEnv } from "./types";
 
 /**
@@ -48,12 +49,30 @@ export const createRouter = (logger?: StrictLogger): Hono<AppEnv> => {
 			});
 		}
 
-		logger?.debug("router: request", {
+		// Flight-recorder: mint one rid per request. It is carried on the Hono context
+		// (for the router-level logs below) AND bound in AsyncLocalStorage (so deep call
+		// sites like createDatabase's getTraceId can read it without signature threading).
+		const rid = nextCid();
+		c.set("rid", rid);
+		const reqLogger = c.get("logger");
+		const startedAt = Date.now();
+		reqLogger?.trace("request: start", {
+			rid,
 			method: c.req.method,
 			path: c.req.path,
 		});
 
-		await next();
+		try {
+			await runInRequest(rid, () => next());
+		} finally {
+			// Terminus pairs with request:start via rid; carries outcome + latency so an AI
+			// can see the request's result and duration without re-running it.
+			reqLogger?.trace("request: end", {
+				rid,
+				status: c.res?.status,
+				durationMs: Date.now() - startedAt,
+			});
+		}
 	});
 
 	/**
@@ -139,6 +158,7 @@ export const createRouter = (logger?: StrictLogger): Hono<AppEnv> => {
 	app.onError((err, c) => {
 		const logger = c.get("logger");
 		logger?.error("Unhandled Router Error", {
+			rid: c.get("rid"),
 			error: err.message,
 			stack: err.stack,
 			path: c.req.path,
@@ -158,6 +178,7 @@ export const createRouter = (logger?: StrictLogger): Hono<AppEnv> => {
 	 */
 	app.notFound((c) => {
 		c.get("logger")?.debug("router: 404", {
+			rid: c.get("rid"),
 			method: c.req.method,
 			path: c.req.path,
 		});

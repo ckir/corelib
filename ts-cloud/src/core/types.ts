@@ -21,5 +21,7 @@ export type AppEnv = {
 	Variables: {
 		/** Injected StrictLogger instance. */
 		logger: StrictLogger;
+		/** Flight-recorder request id, minted per request by the root middleware. */
+		rid: number;
 	};
 };
