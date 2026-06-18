@@ -9,7 +9,12 @@ use chrono::{TimeZone, Utc};
 pub fn parse_finnhub_frame(text: &str, source: &str) -> Vec<MarketEvent> {
     let obj: serde_json::Value = match serde_json::from_str(text) {
         Ok(v) => v,
-        Err(_) => return vec![],
+        Err(_) => {
+            // REDACTION: length only — a genuinely undecodable (non-JSON) frame. Valid-but-non-trade
+            // frames fall through below without logging (they are normal, not errors).
+            tracing::debug!(target: "corelib_rust::stream", provider = source, bytes = text.len(), "frame parse failed");
+            return vec![];
+        }
     };
     if obj["type"].as_str() != Some("trade") {
         return vec![];
@@ -124,13 +129,20 @@ impl ProviderDriver for FinnhubDriver {
         async move {
             let url = finnhub_ws_url(self.base_url.as_deref(), &self.token);
             let (mut ws, _) = match connect_async(&url).await {
+                // REDACTION: tungstenite transport error (client-side); the token lives in the
+                // URL query and is never logged (only the failure category + transport error).
+                Err(e) => {
+                    tracing::warn!(target: "corelib_rust::stream", provider = "finnhub", error = %e, "ws connect failed");
+                    return AttemptOutcome::NeverConnected;
+                }
                 Ok(v) => v,
-                Err(_) => return AttemptOutcome::NeverConnected,
             };
             // signal the supervisor to reset backoff
             let _ = tx.send(CoreEvent::Status(ProviderStatus::Connected { provider: ProviderKind::Finnhub })).await;
+            tracing::debug!(target: "corelib_rust::stream", provider = "finnhub", "connected");
             let _ = symbols; // resume is read fresh from redb each attempt (reconnect-safe)
             let mut current: Vec<String> = self.load_subscriptions();
+            tracing::debug!(target: "corelib_rust::stream", provider = "finnhub", symbols = current.len(), "subscribe");
             for s in &current {
                 let m = serde_json::json!({ "type": "subscribe", "symbol": s }).to_string();
                 if ws.send(Message::Text(m.into())).await.is_err() { return AttemptOutcome::ConnectedThenDropped; }

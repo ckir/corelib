@@ -191,9 +191,15 @@ impl ProviderDriver for YahooDriver {
                 .clone()
                 .unwrap_or_else(|| DEFAULT_YAHOO_WS_URL.to_string());
             let (mut ws, _) = match connect_async(&url).await {
+                // REDACTION: tungstenite transport error (client-side); Yahoo is unauthenticated,
+                // no secret involved — only the failure category + transport error are logged.
+                Err(e) => {
+                    tracing::warn!(target: "corelib_rust::stream", provider = "yahoo", error = %e, "ws connect failed");
+                    return AttemptOutcome::NeverConnected;
+                }
                 Ok(v) => v,
-                Err(_) => return AttemptOutcome::NeverConnected,
             };
+            tracing::debug!(target: "corelib_rust::stream", provider = "yahoo", "connected");
             let _ = tx
                 .send(CoreEvent::Status(ProviderStatus::Connected {
                     provider: ProviderKind::Yahoo,
@@ -203,6 +209,7 @@ impl ProviderDriver for YahooDriver {
             // initial subscribe: full persisted bare-key set (single-channel)
             let subs = self.load_subscriptions();
             if !subs.is_empty() {
+                tracing::debug!(target: "corelib_rust::stream", provider = "yahoo", symbols = subs.len(), "subscribe");
                 let payload = serde_json::json!({ "subscribe": subs }).to_string();
                 if ws.send(Message::Text(payload.into())).await.is_err() {
                     return AttemptOutcome::ConnectedThenDropped;

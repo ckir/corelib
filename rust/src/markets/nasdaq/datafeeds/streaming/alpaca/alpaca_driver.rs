@@ -214,8 +214,13 @@ impl ProviderDriver for AlpacaDriver {
                 .clone()
                 .unwrap_or_else(|| DEFAULT_ALPACA_WS_URL.to_string());
             let (mut ws, _) = match connect_async(&url).await {
+                // REDACTION: `error` is a tungstenite transport/handshake error (DNS/TLS/HTTP
+                // status) — client-side, no provider secret. The auth payload is never logged.
+                Err(e) => {
+                    tracing::warn!(target: "corelib_rust::stream", provider = "alpaca", error = %e, "ws connect failed");
+                    return AttemptOutcome::NeverConnected;
+                }
                 Ok(v) => v,
-                Err(_) => return AttemptOutcome::NeverConnected,
             };
             // {"T":"success","msg":"connected"}
             if let Some(Ok(Message::Text(m))) = ws.next().await {
@@ -226,16 +231,21 @@ impl ProviderDriver for AlpacaDriver {
                         .map(|f| f["T"] == "success" && f["msg"] == "connected")
                         .unwrap_or(false);
                     if !ok {
+                        // REDACTION: never log `m` (a server-controlled frame) — category only.
+                        tracing::warn!(target: "corelib_rust::stream", provider = "alpaca", "unexpected connect frame");
                         return AttemptOutcome::NeverConnected;
                     }
                 }
             } else {
+                tracing::warn!(target: "corelib_rust::stream", provider = "alpaca", "no connect frame");
                 return AttemptOutcome::NeverConnected;
             }
             // auth
             let auth = serde_json::json!({"action":"auth","key":self.key_id,"secret":self.secret_key})
                 .to_string();
             if ws.send(Message::Text(auth.into())).await.is_err() {
+                // REDACTION: the `auth` payload (key+secret) is NOT logged — only the failure.
+                tracing::warn!(target: "corelib_rust::stream", provider = "alpaca", "auth send failed");
                 return AttemptOutcome::NeverConnected;
             }
             if let Some(Ok(Message::Text(m))) = ws.next().await {
@@ -243,6 +253,9 @@ impl ProviderDriver for AlpacaDriver {
                     if let Some(f) = v.as_array().and_then(|a| a.first()) {
                         if f["T"] == "error" {
                             let msg = f["msg"].as_str().unwrap_or("auth error").to_string();
+                            // REDACTION: the server's `msg` reaches JS via Status::Error; the ring
+                            // records only the category (msg may echo server-controlled text).
+                            tracing::warn!(target: "corelib_rust::stream", provider = "alpaca", "auth rejected");
                             let _ = tx
                                 .send(CoreEvent::Status(ProviderStatus::Error {
                                     provider: ProviderKind::Alpaca,
@@ -253,14 +266,17 @@ impl ProviderDriver for AlpacaDriver {
                         }
                         let ok = f["T"] == "success" && f["msg"] == "authenticated";
                         if !ok {
+                            tracing::warn!(target: "corelib_rust::stream", provider = "alpaca", "auth not confirmed");
                             return AttemptOutcome::NeverConnected;
                         }
                     }
                 }
             } else {
+                tracing::warn!(target: "corelib_rust::stream", provider = "alpaca", "no auth response");
                 return AttemptOutcome::NeverConnected;
             }
 
+            tracing::debug!(target: "corelib_rust::stream", provider = "alpaca", "authenticated");
             let _ = tx
                 .send(CoreEvent::Status(ProviderStatus::Connected {
                     provider: ProviderKind::Alpaca,
@@ -270,6 +286,10 @@ impl ProviderDriver for AlpacaDriver {
             // initial subscribe: read the FULL persisted set from redb (reconnect-safe single source of truth)
             let by_channel = self.load_subscriptions();
             if let Some(payload) = self.initial_subscribe_json(&by_channel) {
+                // Counts only (DEBUG stays light): channels carrying symbols + total symbols.
+                let channels = by_channel.iter().filter(|(_, s)| !s.is_empty()).count();
+                let symbols: usize = by_channel.iter().map(|(_, s)| s.len()).sum();
+                tracing::debug!(target: "corelib_rust::stream", provider = "alpaca", channels, symbols, "subscribe");
                 if ws.send(Message::Text(payload.into())).await.is_err() {
                     return AttemptOutcome::ConnectedThenDropped;
                 }
@@ -306,6 +326,9 @@ impl ProviderDriver for AlpacaDriver {
                                         let _ = tx.send(CoreEvent::Pricing { raw: RawPricing::Alpaca(raw), uni }).await;
                                     }
                                 }
+                            } else {
+                                // REDACTION: length only — structurally cannot leak frame contents.
+                                tracing::debug!(target: "corelib_rust::stream", provider = "alpaca", bytes = t.len(), "frame parse failed");
                             }
                         }
                         Some(Ok(Message::Ping(p))) => { let _ = ws.send(Message::Pong(p)).await; }
@@ -437,6 +460,101 @@ mod driver_tests {
         assert_eq!(
             map.iter().find(|(c, _)| c == "trades").unwrap().1,
             vec!["MSFT".to_string()]
+        );
+    }
+}
+
+#[cfg(test)]
+mod redaction_tests {
+    use super::*;
+    use crate::markets::nasdaq::datafeeds::streaming::core::driver::SubRequest;
+    use crate::markets::nasdaq::datafeeds::streaming::core::types::CoreEvent;
+    use crate::observability::ring_buffer::{drain_to_lines, reset_for_test};
+    use futures_util::{SinkExt, StreamExt};
+    use std::sync::Arc;
+    use std::time::Duration;
+    use tokio::net::TcpListener;
+    use tokio::sync::mpsc;
+    use tokio_tungstenite::{accept_async, tungstenite::Message};
+
+    fn text(s: &str) -> Message {
+        Message::Text(s.to_string().into())
+    }
+
+    fn tmp_db() -> Arc<redb::Database> {
+        let path = std::env::temp_dir().join(format!(
+            "test_alpaca_redact_{}_{}.redb",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        Arc::new(redb::Database::create(path).unwrap())
+    }
+
+    /// connected → (read auth) → error frame, so the driver takes the auth-rejected branch.
+    async fn serve_alpaca_auth_error(listener: TcpListener) {
+        if let Ok((stream, _)) = listener.accept().await {
+            let mut ws = accept_async(stream).await.expect("ws accept");
+            ws.send(text(r#"[{"T":"success","msg":"connected"}]"#))
+                .await
+                .unwrap();
+            let _ = ws.next().await; // auth frame from driver (carries key+secret)
+            ws.send(text(r#"[{"T":"error","msg":"auth failed"}]"#))
+                .await
+                .unwrap();
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+    }
+
+    /// REDACTION pin: an auth rejection is recorded in the flight log as a category ONLY —
+    /// the secret key must never appear, even though it was sent on the wire to authenticate.
+    #[tokio::test]
+    async fn auth_rejection_is_logged_without_the_secret() {
+        reset_for_test();
+        crate::observability::init_flight_recorder();
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(serve_alpaca_auth_error(listener));
+
+        const SECRET: &str = "SUPER_SECRET_KEY_ABC123";
+        let driver = AlpacaDriver {
+            name: "alpaca_main".into(),
+            base_url: Some(format!("ws://127.0.0.1:{port}")),
+            key_id: "pub_key".into(),
+            secret_key: SECRET.into(),
+            silence_seconds: 60,
+            db: tmp_db(),
+            table: "alpaca_subscriptions",
+        };
+        let (tx, mut rx) = mpsc::channel::<CoreEvent>(64);
+        let (_sub_tx, mut sub_rx) = mpsc::channel::<SubRequest>(8);
+        let (_stop_tx, mut stop_rx) = mpsc::channel::<()>(1);
+        // Drain events so the Status::Error send inside the driver never blocks.
+        tokio::spawn(async move { while rx.recv().await.is_some() {} });
+
+        let outcome = tokio::time::timeout(
+            Duration::from_secs(5),
+            driver.connect_once(&[] as &[String], &tx, &mut sub_rx, &mut stop_rx),
+        )
+        .await
+        .expect("connect_once timed out");
+
+        assert!(
+            matches!(outcome, AttemptOutcome::Fatal(_)),
+            "auth error must resolve Fatal"
+        );
+
+        let lines = drain_to_lines();
+        assert!(
+            lines.iter().any(|l| l.contains("auth rejected")),
+            "auth rejection must be recorded in the flight log: {lines:?}"
+        );
+        assert!(
+            !lines.iter().any(|l| l.contains(SECRET)),
+            "the secret key must NEVER appear in the flight log"
         );
     }
 }
