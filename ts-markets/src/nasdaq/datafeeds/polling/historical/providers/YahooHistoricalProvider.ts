@@ -1,6 +1,6 @@
 // ts-markets/src/nasdaq/datafeeds/polling/historical/providers/YahooHistoricalProvider.ts
 
-import { logger } from "@ckir/corelib";
+import { logger, nextCid } from "@ckir/corelib";
 
 const yahooHistoricalLogger = logger.child({
 	section: "YahooHistoricalProvider",
@@ -22,6 +22,16 @@ export class YahooHistoricalProvider implements HistoricalProvider {
 		symbol: string,
 		options: HistoricalOptions,
 	): Promise<HistoricalResult> {
+		const cid = nextCid();
+		const startedAt = performance.now();
+		yahooHistoricalLogger.trace("historical: start", {
+			cid,
+			symbol,
+			period1: options.period1,
+			period2: options.period2,
+			interval: options.interval,
+		});
+
 		try {
 			// Map Corelib options to Yahoo's specific query options
 			// Workaround for yahoo-finance2 v3 bug where undefined period2 fails validation
@@ -48,9 +58,22 @@ export class YahooHistoricalProvider implements HistoricalProvider {
 				adjClose: item.adjClose ?? null,
 			}));
 
+			yahooHistoricalLogger.trace("historical: done", {
+				cid,
+				durationMs: performance.now() - startedAt,
+				symbol,
+				count: value.length,
+				sampleDate: value[0]?.date ?? null,
+			});
+
 			return { status: "success", value };
 		} catch (error: unknown) {
 			const serialized = serializeError(error);
+			yahooHistoricalLogger.trace("historical: error", {
+				cid,
+				durationMs: performance.now() - startedAt,
+				errorMsg: error instanceof Error ? error.message : String(error),
+			});
 			yahooHistoricalLogger.error("Yahoo provider failed", {
 				symbol,
 				error: serialized,

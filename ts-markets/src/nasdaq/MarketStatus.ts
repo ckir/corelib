@@ -4,7 +4,7 @@
 // Uses Luxon for date/time handling and integrates with ApiNasdaqUnlimited.
 // =============================================
 
-import { ConfigManager, logger } from "@ckir/corelib";
+import { ConfigManager, logger, nextCid } from "@ckir/corelib";
 import { DateTime } from "luxon";
 import { serializeError } from "serialize-error";
 import { ApiNasdaqUnlimited, type NasdaqResult } from "./ApiNasdaqUnlimited";
@@ -138,6 +138,10 @@ async function getStatus(): Promise<NasdaqResult<NasdaqMarketInfo>> {
 		(ConfigManager.get("markets.nasdaq.statusEndpoint") as
 			| string
 			| undefined) ?? DEFAULT_ENDPOINT;
+	// Flight-recorder: cid pairs this status fetch's start with its terminus.
+	const cid = nextCid();
+	const startedAt = performance.now();
+	marketStatusLogger.trace("status: fetch", { cid });
 	try {
 		const result =
 			await ApiNasdaqUnlimited.endPoint<NasdaqMarketInfo>(endpoint);
@@ -150,7 +154,13 @@ async function getStatus(): Promise<NasdaqResult<NasdaqMarketInfo>> {
 				message: errorData.message || "Nasdaq API returned an error status",
 			};
 
+			marketStatusLogger.trace("status: error", {
+				cid,
+				durationMs: performance.now() - startedAt,
+				errorMsg: reasonSerialized.message,
+			});
 			marketStatusLogger.error("Fetch Failed", {
+				cid,
 				reason: reasonSerialized,
 			});
 			return { status: "error", reason: reasonSerialized };
@@ -168,7 +178,13 @@ async function getStatus(): Promise<NasdaqResult<NasdaqMarketInfo>> {
 			const msg = "STRICT SCHEMA VALIDATION FAILED: Missing required fields";
 			const payload = serializeError(data);
 
-			marketStatusLogger.warn(msg, { payload });
+			marketStatusLogger.trace("status: error", {
+				cid,
+				durationMs: performance.now() - startedAt,
+				errorMsg: msg,
+				schemaValid: false,
+			});
+			marketStatusLogger.warn(msg, { cid, payload });
 			return {
 				status: "error",
 				reason: { message: msg, payload },
@@ -176,7 +192,12 @@ async function getStatus(): Promise<NasdaqResult<NasdaqMarketInfo>> {
 		}
 
 		// Path 3: Success
-		marketStatusLogger.trace("Schema validated successfully");
+		marketStatusLogger.trace("status: ok", {
+			cid,
+			durationMs: performance.now() - startedAt,
+			marketStatus: data.mrktStatus,
+			schemaValid: true,
+		});
 		return {
 			status: "success",
 			value: data,
@@ -190,7 +211,13 @@ async function getStatus(): Promise<NasdaqResult<NasdaqMarketInfo>> {
 			message: errorData.message || "Unexpected MarketStatus Exception",
 		};
 
+		marketStatusLogger.trace("status: error", {
+			cid,
+			durationMs: performance.now() - startedAt,
+			errorMsg: serializedReason.message,
+		});
 		marketStatusLogger.error("Unexpected Error", {
+			cid,
 			error: serializedReason,
 		});
 		return {

@@ -18,6 +18,7 @@ import {
 	endPoint,
 	endPoints,
 	getTempDir,
+	nextCid,
 	sleep,
 } from "@ckir/corelib";
 import { DateTime } from "luxon";
@@ -156,30 +157,45 @@ export class MarketSymbols {
 	 * @returns `null` if the symbol is not found or is inactive.
 	 */
 	public async get(symbol: string): Promise<MarketSymbolRow | null> {
+		const cid = nextCid();
+		const startedAt = performance.now();
 		const runtime = detectRuntime();
 		const isEdge = ["cloudflare", "aws-lambda", "gcp-cloudrun"].includes(
 			runtime,
 		);
+		marketSymbolsLogger.trace("resolve: start", { cid, symbol, isEdge });
+
+		let result: MarketSymbolRow | null;
 
 		if (isEdge) {
 			// Edge Sequence: Nasdaq API -> Ingestors -> SQLite
 			let res = await this.searchNasdaqApi(symbol);
-			if (res) return res;
-
-			res = await this.searchIngestors(symbol);
-			if (res) return res;
-
-			return await this.searchDb(symbol);
+			if (res) {
+				result = res;
+			} else {
+				res = await this.searchIngestors(symbol);
+				result = res ?? (await this.searchDb(symbol));
+			}
+		} else {
+			// Non-Edge Sequence: SQLite -> Nasdaq API -> Ingestors
+			let res = await this.searchDb(symbol);
+			if (res) {
+				result = res;
+			} else {
+				res = await this.searchNasdaqApi(symbol);
+				result = res ?? (await this.searchIngestors(symbol));
+			}
 		}
 
-		// Non-Edge Sequence: SQLite -> Nasdaq API -> Ingestors
-		let res = await this.searchDb(symbol);
-		if (res) return res;
+		marketSymbolsLogger.trace("resolve: done", {
+			cid,
+			durationMs: performance.now() - startedAt,
+			symbol,
+			found: result !== null,
+			assetClass: result?.class ?? null,
+		});
 
-		res = await this.searchNasdaqApi(symbol);
-		if (res) return res;
-
-		return await this.searchIngestors(symbol);
+		return result;
 	}
 
 	/**

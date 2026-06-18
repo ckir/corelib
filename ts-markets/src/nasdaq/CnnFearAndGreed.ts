@@ -10,6 +10,7 @@ import {
 	ConfigManager,
 	endPoint,
 	logger,
+	nextCid,
 	type RequestResult,
 } from "@ckir/corelib";
 
@@ -207,7 +208,11 @@ async function getFearAndGreed(
 	filter: CnnFilterInput = CnnFearAndGreedFilter.FearAndGreed,
 	options: Options = {},
 ): Promise<CnnResult<unknown>> {
+	const cid = nextCid();
+	const startedAt = performance.now();
 	const url = buildUrl(date);
+	log("trace", "getFearAndGreed: start", { cid, date, filter });
+
 	const headers = { ...getHeaders(), ...(options.headers ?? {}) };
 	const result: RequestResult = await endPoint(url, { ...options, headers });
 
@@ -240,7 +245,16 @@ async function getFearAndGreed(
 	}
 
 	const value = getFilteredValue(body, filter);
-	log("debug", "CNN FearAndGreed fetched successfully", { filter, url });
+	const sampleScore =
+		value != null && typeof value === "object" && "score" in value
+			? (value as Record<string, unknown>).score
+			: undefined;
+	log("trace", "getFearAndGreed: done", {
+		cid,
+		durationMs: performance.now() - startedAt,
+		filter,
+		sampleScore,
+	});
 
 	return {
 		status: "success",

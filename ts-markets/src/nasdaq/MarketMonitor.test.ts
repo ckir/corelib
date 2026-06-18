@@ -39,17 +39,20 @@ const {
 	const warn = vi.fn();
 	const error = vi.fn();
 	const info = vi.fn();
+	const trace = vi.fn();
 	const endPoint = vi.fn();
 	return {
 		mockDebug: debug,
 		mockWarn: warn,
 		mockError: error,
 		mockInfo: info,
+		mockTrace: trace,
 		mockChildLogger: {
 			debug,
 			warn,
 			error,
 			info,
+			trace,
 		},
 		mockEndPoint: endPoint,
 	};
@@ -65,6 +68,7 @@ vi.mock("@ckir/corelib", async () => {
 		default: mockLogger,
 		logger: mockLogger,
 		endPoint: mockEndPoint,
+		nextCid: () => 1,
 		ConfigManager: {
 			get: vi.fn().mockReturnValue(undefined),
 		},

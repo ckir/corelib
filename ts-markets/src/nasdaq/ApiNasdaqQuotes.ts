@@ -1,5 +1,6 @@
 import {
 	ConfigManager,
+	nextCid,
 	RequestProxied,
 	type StrictLogger,
 } from "@ckir/corelib";
@@ -70,6 +71,18 @@ export class ApiNasdaqQuotes {
 	public async getNasdaqQuote<T = unknown>(
 		symbols: string[],
 	): Promise<NasdaqResult<T>[]> {
+		const cid = nextCid();
+		const startedAt = performance.now();
+		const batches = this.requestProxied
+			? 1
+			: Math.ceil(symbols.length / this.concurrencyLimit);
+		this.logger?.trace("getNasdaqQuote: start", {
+			cid,
+			requested: symbols.length,
+			batches,
+			concurrency: this.concurrencyLimit,
+		});
+
 		const results: NasdaqResult<T>[] = new Array(symbols.length);
 		const fetchQueue: { symbol: string; url: string; index: number }[] = [];
 
@@ -170,6 +183,17 @@ export class ApiNasdaqQuotes {
 				await Promise.all(batchTasks);
 			}
 		}
+
+		const ok = results.filter((r) => r?.status === "success").length;
+		const failed = results.filter((r) => r?.status === "error").length;
+		this.logger?.trace("getNasdaqQuote: done", {
+			cid,
+			durationMs: performance.now() - startedAt,
+			requested: symbols.length,
+			ok,
+			failed,
+			sampleSymbol: symbols[0],
+		});
 
 		return results;
 	}

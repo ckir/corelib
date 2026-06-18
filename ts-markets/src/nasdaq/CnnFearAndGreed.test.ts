@@ -163,8 +163,8 @@ describe("CnnFearAndGreed (Exhaustive)", () => {
 				expect((res.value as any).score).toBe(19.9685352622062);
 				expect((res.value as any).rating).toBe("extreme fear");
 			}
-			expect(logger?.debug).toHaveBeenCalledWith(
-				"CNN FearAndGreed fetched successfully",
+			expect(logger?.trace).toHaveBeenCalledWith(
+				"getFearAndGreed: done",
 				expect.any(Object),
 			);
 		});

@@ -6,7 +6,9 @@ vi.mock("@ckir/corelib", () => ({
 	logger: {
 		child: vi.fn().mockReturnThis(),
 		error: vi.fn(),
+		trace: vi.fn(),
 	},
+	nextCid: () => 1,
 }));
 
 describe("YahooHistoricalProvider", () => {

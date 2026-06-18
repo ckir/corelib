@@ -8,6 +8,7 @@ import {
 	ConfigManager,
 	endPoint,
 	logger,
+	nextCid,
 	type RequestResult,
 } from "@ckir/corelib";
 
@@ -139,11 +140,24 @@ async function nasdaqEndPoint<T = unknown>(
 	url: string | URL | Request,
 	options: Options = {},
 ): Promise<NasdaqResult<T>> {
+	const cid = nextCid();
+	const startedAt = performance.now();
 	const urlStr = typeof url === "string" ? url : url.toString();
+	const urlObj = new URL(urlStr);
+	nasdaqUnlimitedLogger.trace("nasdaqEndPoint: request", {
+		cid,
+		url: urlObj.origin + urlObj.pathname,
+	});
+
 	const headers = { ...getNasdaqHeaders(urlStr), ...(options.headers ?? {}) };
 	const result: RequestResult = await endPoint(url, { ...options, headers });
 
 	if (result.status === "error") {
+		nasdaqUnlimitedLogger.trace("nasdaqEndPoint: error", {
+			cid,
+			durationMs: performance.now() - startedAt,
+			errorMsg: "Transport Error",
+		});
 		log("error", "Transport Error", { url: urlStr, reason: result.reason });
 		return {
 			status: "error",
@@ -157,6 +171,11 @@ async function nasdaqEndPoint<T = unknown>(
 	if (nasdaqBody && typeof nasdaqBody === "object" && "status" in nasdaqBody) {
 		const statusObj = nasdaqBody.status as Record<string, unknown> | undefined;
 		if (statusObj?.rCode !== 200) {
+			nasdaqUnlimitedLogger.trace("nasdaqEndPoint: error", {
+				cid,
+				durationMs: performance.now() - startedAt,
+				errorMsg: "logic check failed",
+			});
 			log("warn", "Request failed logic check", {
 				url: urlStr,
 				status: nasdaqBody.status,
@@ -174,6 +193,12 @@ async function nasdaqEndPoint<T = unknown>(
 	}
 
 	const { body, ...details } = val;
+
+	nasdaqUnlimitedLogger.trace("nasdaqEndPoint: ok", {
+		cid,
+		durationMs: performance.now() - startedAt,
+		status: val.status,
+	});
 
 	return {
 		status: "success",

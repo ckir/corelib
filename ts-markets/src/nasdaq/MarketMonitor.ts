@@ -9,7 +9,7 @@
 // =============================================
 
 import { EventEmitter } from "node:events";
-import { ConfigManager, endPoint, logger } from "@ckir/corelib";
+import { ConfigManager, endPoint, logger, nextCid } from "@ckir/corelib";
 import { DateTime } from "luxon";
 import { serializeError } from "serialize-error";
 import { MarketStatus, type NasdaqMarketInfo } from "./MarketStatus.js";
@@ -151,7 +151,14 @@ export class MarketMonitor extends EventEmitter {
 	private async poll(): Promise<void> {
 		if (!this.isRunning) return;
 
+		// Flight-recorder: cid threads this whole poll cycle; source records which
+		// path produced the phase (proxy/api live data vs time-based heuristic).
+		const cid = nextCid();
+		const startedAt = performance.now();
+		marketMonitorLogger.trace("phase: poll", { cid });
+
 		let success = false;
+		let source: "proxy" | "api" | "heuristic" | "none" = "none";
 
 		// 1. Try proxies first (if any)
 		if (this.proxies.length > 0) {
@@ -180,19 +187,21 @@ export class MarketMonitor extends EventEmitter {
 							data.mrktStatus &&
 							data.openRaw
 						) {
-							this.handleSuccess(data as NasdaqMarketInfo);
+							this.handleSuccess(data as NasdaqMarketInfo, cid);
 							// Update proxy index for next round robin (start with next one next time)
 							this.proxyIndex = (currentIdx + 1) % this.proxies.length;
 							success = true;
+							source = "proxy";
 							break;
 						}
 					}
 					marketMonitorLogger.warn(
 						"Proxy status fetch failed or returned unexpected format",
-						{ proxyUrl },
+						{ cid, proxyUrl },
 					);
 				} catch (err) {
 					marketMonitorLogger.error("Error fetching via proxy", {
+						cid,
 						proxyUrl,
 						error: serializeError(err),
 					});
@@ -206,26 +215,41 @@ export class MarketMonitor extends EventEmitter {
 				const result = await MarketStatus.getStatus();
 
 				if (result.status === "success") {
-					this.handleSuccess(result.value);
+					this.handleSuccess(result.value, cid);
 					success = true;
+					source = "api";
 				} else {
-					this.handleFailure();
+					this.handleFailure(cid);
+					source = this.lastData ? "heuristic" : "none";
 				}
 			} catch (err) {
 				marketMonitorLogger.error("Unexpected poll error", {
+					cid,
 					error: serializeError(err),
 				});
-				this.handleFailure();
+				this.handleFailure(cid);
+				source = this.lastData ? "heuristic" : "none";
 			}
 		}
+
+		// Terminus every cycle (even when phase is unchanged) = feed-liveness +
+		// which data source drove the current phase.
+		marketMonitorLogger.trace("phase: poll-done", {
+			cid,
+			durationMs: performance.now() - startedAt,
+			phase: this.lastPhase,
+			heuristic: source === "heuristic",
+			source,
+		});
 
 		this.scheduleNextPoll();
 	}
 
-	private handleSuccess(data: NasdaqMarketInfo): void {
+	private handleSuccess(data: NasdaqMarketInfo, cid: number): void {
 		this.failureCount = 0;
 		this.lastData = { ...data }; // keep a clean clone
 
+		const from = this.lastPhase;
 		const phase = this.determinePhase(data);
 		const phaseChanged = phase !== this.lastPhase;
 
@@ -233,12 +257,22 @@ export class MarketMonitor extends EventEmitter {
 
 		// Emit only after first successful poll AND on every subsequent phase change
 		if (!this.hasEmitted || phaseChanged) {
+			// THE gating decision. rawStatus = what the API said (catches mapping
+			// bugs); heuristic:false = derived from live data, not a time guess.
+			marketMonitorLogger.trace("phase: change", {
+				cid,
+				from,
+				to: phase,
+				heuristic: false,
+				failureCount: 0,
+				rawStatus: data.mrktStatus,
+			});
 			this.emit("status-change", phase, { ...data }, false);
 			this.hasEmitted = true;
 		}
 	}
 
-	private handleFailure(): void {
+	private handleFailure(cid: number): void {
 		this.failureCount++;
 
 		if (!this.lastData) {
@@ -248,6 +282,8 @@ export class MarketMonitor extends EventEmitter {
 
 		// Heuristic: compute phase from cached data + CURRENT time
 		// We explicitly clear mrktStatus to force time-based calculation
+		const from = this.lastPhase;
+		const computedEt = DateTime.now().setZone("America/New_York").toISO();
 		const phase = this.determinePhase({ ...this.lastData, mrktStatus: "" });
 		const phaseChanged = phase !== this.lastPhase;
 
@@ -261,6 +297,17 @@ export class MarketMonitor extends EventEmitter {
 		};
 
 		if (phaseChanged) {
+			// heuristic:true = phase was GUESSED from time (computedEt) because the
+			// fetch failed, not from live API data — the key wrong-phase signal.
+			marketMonitorLogger.trace("phase: change", {
+				cid,
+				from,
+				to: phase,
+				heuristic: true,
+				failureCount: this.failureCount,
+				rawStatus: "",
+				computedEt,
+			});
 			this.emit("status-change", phase, heuristicData, true);
 		}
 
