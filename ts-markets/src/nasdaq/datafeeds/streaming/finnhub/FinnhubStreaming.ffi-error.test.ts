@@ -10,6 +10,17 @@ vi.mock("@ckir/corelib", () => ({
 			}
 		},
 	},
+	nextCid: () => 1,
+	logger: {
+		child: () => ({
+			trace() {},
+			debug() {},
+			info() {},
+			warn() {},
+			error() {},
+			fatal() {},
+		}),
+	},
 }));
 
 // import the FACADE after the mock

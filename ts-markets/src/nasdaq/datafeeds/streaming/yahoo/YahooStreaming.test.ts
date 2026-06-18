@@ -28,10 +28,20 @@ vi.mock("@ckir/corelib", () => {
 		clean = vi.fn().mockResolvedValue(undefined);
 	}
 
+	const mockLog = {
+		trace: vi.fn(),
+		debug: vi.fn(),
+		info: vi.fn(),
+		warn: vi.fn(),
+		error: vi.fn(),
+		fatal: vi.fn(),
+	};
 	return {
 		getMode: vi.fn(),
 		getTempDir: vi.fn(() => "/tmp"),
 		detectRuntime: vi.fn(() => "node"),
+		nextCid: () => 1,
+		logger: { ...mockLog, child: () => mockLog },
 		coreFFI: {
 			YahooStreaming: MockYahoo,
 		},

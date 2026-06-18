@@ -6,9 +6,11 @@
 // =============================================
 
 import { EventEmitter } from "node:events";
-import { coreFFI, getMode, getTempDir } from "@ckir/corelib";
+import { coreFFI, getMode, getTempDir, logger, nextCid } from "@ckir/corelib";
+import { StreamHealthTracker } from "../StreamHealthTracker.js";
 
 const RustYahoo = (coreFFI as any)?.YahooStreaming;
+const yahooStreamingLogger = logger.child({ section: "YahooStreaming" });
 
 /**
  * YahooStreaming
@@ -23,6 +25,10 @@ const RustYahoo = (coreFFI as any)?.YahooStreaming;
 export class YahooStreaming extends EventEmitter {
 	private rust: any;
 	private initialized = false;
+	private readonly health = new StreamHealthTracker(
+		"yahoo",
+		yahooStreamingLogger,
+	);
 
 	constructor() {
 		super();
@@ -36,7 +42,10 @@ export class YahooStreaming extends EventEmitter {
 		try {
 			this.rust = new RustYahoo(
 				(_err: any, record: any) => this.emit("log", record),
-				(_err: any, data: any) => this.emit("pricing", data),
+				(_err: any, data: any) => {
+					this.health.recordTick();
+					this.emit("pricing", data);
+				},
 				(_err: any, event: any) => {
 					if (event) {
 						this.emit(event.type, event.data ?? null);
@@ -83,8 +92,15 @@ export class YahooStreaming extends EventEmitter {
 	 * @returns {Promise<void>}
 	 */
 	async start() {
+		const cid = nextCid();
+		yahooStreamingLogger.trace("stream: start", {
+			cid,
+			feed: "yahoo",
+			symbols: this.health.symbolCount,
+		});
 		if (!this.initialized) await this.init();
 		await this.rust.start();
+		this.health.start();
 	}
 
 	/**
@@ -92,6 +108,11 @@ export class YahooStreaming extends EventEmitter {
 	 * @param {string[]} symbols - Array of trading symbols.
 	 */
 	subscribe(symbols: string[]) {
+		this.health.recordSubscribe(symbols);
+		yahooStreamingLogger.trace("stream: subscribe", {
+			feed: "yahoo",
+			symbols: this.health.symbolCount,
+		});
 		this.rust.subscribe(symbols);
 	}
 
@@ -100,6 +121,11 @@ export class YahooStreaming extends EventEmitter {
 	 * @param {string[]} symbols - Array of trading symbols.
 	 */
 	unsubscribe(symbols: string[]) {
+		this.health.recordUnsubscribe(symbols);
+		yahooStreamingLogger.trace("stream: unsubscribe", {
+			feed: "yahoo",
+			symbols: this.health.symbolCount,
+		});
 		this.rust.unsubscribe(symbols);
 	}
 
@@ -114,6 +140,8 @@ export class YahooStreaming extends EventEmitter {
 	 * Stops the streaming client and disconnects.
 	 */
 	stop() {
+		yahooStreamingLogger.trace("stream: stop", { feed: "yahoo" });
+		this.health.stop();
 		this.rust.stop();
 	}
 }

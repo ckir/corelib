@@ -12,6 +12,17 @@ vi.mock("@ckir/corelib", () => ({
 	},
 	getMode: () => "production",
 	getTempDir: () => "/tmp/test",
+	nextCid: () => 1,
+	logger: {
+		child: () => ({
+			trace() {},
+			debug() {},
+			info() {},
+			warn() {},
+			error() {},
+			fatal() {},
+		}),
+	},
 }));
 
 // import the FACADE after the mock

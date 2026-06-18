@@ -6,9 +6,11 @@
 // =============================================
 
 import { EventEmitter } from "node:events";
-import { coreFFI, getMode, getTempDir } from "@ckir/corelib";
+import { coreFFI, getMode, getTempDir, logger, nextCid } from "@ckir/corelib";
+import { StreamHealthTracker } from "../StreamHealthTracker.js";
 
 const RustAlpaca = (coreFFI as any)?.AlpacaStreaming;
+const alpacaStreamingLogger = logger.child({ section: "AlpacaStreaming" });
 
 /**
  * AlpacaStreaming
@@ -23,6 +25,10 @@ const RustAlpaca = (coreFFI as any)?.AlpacaStreaming;
 export class AlpacaStreaming extends EventEmitter {
 	private rust: any;
 	private initialized = false;
+	private readonly health = new StreamHealthTracker(
+		"alpaca",
+		alpacaStreamingLogger,
+	);
 
 	constructor() {
 		super();
@@ -36,7 +42,10 @@ export class AlpacaStreaming extends EventEmitter {
 		try {
 			this.rust = new RustAlpaca(
 				(_err: any, record: any) => this.emit("log", record),
-				(_err: any, data: any) => this.emit("pricing", data),
+				(_err: any, data: any) => {
+					this.health.recordTick();
+					this.emit("pricing", data);
+				},
 				(_err: any, event: any) => {
 					if (event) {
 						this.emit(event.type, event.data ?? null);
@@ -97,8 +106,15 @@ export class AlpacaStreaming extends EventEmitter {
 	 * @returns {Promise<void>}
 	 */
 	async start() {
+		const cid = nextCid();
+		alpacaStreamingLogger.trace("stream: start", {
+			cid,
+			feed: "alpaca",
+			symbols: this.health.symbolCount,
+		});
 		if (!this.initialized) await this.init();
 		await this.rust.start();
+		this.health.start();
 	}
 
 	/**
@@ -109,6 +125,15 @@ export class AlpacaStreaming extends EventEmitter {
 		input: string[] | { trades?: string[]; quotes?: string[]; bars?: string[] },
 	) {
 		const opts = Array.isArray(input) ? { quotes: input } : input;
+		this.health.recordSubscribe([
+			...(opts.quotes ?? []),
+			...(opts.trades ?? []),
+			...(opts.bars ?? []),
+		]);
+		alpacaStreamingLogger.trace("stream: subscribe", {
+			feed: "alpaca",
+			symbols: this.health.symbolCount,
+		});
 		this.rust.subscribe(opts);
 	}
 
@@ -120,6 +145,15 @@ export class AlpacaStreaming extends EventEmitter {
 		input: string[] | { trades?: string[]; quotes?: string[]; bars?: string[] },
 	) {
 		const opts = Array.isArray(input) ? { quotes: input } : input;
+		this.health.recordUnsubscribe([
+			...(opts.quotes ?? []),
+			...(opts.trades ?? []),
+			...(opts.bars ?? []),
+		]);
+		alpacaStreamingLogger.trace("stream: unsubscribe", {
+			feed: "alpaca",
+			symbols: this.health.symbolCount,
+		});
 		this.rust.unsubscribe(opts);
 	}
 
@@ -134,6 +168,8 @@ export class AlpacaStreaming extends EventEmitter {
 	 * Stops the streaming client and disconnects.
 	 */
 	stop() {
+		alpacaStreamingLogger.trace("stream: stop", { feed: "alpaca" });
+		this.health.stop();
 		this.rust.stop();
 	}
 }
