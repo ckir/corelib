@@ -176,9 +176,15 @@ describe("RequestUnlimited", () => {
 
 			await endPoint("https://api.test.com/retry-logic");
 
-			expect(mockTrace).toHaveBeenCalledWith("Retrying API call", {
-				retryCount: expect.any(Number),
-			});
+			// Retry trace is now per-call so it carries the request's cid (+ duration).
+			expect(mockTrace).toHaveBeenCalledWith(
+				"endPoint: retry",
+				expect.objectContaining({
+					cid: expect.any(Number),
+					retryCount: expect.any(Number),
+					durationMs: expect.any(Number),
+				}),
+			);
 		});
 
 		it("should allow custom beforeRetry hooks alongside default one", async () => {

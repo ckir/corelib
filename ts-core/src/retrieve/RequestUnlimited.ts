@@ -9,6 +9,7 @@ import ky, { HTTPError, type Options as KyOptions } from "ky";
 import { type ErrorObject, serializeError } from "serialize-error";
 import { ConfigManager } from "../configs";
 import logger from "../loggers";
+import { nextCid } from "../utils/flight-recorder";
 import {
 	type SerializedResponse,
 	serializeResponse,
@@ -120,11 +121,9 @@ export const DEFAULT_REQUEST_OPTIONS: KyOptions = {
 		accept: "application/json",
 	},
 	hooks: {
-		beforeRetry: [
-			async ({ retryCount }) => {
-				requestUnlimitedLogger.trace("Retrying API call", { retryCount });
-			},
-		],
+		// Retry logging is done per-call in endPoint() so it can carry the request's cid;
+		// a module-level default hook here has no access to that per-call correlation id.
+		beforeRetry: [],
 	},
 };
 
@@ -189,7 +188,10 @@ export async function endPoint<T = unknown>(
 		MAX_BACKOFF_LIMIT_MS,
 		3000,
 	);
+	const cid = nextCid();
+	const startedAt = performance.now();
 	requestUnlimitedLogger.trace("endPoint: request", {
+		cid,
 		url: safeUrl(url),
 		timeout: cfgTimeout,
 		retryLimit: cfgRetryLimit,
@@ -216,6 +218,14 @@ export async function endPoint<T = unknown>(
 			hooks: {
 				beforeRetry: [
 					...(DEFAULT_REQUEST_OPTIONS.hooks?.beforeRetry || []),
+					// Per-call so the retry trace correlates to this request's cid.
+					async ({ retryCount }) => {
+						requestUnlimitedLogger.trace("endPoint: retry", {
+							cid,
+							retryCount,
+							durationMs: performance.now() - startedAt,
+						});
+					},
 					...(hooks?.beforeRetry || []),
 				],
 			},
@@ -227,6 +237,8 @@ export async function endPoint<T = unknown>(
 		const response = await serializeResponse<T>(responseObject);
 
 		requestUnlimitedLogger.trace("endPoint: ok", {
+			cid,
+			durationMs: performance.now() - startedAt,
 			url: safeUrl(url),
 			status: responseObject.status,
 		});
@@ -242,7 +254,14 @@ export async function endPoint<T = unknown>(
 				error.response,
 			);
 
+			requestUnlimitedLogger.trace("endPoint: error", {
+				cid,
+				durationMs: performance.now() - startedAt,
+				status: errorResponse?.status,
+				errorMsg: "HTTP error",
+			});
 			requestUnlimitedLogger.warn("HTTP Error", {
+				cid,
 				status: errorResponse?.status,
 				url: url.toString(),
 			});
@@ -254,7 +273,13 @@ export async function endPoint<T = unknown>(
 		}
 
 		const serializedError = serializeError(error);
+		requestUnlimitedLogger.trace("endPoint: error", {
+			cid,
+			durationMs: performance.now() - startedAt,
+			errorMsg: serializedError?.message ?? "internal/network error",
+		});
 		requestUnlimitedLogger.error("Internal/Network Error", {
+			cid,
 			error: serializedError,
 		});
 
@@ -276,7 +301,9 @@ export async function endPoints<T = unknown>(
 	urls: (string | URL | Request)[],
 	options: KyOptions = {},
 ): Promise<RequestResult<T>[]> {
-	requestUnlimitedLogger.trace("endPoints: batch", { count: urls.length });
+	const cid = nextCid();
+	const startedAt = performance.now();
+	requestUnlimitedLogger.trace("endPoints: batch", { cid, count: urls.length });
 	const promises = urls.map((url) => endPoint<T>(url, options));
 	const results = await Promise.allSettled(promises);
 
@@ -290,6 +317,8 @@ export async function endPoints<T = unknown>(
 
 	const ok = mapped.filter((r) => r.status === "success").length;
 	requestUnlimitedLogger.trace("endPoints: done", {
+		cid,
+		durationMs: performance.now() - startedAt,
 		ok,
 		failed: mapped.length - ok,
 	});
