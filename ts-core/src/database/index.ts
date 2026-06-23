@@ -3,9 +3,11 @@
  * @description Main entry point for the database module, exporting factory functions and core components.
  */
 
-import type { BaseDbConfig, Database } from "./core/types.js";
+import type { Database } from "./core/types.js";
 import { PostgresDb } from "./postgres/postgres-db.js";
+import type { PostgresConfig } from "./postgres/postgres-config.js";
 import { SqliteDb } from "./sqlite/sqlite-db.js";
+import type { SqliteConfig } from "./sqlite/sqlite-config.js";
 
 export * from "./core/driver.js";
 export * from "./core/errors.js";
@@ -20,10 +22,10 @@ export * from "./sqlite/index.js";
  * Factory function to create a database instance based on the configuration.
  * It automatically selects the correct implementation (Postgres or SQLite) based on the `dialect` field.
  *
- * @param {BaseDbConfig} config - The database configuration.
+ * @param {SqliteConfig | PostgresConfig} config - The database configuration.
  * @returns {Promise<Database>} A promise resolving to a Database instance.
  */
-export async function createDatabase(config: BaseDbConfig): Promise<Database> {
+export async function createDatabase(config: SqliteConfig | PostgresConfig): Promise<Database> {
 	if (config.dialect === "postgres") {
 		return new PostgresDb(config as any);
 	}
