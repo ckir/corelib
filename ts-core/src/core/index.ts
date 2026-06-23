@@ -140,10 +140,24 @@ async function loadFFI() {
 }
 
 /**
+ * Process-global singleton guard: cache the loadFFI() PROMISE on globalThis so
+ * that if this module is ever instantiated more than once in a single process
+ * (e.g. a stale `dist` coexisting with `src` during a rebuild), the native
+ * binary is loaded exactly once and the FFI handle is shared across instances.
+ * Caching the promise (not the resolved value) also dedups concurrent instances.
+ */
+const FFI_PROMISE_KEY = "__ckir_corelib_coreFFI_promise__";
+const _ffiGlobal = globalThis as Record<string, unknown>;
+if (!_ffiGlobal[FFI_PROMISE_KEY]) {
+	_ffiGlobal[FFI_PROMISE_KEY] = loadFFI();
+}
+/**
  * Raw FFI exports from the native binary.
  * Use with caution and proper type casting.
  */
-export const coreFFI = await loadFFI();
+export const coreFFI = await (_ffiGlobal[FFI_PROMISE_KEY] as ReturnType<
+	typeof loadFFI
+>);
 
 /**
  * Checks if the native FFI library is loaded and available.
