@@ -39,6 +39,18 @@ export class SqliteDriver implements DbDriver {
 			url: this.config.url,
 			authToken: this.config.authToken,
 		});
+		// Opt-in only (config.journalMode) so shared-library consumers are unaffected.
+		// Local SQLite files default to rollback-journal + FULL fsync (→ the 100-388ms
+		// log writes observed). WAL + NORMAL makes them sequential appends (~1-5ms).
+		// PRAGMA journal_mode is a no-op/unsupported on remote libsql (Turso), so also
+		// gate on a local-file url shape.
+		const isLocalFile = /^file:|\.db($|\?)|^\.{0,2}\//.test(this.config.url);
+		if (this.config.journalMode && isLocalFile) {
+			await this.client.execute(`PRAGMA journal_mode=${this.config.journalMode}`);
+			if (this.config.synchronous) {
+				await this.client.execute(`PRAGMA synchronous=${this.config.synchronous}`);
+			}
+		}
 	}
 
 	async disconnect(): Promise<void> {
