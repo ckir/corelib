@@ -46,9 +46,13 @@ export class SqliteDriver implements DbDriver {
 		// gate on a local-file url shape.
 		const isLocalFile = /^file:|\.db($|\?)|^\.{0,2}\//.test(this.config.url);
 		if (this.config.journalMode && isLocalFile) {
-			await this.client.execute(`PRAGMA journal_mode=${this.config.journalMode}`);
+			await this.client.execute(
+				`PRAGMA journal_mode=${this.config.journalMode}`,
+			);
 			if (this.config.synchronous) {
-				await this.client.execute(`PRAGMA synchronous=${this.config.synchronous}`);
+				await this.client.execute(
+					`PRAGMA synchronous=${this.config.synchronous}`,
+				);
 			}
 		}
 	}

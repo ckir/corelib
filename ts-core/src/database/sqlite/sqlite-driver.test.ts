@@ -36,7 +36,9 @@ function pragmaCalls(): string[] {
 	return executeSpy.mock.calls
 		.map((args) => {
 			const arg = args[0];
-			return typeof arg === "string" ? arg : (arg as { sql?: string }).sql ?? "";
+			return typeof arg === "string"
+				? arg
+				: ((arg as { sql?: string }).sql ?? "");
 		})
 		.filter((s) => s.startsWith("PRAGMA"));
 }

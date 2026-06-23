@@ -4,10 +4,10 @@
  */
 
 import type { Database } from "./core/types.js";
-import { PostgresDb } from "./postgres/postgres-db.js";
 import type { PostgresConfig } from "./postgres/postgres-config.js";
-import { SqliteDb } from "./sqlite/sqlite-db.js";
+import { PostgresDb } from "./postgres/postgres-db.js";
 import type { SqliteConfig } from "./sqlite/sqlite-config.js";
+import { SqliteDb } from "./sqlite/sqlite-db.js";
 
 export * from "./core/driver.js";
 export * from "./core/errors.js";
@@ -25,7 +25,9 @@ export * from "./sqlite/index.js";
  * @param {SqliteConfig | PostgresConfig} config - The database configuration.
  * @returns {Promise<Database>} A promise resolving to a Database instance.
  */
-export async function createDatabase(config: SqliteConfig | PostgresConfig): Promise<Database> {
+export async function createDatabase(
+	config: SqliteConfig | PostgresConfig,
+): Promise<Database> {
 	if (config.dialect === "postgres") {
 		return new PostgresDb(config as any);
 	}
