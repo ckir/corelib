@@ -4,7 +4,7 @@
 // Uses Luxon for date/time handling and integrates with ApiNasdaqUnlimited.
 // =============================================
 
-import { ConfigManager, logger, nextCid } from "@ckir/corelib";
+import { ConfigManager, logger, nextCid } from "@ckirg/corelib";
 import { DateTime } from "luxon";
 import { serializeError } from "serialize-error";
 import { ApiNasdaqUnlimited, type NasdaqResult } from "./ApiNasdaqUnlimited";

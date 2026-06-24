@@ -4,7 +4,7 @@
  * Covers A-Z sorting, in-memory caching, thundering herd protection, and error handling.
  */
 
-import { logger } from "@ckir/corelib";
+import { logger } from "@ckirg/corelib";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 // Fixed relative path: Top100.test.ts is in 'groups/', ApiNasdaqUnlimited is in '../'
 import { ApiNasdaqUnlimited } from "../ApiNasdaqUnlimited";
@@ -13,7 +13,7 @@ import { ApiNasdaqUnlimited } from "../ApiNasdaqUnlimited";
 // Mock Configuration
 // ---------------------------------------------------------------------------
 
-vi.mock("@ckir/corelib", () => ({
+vi.mock("@ckirg/corelib", () => ({
 	logger: {
 		trace: vi.fn(),
 		debug: vi.fn(),

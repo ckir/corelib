@@ -12,7 +12,7 @@ const require = createRequire(import.meta.url);
 
 export default defineConfig({
 	plugins: [cloudflareTest({ wrangler: { configPath: "./wrangler.toml" } })],
-	// tough-cookie (via @ckir/corelib-markets → yahoo-finance2) uses tldts, whose
+	// tough-cookie (via @ckirg/corelib-markets → yahoo-finance2) uses tldts, whose
 	// ES6 bundle has a relative import `./src/suffix-trie` that miniflare's CJS-shim
 	// cannot resolve (extensionless, not in workerd module registry). Alias tldts to
 	// its self-contained CJS bundle to bypass the problematic ESM relative import.

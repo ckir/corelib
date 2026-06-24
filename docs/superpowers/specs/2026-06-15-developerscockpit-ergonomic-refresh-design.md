@@ -102,7 +102,7 @@ Four tiers, ordered by how often you reach for them (agy's velocity grouping):
 
 ### 4.4 Version bump (`V`) — lockstep handler
 
-Evidence: all five manifests (`package.json`, `ts-core/`, `ts-markets/`, `ts-cloud/` package.json, `rust/Cargo.toml`) are in lockstep at `0.1.17`; no changesets, no release-workflow versioning. **And the version is also embedded in `README.md`** (the install snippets: the `v0.1.17` release-tag path and the `ckir-corelib[-markets]-0.1.17.tgz` filenames — 5 spots). So `V` becomes a stdlib Python handler that: reads the current version (from `ts-core/package.json`, as `get_current_version` already does), prompts `patch/minor/major`, computes the next semver, and **writes the new version across an EXPLICIT target set** in sync. Prints old→new + the per-file change count. Does NOT git-commit/tag (that's `K`'s job).
+Evidence: all five manifests (`package.json`, `ts-core/`, `ts-markets/`, `ts-cloud/` package.json, `rust/Cargo.toml`) are in lockstep at `0.1.17`; no changesets, no release-workflow versioning. **And the version is also embedded in `README.md`** (the install snippets: the `v0.1.17` release-tag path and the `ckirg-corelib[-markets]-0.1.17.tgz` filenames — 5 spots). So `V` becomes a stdlib Python handler that: reads the current version (from `ts-core/package.json`, as `get_current_version` already does), prompts `patch/minor/major`, computes the next semver, and **writes the new version across an EXPLICIT target set** in sync. Prints old→new + the per-file change count. Does NOT git-commit/tag (that's `K`'s job).
 
 **Target set (explicit — NEVER a blanket repo scan):**
 1. The four `package.json` `version` fields (JSON edit).
@@ -111,7 +111,7 @@ Evidence: all five manifests (`package.json`, `ts-core/`, `ts-markets/`, `ts-clo
 
 **Do NOT touch historical/planning docs.** `0.1.17` also appears in `ANTIGRAVITY-TO-CLAUDE.md` and `docs/superpowers/**` — those are point-in-time records, not live version refs. The handler operates ONLY on the enumerated target set; it must not grep-and-replace the version across all `*.md`.
 
-**No sibling-ref / lockfile churn (verified, closes agy 🔴/🟡):** the inter-package deps use `workspace:*` (`ts-cloud`/`ts-markets` → `@ckir/corelib*`), not pinned `workspace:^x.y.z`, so a version bump needs **no** updates to `dependencies` ranges and does **not** desync `pnpm-lock.yaml` (workspace links are by name). The handler edits only the version fields/refs; no `pnpm install` required.
+**No sibling-ref / lockfile churn (verified, closes agy 🔴/🟡):** the inter-package deps use `workspace:*` (`ts-cloud`/`ts-markets` → `@ckirg/corelib*`), not pinned `workspace:^x.y.z`, so a version bump needs **no** updates to `dependencies` ranges and does **not** desync `pnpm-lock.yaml` (workspace links are by name). The handler edits only the version fields/refs; no `pnpm install` required.
 
 > **CONFIRM AT REVIEW:** (a) manual lockstep versioning across these six files is the intended flow? (b) Are there OTHER live version-bearing files beyond the 5 manifests + `README.md` (e.g. a docs install guide, a badge) that should be in the target set? Name them and I'll add them; the design keeps the set explicit/configurable so adding a file is trivial.
 

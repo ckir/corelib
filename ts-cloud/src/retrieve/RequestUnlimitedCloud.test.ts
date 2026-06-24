@@ -3,14 +3,14 @@
  * @description Exhaustive test suite for the RequestUnlimited (ky) edge endpoint.
  */
 
-import { endPoint, type RequestResult } from "@ckir/corelib";
+import { endPoint, type RequestResult } from "@ckirg/corelib";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import type { AppEnv } from "../core/types";
 import { kyRouter } from "./RequestUnlimitedCloud";
 
 // Mock the corelib endPoint utility
-vi.mock("@ckir/corelib", () => ({
+vi.mock("@ckirg/corelib", () => ({
 	endPoint: vi.fn(),
 }));
 

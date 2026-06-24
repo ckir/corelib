@@ -7,8 +7,8 @@ export default defineConfig({
 	clean: true,
 	minify: process.env.MODE === "production",
 	external: [
-		"@ckir/corelib",
-		"@ckir/corelib-markets",
+		"@ckirg/corelib",
+		"@ckirg/corelib-markets",
 		"pino",
 		"pino-pretty",
 		"luxon",

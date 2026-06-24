@@ -1,4 +1,4 @@
-import { logger } from "@ckir/corelib";
+import { logger } from "@ckirg/corelib";
 import { serve } from "@hono/node-server";
 import { serializeError } from "serialize-error";
 import { createRouter } from "../../core/router";

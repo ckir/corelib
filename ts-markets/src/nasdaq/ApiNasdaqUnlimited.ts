@@ -10,7 +10,7 @@ import {
 	logger,
 	nextCid,
 	type RequestResult,
-} from "@ckir/corelib";
+} from "@ckirg/corelib";
 
 const nasdaqUnlimitedLogger = logger.child({ section: "ApiNasdaqUnlimited" });
 

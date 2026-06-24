@@ -4,7 +4,7 @@
  * Purpose: Expose resilient historical data fetching on edge environments.
  */
 
-import { Historical } from "@ckir/corelib-markets";
+import { Historical } from "@ckirg/corelib-markets";
 import { type Context, Hono } from "hono";
 import { serializeError } from "serialize-error";
 import type { AppEnv } from "../../core/types";

@@ -1,4 +1,4 @@
-# @ckir/corelib
+# @ckirg/corelib
 
 The foundational package of the Corelib monorepo, providing essential utilities, resilient HTTP, structured logging, and database abstractions.
 
@@ -21,7 +21,7 @@ Install from the GitHub Release — see the [root install guide](../README.md#-i
 
 ```bash
 # pnpm
-pnpm add https://github.com/ckir/corelib/releases/download/v0.1.17/ckir-corelib-0.1.17.tgz
+pnpm add https://github.com/ckir/corelib/releases/download/v0.1.17/ckirg-corelib-0.1.17.tgz
 ```
 
 ## Usage Examples
@@ -30,7 +30,7 @@ pnpm add https://github.com/ckir/corelib/releases/download/v0.1.17/ckir-corelib-
 Use `endPoint` for single requests or `endPoints` for parallel requests.
 
 ```typescript
-import { endPoint } from '@ckir/corelib';
+import { endPoint } from '@ckirg/corelib';
 
 const result = await endPoint('https://api.github.com/repos/ckir/corelib');
 
@@ -44,7 +44,7 @@ if (result.status === 'success') {
 `RequestProxied` provides an identical API to `RequestUnlimited` but adds automatic rotation, full fallback, and automatic removal of dead proxies. The pool is self-healing — unhealthy endpoints are pruned on first failure and do not re-enter rotation.
 
 ```typescript
-import { RequestProxied } from '@ckir/corelib';
+import { RequestProxied } from '@ckirg/corelib';
 
 const proxies = [
   "https://proxy-us.example.com",
@@ -68,7 +68,7 @@ const results = await client.endPoints([
 The logger follows a strict `(msg: string, extras?: object)` signature and handles runtime differences automatically.
 
 ```typescript
-import { logger } from '@ckir/corelib';
+import { logger } from '@ckirg/corelib';
 
 // Basic logging
 logger.info("Application started");
@@ -89,7 +89,7 @@ logger.info("Critical event", { telemetry: true });
 Switch between SQLite and PostgreSQL with minimal configuration changes.
 
 ```typescript
-import { createDatabase } from '@ckir/corelib';
+import { createDatabase } from '@ckirg/corelib';
 
 // SQLite
 const db = await createDatabase({
@@ -130,7 +130,7 @@ Manage complex configuration hierarchies with ease.
 Both the **static** and **instance** forms of `get()` are supported by design — use whichever fits your call site. They read from the same singleton store.
 
 ```typescript
-import { ConfigManager } from '@ckir/corelib';
+import { ConfigManager } from '@ckirg/corelib';
 
 // ── Instance form (explicit singleton) ────────────────────────────────────
 const config = ConfigManager.getInstance();
@@ -185,7 +185,7 @@ if (!config.isInitialized) {
 Access high-performance Rust logic directly from TypeScript. The implementation is resilient and will disable FFI features if the native binary is missing rather than crashing the module.
 
 ```typescript
-import { Core } from '@ckir/corelib';
+import { Core } from '@ckirg/corelib';
 
 // Check if FFI is available in current runtime
 if (Core.isFfiAvailable()) {
@@ -210,7 +210,7 @@ Platform-agnostic helpers for common tasks.
 - File system helpers with graceful fallbacks across runtimes
 
 ```typescript
-import { detectRuntime, sleep, getEnv, getSysInfo } from '@ckir/corelib';
+import { detectRuntime, sleep, getEnv, getSysInfo } from '@ckirg/corelib';
 
 // Detect where we are (node, bun, deno, cloudflare, aws-lambda, etc.)
 const runtime = detectRuntime();

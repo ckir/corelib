@@ -44,7 +44,7 @@ This review analyzes the exhaustive integration test tier proposed for the corel
 #### 🟡 Should-Fix — "White-Box Against Source" Bypasses Real Bundling Issues
 *   **Design Area**: Source routing via `tsconfig` path aliases
 *   **Verification**: [THEORETICAL]
-*   **Issue**: While mapping `@ckir/*` directly to TypeScript source files is convenient and fast, it completely bypasses the compilation boundaries. If there are ESM/CJS interop issues, invalid `.js` import extensions, bundling bugs inside `tsup.config`, or missing peer dependencies, the integration tests will pass on source files but crash when the distributed package is actually loaded by a consumer.
+*   **Issue**: While mapping `@ckirg/*` directly to TypeScript source files is convenient and fast, it completely bypasses the compilation boundaries. If there are ESM/CJS interop issues, invalid `.js` import extensions, bundling bugs inside `tsup.config`, or missing peer dependencies, the integration tests will pass on source files but crash when the distributed package is actually loaded by a consumer.
 *   **Concrete Fix**: The integration tests should run directly against the built `.tgz` packages or local workspace distributions in `dist/`, rather than using tsconfig source paths. Enforce that integration tests are preceded by a complete `build-all` operation.
 
 #### 🟢 Nit — Non-Determinism in Streaming (WS) and Time/Cron Tests
@@ -1591,7 +1591,7 @@ We evaluate the proposed shapes below through the strict lens of library consump
 
 | Candidate Shape | Who Consumes It | Library Integration Alignment | Verdict |
 | :--- | :--- | :--- | :--- |
-| **(A) IN-PROCESS UNIFIED NODE/TS API** | TS/JS projects importing `@ckir/corelib-markets` looking for multi-provider streams. | **PERFECT**. Standard dynamic package import, runs in the same V8 execution context, zero local port allocation, zero network loopback overhead. | **BUILD** (Primary Path) |
+| **(A) IN-PROCESS UNIFIED NODE/TS API** | TS/JS projects importing `@ckirg/corelib-markets` looking for multi-provider streams. | **PERFECT**. Standard dynamic package import, runs in the same V8 execution context, zero local port allocation, zero network loopback overhead. | **BUILD** (Primary Path) |
 | **(B) RUST IN-PROCESS SINGLE-FFI AGGREGATOR** | Same TS/JS projects, but with aggregation shifted below the FFI boundary. | **PROBABLE**. While in-process, it forces significant N-API code duplication, rigid callback mappings, and heavy Rust compilation times without latency gains. | **DROP** (Over-engineered) |
 | **(C) THE WS-SERVER BINARY** | External non-Node environments or distributed microservice-mesh consumers. | **POOR**. Imposes standalone operational overhead for downstream teams who just want a local library dependency. | **DROP** (Under YAGNI rule) |
 
@@ -1620,7 +1620,7 @@ Conversely, complex deduplication logic across different providers should be avo
 
 #### Q3: If (A) is mostly a thin TS fan-in, does it belong as a Phase at all, or folded into existing ts-markets exports? Does (B) earn its new-Rust-and-FFI cost over (A)?
 If (A) wraps routing, fallback, and health state machines as outlined above, it is a **substantial, highly useful engine** that easily earns its place as a Phase 3 deliverable.
-However, because it is client-side TypeScript, it can be seamlessly compiled and distributed inside the existing `@ckir/corelib-markets` package without creating a fourth packaging project.
+However, because it is client-side TypeScript, it can be seamlessly compiled and distributed inside the existing `@ckirg/corelib-markets` package without creating a fourth packaging project.
 *(B) absolutely does not earn its cost.* A single Rust aggregator object is extremely difficult to debug, restricts user-defined routing, and doubles N-API marshalling code.
 
 #### Q4: Should the WS binary (C) survive in any form, or be dropped entirely under YAGNI?
@@ -1631,7 +1631,7 @@ Instead, build a simple **reference example script** inside `ts-markets/examples
 
 ### 4. Overall Recommendation & Action Plan
 
-**We recommend shifting Phase 3 away from any standalone background Rust binary server and redefining it as a "Unified In-Process Client Engine" (MarketStream) implemented completely in TypeScript within `@ckir/corelib-markets`. This class will encapsulate Alpaca, Yahoo, and Finnhub stream instances under the hood, presenting a single clean interface that supports automatic Symbol-to-Provider routing, unified connection state-machine tracking, normalized error propagation, and basic provider-redundancy fallback, fully respecting corelib's nature as an in-process library dependency. The standalone Rust WS server binary represents a premature, complex infrastructure burden and should be DROPPED entirely from the roadmap, with reference server functionality relegated to a simple, developer-friendly TypeScript example.**
+**We recommend shifting Phase 3 away from any standalone background Rust binary server and redefining it as a "Unified In-Process Client Engine" (MarketStream) implemented completely in TypeScript within `@ckirg/corelib-markets`. This class will encapsulate Alpaca, Yahoo, and Finnhub stream instances under the hood, presenting a single clean interface that supports automatic Symbol-to-Provider routing, unified connection state-machine tracking, normalized error propagation, and basic provider-redundancy fallback, fully respecting corelib's nature as an in-process library dependency. The standalone Rust WS server binary represents a premature, complex infrastructure burden and should be DROPPED entirely from the roadmap, with reference server functionality relegated to a simple, developer-friendly TypeScript example.**
 
 ---
 
@@ -1639,7 +1639,7 @@ Instead, build a simple **reference example script** inside `ts-markets/examples
 
 ### 1. Hard Cost/Benefit Tradeoff: Is Consolidation Worth It?
 *   **Verdict**: **Yes, but only under strategic long-term alignment.**
-*   **The Simpler Alternative (Unified TS `MarketStream` in `@ckir/corelib-markets`)**:
+*   **The Simpler Alternative (Unified TS `MarketStream` in `@ckirg/corelib-markets`)**:
     *   *Pros*: Extremely fast to market (shippable in days). Separation of runtime sandboxes. Node.js users get a seamless unified API wrapper with zero cross-repo build complications.
     *   *Cons*: Creates an immediate maintenance bifurcated state—two independent engines implementing WebSocket connections, schemas, retry logic, and logging signatures in Rust. Upstream provider API changes, schema evolutions, or reconnection bugs must be duplicate-tested and manually back-ported across both repos.
 *   **The Consolidation (Finstream on Corelib)**:
@@ -1798,7 +1798,7 @@ This review pressure-tests the newly compiled integration-test tier implementati
 
 #### C. FFI Exports (Task 9)
 *   **Verdict & Verification**: 🟢 **Nit (Verified Correct)** (checked [`ts-core/src/core/index.ts`](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0b97b5ce/ts-core/src/core/index.ts#L138-L205)).
-*   **Conclusion**: `getVersion` and `logAndDouble` are indeed exported by name in `ts-core/src/core/index.ts` and re-exported in `ts-core/src/index.ts` (via `export * from "./core"`), making them reachable directly at the `@ckir/corelib` index. `isFfiAvailable` and `Core` are indeed TS wrappers there. The plan's imports here are correct.
+*   **Conclusion**: `getVersion` and `logAndDouble` are indeed exported by name in `ts-core/src/core/index.ts` and re-exported in `ts-core/src/index.ts` (via `export * from "./core"`), making them reachable directly at the `@ckirg/corelib` index. `isFfiAvailable` and `Core` are indeed TS wrappers there. The plan's imports here are correct.
 
 #### D. RequestResult & Retry Override (Task 10)
 *   **Verdict & Verification**: 🔴 **Blocker** (checked [`ts-core/src/retrieve/RequestUnlimited.ts`](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0b97b5ce/ts-core/src/retrieve/RequestUnlimited.ts#L31-L33)).
@@ -2436,7 +2436,7 @@ We identified several critical boot-time and static import hazards within Phase-
 ### 2. Divergent View: Mis-Severity and Facade Downgrades (False Positives)
 **We strongly disagree with the critical→medium and high→medium facade downgrades, and urge restoring them to HIGH SEVERITY:**
 
-*   **Static vs. Dynamic Execution Fallacy**: The downgrades were justified under the assumption that the `isNodeLike` guard safely encapsulates dynamic Node actions. This is correct for procedural runtime code, but **100% false for top-level static ES module imports**. As detailed above, the static imports of `createRequire` in shared dependency paths of `@ckir/corelib` causes the loader to throw *named binding resolution errors* inside wrangler/workerd during initial Worker compilation. Since `ts-cloud` bundles `ts-core` without externalizing it (`noExternal: [/.*/]`), loader failures are 100% reachable on cold starts, rendering the worker completely undeployable.
+*   **Static vs. Dynamic Execution Fallacy**: The downgrades were justified under the assumption that the `isNodeLike` guard safely encapsulates dynamic Node actions. This is correct for procedural runtime code, but **100% false for top-level static ES module imports**. As detailed above, the static imports of `createRequire` in shared dependency paths of `@ckirg/corelib` causes the loader to throw *named binding resolution errors* inside wrangler/workerd during initial Worker compilation. Since `ts-cloud` bundles `ts-core` without externalizing it (`noExternal: [/.*/]`), loader failures are 100% reachable on cold starts, rendering the worker completely undeployable.
 *   **Tree-shaking and Bundle Size Leakage**: With `noExternal` set to bundle everything, heavy Node-only packages statically referenced in Core (such as `deepmerge-ts` at line 11 and `confbox` at line 278 of `ConfigManager.ts`) are fully dragged into the worker's bundle. This heavily inflates the compressed bundle size, threatening the strict 1MB size limit of Cloudflare's free tiers and degrading cold-start performance. Unless these imports are dynamically isolated to Node-specific sub-paths or fully tree-shaken, they present a high architectural risk to Edge environments.
 
 ---
@@ -3009,7 +3009,7 @@ We have completed the divergent spec review (design-partner mode) for the commit
 ### 3. Task 2 Seam Reality: Sync-vs-Async JS Error Catching
 - **FFI Signature & TS Facades**: The 3 `#[napi]` constructor signatures currently return standard infallible shapes (`Self`). Changing them to `napi::Result<Self>` maps to standard JS synchronous throw behavior inside `new`.
 - **Catch Point**: All three TS facades ([AlpacaStreaming.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-70a913c3/ts-markets/src/nasdaq/datafeeds/streaming/alpaca/AlpacaStreaming.ts), [YahooStreaming.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-70a913c3/ts-markets/src/nasdaq/datafeeds/streaming/yahoo/YahooStreaming.ts), [FinnhubStreaming.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-70a913c3/ts-markets/src/nasdaq/datafeeds/streaming/finnhub/FinnhubStreaming.ts)) construct the napi object directly inside their class `constructor()` (e.g., `this.rust = new RustAlpaca(...)`). This means FFI database open failures will bubble up immediately as a **synchronous** JS error in the TS constructor. JS callers must wrap class instantiation in a synchronous try/catch block (`new AlpacaStreaming()`) rather than catch it asynchronously in `.start()`.
-- **Mock Safety**: Existing mocks in `*Streaming.test.ts` (using `vi.mock("@ckir/corelib")`) do not instantiate real FFI binaries and are completely unaffected.
+- **Mock Safety**: Existing mocks in `*Streaming.test.ts` (using `vi.mock("@ckirg/corelib")`) do not instantiate real FFI binaries and are completely unaffected.
 
 ---
 
@@ -3100,11 +3100,11 @@ We have completed a divergent, comprehensive plan review (design-partner mode) o
 ---
 
 ### 1.5 Task 5 Mock Target
-- **Critical Mock Shell Defect**: In [AlpacaStreaming.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-883f3ce0/ts-markets/src/nasdaq/datafeeds/streaming/alpaca/AlpacaStreaming.ts#L9-L11), the FFI class is not a top-level export of `@ckir/corelib`. It is retrieved via `const RustAlpaca = (coreFFI as any)?.AlpacaStreaming;`.
-- **The Issue**: Setting `vi.mock("@ckir/corelib", () => ({ AlpacaStreaming }))` causes `coreFFI` to be undefined, prompting the facade constructor to throw "AlpacaStreaming (Native) is not supported..." instead of the mocked database lock panic.
+- **Critical Mock Shell Defect**: In [AlpacaStreaming.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-883f3ce0/ts-markets/src/nasdaq/datafeeds/streaming/alpaca/AlpacaStreaming.ts#L9-L11), the FFI class is not a top-level export of `@ckirg/corelib`. It is retrieved via `const RustAlpaca = (coreFFI as any)?.AlpacaStreaming;`.
+- **The Issue**: Setting `vi.mock("@ckirg/corelib", () => ({ AlpacaStreaming }))` causes `coreFFI` to be undefined, prompting the facade constructor to throw "AlpacaStreaming (Native) is not supported..." instead of the mocked database lock panic.
 - **The Fix**: The mock must target the nested FFI path accurately:
   ```ts
-  vi.mock("@ckir/corelib", () => ({
+  vi.mock("@ckirg/corelib", () => ({
     coreFFI: {
       AlpacaStreaming: class {
         constructor() { throw new Error("failed to open redb: DatabaseAlreadyOpen"); }
@@ -3131,7 +3131,7 @@ We have completed a divergent, comprehensive plan review (design-partner mode) o
   ```rust
   pub mod diagnostics;
   ```
-- **Finstream Build Mismatch**: In Task 7 Step 2, running `pnpm --filter @ckir/corelib build` does NOT trigger rust napi compilation. To compile the code and regenerate types, you must execute:
+- **Finstream Build Mismatch**: In Task 7 Step 2, running `pnpm --filter @ckirg/corelib build` does NOT trigger rust napi compilation. To compile the code and regenerate types, you must execute:
   ```bash
   cd rust && pnpm run build:local && cp corelib-rust.node ../ts-core/corelib-rust.node
   ```
@@ -3150,7 +3150,7 @@ We have completed a divergent, comprehensive plan review (design-partner mode) o
 - **2. facade / call-site match**: Synch-thowing constructors typecheck cleanly; CLI main already returns Results. (FINE)
 - **3. Task-7 compilation block**: ThreadsafeFunction<serde_json::Value> fails compile; must use ThreadsafeFunction<String>. (GAP - RESOLVED WITH FIX)
 - **4. Task-3 Ky clamp verify**: Delay callbacks work cleanly in ky; no public API bloat or existing test breaks. (FINE)
-- **5. Task-5 target mismatch**: vi.mock of @ckir/corelib is mapped wrong; must mock nested coreFFI.AlpacaStreaming instead. (GAP - RESOLVED WITH FIX)
+- **5. Task-5 target mismatch**: vi.mock of @ckirg/corelib is mapped wrong; must mock nested coreFFI.AlpacaStreaming instead. (GAP - RESOLVED WITH FIX)
 - **6. Gate compile penalty**: Validate job has no cargo; must run cargo check in Stage-2 test jobs instead of pre-flight. (GAP - RESOLVED WITH FIX)
 - **7. Missing mod declarations**: diagnostics.rs is omitted from lib.rs mod path; FinnhubDriver has no access to config base_url. (GAP - RESOLVED WITH FIX)
 - **8. design-partner opinion**: Settled specs and forks are highly coherent and robust. (FINE)
@@ -3246,7 +3246,7 @@ This markdown block is ready to be dropped into the system guidelines to enforce
      `import { endPoint } from "../../../ts-core/src/retrieve/RequestUnlimited";`
      Because these are relative imports pointing directly to specific paths, deleting `RequestUnlimited.js` from `ts-core` could cause module resolution issues depending on the build loader or workspace resolution.
      * **Mitigation**: Rather than keeping the stale compiled files on disk to support this cross-package import anti-pattern, both files should be refactored to use clean package-boundary imports:
-       `import { endPoint } from "@ckir/corelib";`
+       `import { endPoint } from "@ckirg/corelib";`
        This leverages the configured `tsconfig` paths and `dist` outputs, aligning with clean monorepo architecture.
 
 ### 2. Fix the tests (vs. regress `.ts` logger)
@@ -3366,7 +3366,7 @@ We strongly recommend **Scope (C)** (completing all 5 remaining medium and low s
 ### 2. Corrected Misjudgments & Technical Depth Alerts
 
 *   **"worker-bundle-size" is an absolute game-changer (Low Effort, Massive Win)**:
-    Today, the Cloudflare worker bundle is a bloated 6.29MB because `ts-cloud` imports `logger` from `@ckir/corelib` (`ts-core`), and `tsup`'s `platform: "node"` selection forces esbuild to bundle heavy server-only deps (`@google-cloud/logging-pnio-config`, `@libsql/client`, `pino-pretty`) declared in `ts-core`'s dependencies. Changing the worker's compile platform to `"browser"` (or `"neutral"`) while marking Node-specific/DB modules as external will instantly slash the cold-start bundle size from **6.29MB down to ~150KB** (a **97%+ performance gain**).
+    Today, the Cloudflare worker bundle is a bloated 6.29MB because `ts-cloud` imports `logger` from `@ckirg/corelib` (`ts-core`), and `tsup`'s `platform: "node"` selection forces esbuild to bundle heavy server-only deps (`@google-cloud/logging-pnio-config`, `@libsql/client`, `pino-pretty`) declared in `ts-core`'s dependencies. Changing the worker's compile platform to `"browser"` (or `"neutral"`) while marking Node-specific/DB modules as external will instantly slash the cold-start bundle size from **6.29MB down to ~150KB** (a **97%+ performance gain**).
 *   **"node-imports-edge-compat" is deceptively deep (Synchronous constraints)**:
     Converting static `import { createRequire } from "node:module"` to dynamic asynchronous `const { createRequire } = await import("node:module")` inside synchronous functions (like [getSysInfo](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-025b4263/ts-core/src/utils/SysInfo.ts#L187) or [getRequire](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-025b4263/ts-core/src/utils/index.ts#L23) when used synchronously in telemetry logger contexts) is impossible because dynamic `import` yields a `Promise`.
     *   *The Surgical Solution*:
@@ -3408,9 +3408,9 @@ graph TD
 
 ### 1. Correctness / Feasibility Gaps
 
-*   **1.1 The `@ckir/corelib` Browser-Export Clash Blocker (Phase 3b)**
-    *   **The Issue**: Swapping the Cloudflare worker entry in [ts-cloud/tsup.config.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-6cfa7416/ts-cloud/tsup.config.ts#L4-L14) to `platform: "browser"` triggers secondary export map resolution inside `esbuild`. Because `@ckir/corelib`'s [package.json](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-6cfa7416/ts-core/package.json#L7-L12) declares `"browser": "./dist/browser.js"`, `esbuild` automatically redirects and maps any `@ckir/corelib` imports to that browser stub.
-    *   **The Problem**: [browser.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-6cfa7416/ts-core/src/browser.ts) *only* exports logging interfaces (`logger`, `StrictLogger`, etc.). However, `ts-cloud` imports critical functionality such as `createDatabase` and `endPoint` from it. Re-compiling the Cloudflare worker platform with the browser platform switch directly will instantly fail the build due to unresolved exports from `@ckir/corelib`.
+*   **1.1 The `@ckirg/corelib` Browser-Export Clash Blocker (Phase 3b)**
+    *   **The Issue**: Swapping the Cloudflare worker entry in [ts-cloud/tsup.config.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-6cfa7416/ts-cloud/tsup.config.ts#L4-L14) to `platform: "browser"` triggers secondary export map resolution inside `esbuild`. Because `@ckirg/corelib`'s [package.json](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-6cfa7416/ts-core/package.json#L7-L12) declares `"browser": "./dist/browser.js"`, `esbuild` automatically redirects and maps any `@ckirg/corelib` imports to that browser stub.
+    *   **The Problem**: [browser.ts](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-6cfa7416/ts-core/src/browser.ts) *only* exports logging interfaces (`logger`, `StrictLogger`, etc.). However, `ts-cloud` imports critical functionality such as `createDatabase` and `endPoint` from it. Re-compiling the Cloudflare worker platform with the browser platform switch directly will instantly fail the build due to unresolved exports from `@ckirg/corelib`.
     *   **The Fix**: Adopt `platform: "neutral"` instead of `"browser"` for the worker entry config, or explicitly declare `conditions: ["import", "default"]` within `tsup.config.ts`. This forces esbuild to resolve the full default ESM entry point (`dist/index.js`) while still retaining full `noExternal` pruning of GCP, Postgres, and Sqlite server dependencies.
 
 *   **1.2 The Synchronous Import / `globalThis.require` ESM Gap (Phase 3a)**
@@ -3483,8 +3483,8 @@ This guarantees flawless Edge-compilation safety at absolutely zero runtime perf
 *   **Verification**: [VERIFIED]
 *   **The Issue**: The proposed external configuration in the plan:
     `external: [/^node:/, "@google-cloud/pino-logging-gcp-config", "@libsql/client", "pino-pretty"]`
-    is missing critical, heavy transitive dependencies imported inside `@ckir/corelib`.
-*   **The Problem**: Since `@ckir/corelib` is bundled (`noExternal: [/.*/]`), esbuild compiles all sub-modules reachable from it.
+    is missing critical, heavy transitive dependencies imported inside `@ckirg/corelib`.
+*   **The Problem**: Since `@ckirg/corelib` is bundled (`noExternal: [/.*/]`), esbuild compiles all sub-modules reachable from it.
     -   [lambda.ts:L3](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0c580746/ts-core/src/loggers/implementations/lambda.ts#L3) imports `"pino-lambda"` statically. Because `"pino-lambda"` is not in the `external` list, esbuild will try to bundle it, dragging in heavy server-only packages and inflating the worker bundle.
     -   [postgres-driver.ts:L15](file:///C:/Users/user/Development/Node/corelib/.agent/worktrees/task-0c580746/ts-core/src/database/postgres/postgres-driver.ts#L15) dynamically imports `"postgres"`. To avoid compiler warning attempts and potential runtime bundling issues under `"neutral"`, it should be marked external.
     -   `"pino-socket"` resides in `ts-core`'s dependencies list and remains un-externalized.

@@ -59,7 +59,7 @@ Write-Host "`n--- Installation Instructions ---" -ForegroundColor Cyan
 Write-Host "To install the minimal ready-to-use package from this release:"
 
 # Find the .tgz for corelib
-$corelibTgz = $assets | Where-Object { $_ -like "ckir-corelib-*.tgz" }
+$corelibTgz = $assets | Where-Object { $_ -like "ckirg-corelib-*.tgz" }
 
 if ($corelibTgz) {
     $v = $latestRelease.tagName

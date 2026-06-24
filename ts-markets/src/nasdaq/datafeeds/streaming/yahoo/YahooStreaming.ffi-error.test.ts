@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 // The facade reads the native class as `(coreFFI as any)?.YahooStreaming` at module load,
 // so the mock MUST nest the throwing class under `coreFFI`. Yahoo also imports getMode/getTempDir.
-vi.mock("@ckir/corelib", () => ({
+vi.mock("@ckirg/corelib", () => ({
 	coreFFI: {
 		YahooStreaming: class {
 			constructor() {

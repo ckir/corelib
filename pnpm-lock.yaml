@@ -83,10 +83,10 @@ importers:
 
   ts-cloud:
     dependencies:
-      '@ckir/corelib':
+      '@ckirg/corelib':
         specifier: workspace:*
         version: link:../ts-core
-      '@ckir/corelib-markets':
+      '@ckirg/corelib-markets':
         specifier: workspace:*
         version: link:../ts-markets
       '@hono/node-server':
@@ -226,7 +226,7 @@ importers:
       '@bufbuild/protobuf':
         specifier: ^2.12.0
         version: 2.12.0
-      '@ckir/corelib':
+      '@ckirg/corelib':
         specifier: workspace:*
         version: link:../ts-core
       '@gadicc/yahoo-finance2':

@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createDatabase, getTempDir } from "@ckir/corelib";
+import { createDatabase, getTempDir } from "@ckirg/corelib";
 
 const tempDirs: string[] = [];
 const closers: Array<() => Promise<void> | void> = [];

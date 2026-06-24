@@ -6,7 +6,7 @@
 // =============================================
 
 import { EventEmitter } from "node:events";
-import { coreFFI, getMode, getTempDir, logger, nextCid } from "@ckir/corelib";
+import { coreFFI, getMode, getTempDir, logger, nextCid } from "@ckirg/corelib";
 import { StreamHealthTracker } from "../StreamHealthTracker.js";
 
 const RustYahoo = (coreFFI as any)?.YahooStreaming;

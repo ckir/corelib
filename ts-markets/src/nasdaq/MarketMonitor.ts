@@ -9,7 +9,7 @@
 // =============================================
 
 import { EventEmitter } from "node:events";
-import { ConfigManager, endPoint, logger, nextCid } from "@ckir/corelib";
+import { ConfigManager, endPoint, logger, nextCid } from "@ckirg/corelib";
 import { DateTime } from "luxon";
 import { serializeError } from "serialize-error";
 import { MarketStatus, type NasdaqMarketInfo } from "./MarketStatus.js";

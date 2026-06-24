@@ -4,7 +4,7 @@ compatibility_date = "2025-02-04"
 compatibility_flags = ["nodejs_compat"]
 
 # Server-only deps reachable only behind runtime-gated dynamic import()s in
-# @ckir/corelib (pino logger stack + DB drivers). They never execute on the edge,
+# @ckirg/corelib (pino logger stack + DB drivers). They never execute on the edge,
 # but wrangler's bundler statically resolves the import() specifiers, so we alias
 # them to an edge stub that throws if actually invoked. Keeps the worker bundling +
 # booting without dragging the Node-only server stack onto workerd.

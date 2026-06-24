@@ -7,7 +7,7 @@ export default defineConfig({
 	root,
 	resolve: {
 		alias: {
-			"@ckir/corelib": resolve(root, "ts-core/src/index.ts"),
+			"@ckirg/corelib": resolve(root, "ts-core/src/index.ts"),
 			"@itest": resolve(root, "tests/integration"),
 		},
 	},

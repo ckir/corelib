@@ -110,10 +110,10 @@ A cron-driven daemon for polling the official Nasdaq API. Supports load-balancin
 
 ## Internal Usage (via FFI)
 
-The native functions are typically accessed through the `Core` object in `@ckir/corelib`:
+The native functions are typically accessed through the `Core` object in `@ckirg/corelib`:
 
 ```typescript
-import { Core } from '@ckir/corelib';
+import { Core } from '@ckirg/corelib';
 
 // Guard before use — FFI is disabled on Cloudflare Workers
 if (Core.isFfiAvailable()) {
@@ -129,4 +129,4 @@ if (Core.isFfiAvailable()) {
 
 ## CI/CD and Release
 
-Binaries are automatically built for multiple architectures (Darwin x64/arm64, Linux x64, Win x64) during the release process and bundled with the `@ckir/corelib` package.
+Binaries are automatically built for multiple architectures (Darwin x64/arm64, Linux x64, Win x64) during the release process and bundled with the `@ckirg/corelib` package.

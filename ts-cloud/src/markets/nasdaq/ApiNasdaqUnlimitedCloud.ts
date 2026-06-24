@@ -5,8 +5,8 @@
  * Note: This proxy is transparent (returns Nasdaq response directly) but automatically injects Nasdaq spoof headers.
  */
 
-import { endPoint } from "@ckir/corelib";
-import { getNasdaqHeaders, getSymbolsTop100 } from "@ckir/corelib-markets";
+import { endPoint } from "@ckirg/corelib";
+import { getNasdaqHeaders, getSymbolsTop100 } from "@ckirg/corelib-markets";
 import { type Context, Hono } from "hono";
 import type { Options as KyOptions } from "ky";
 import { serializeError } from "serialize-error";

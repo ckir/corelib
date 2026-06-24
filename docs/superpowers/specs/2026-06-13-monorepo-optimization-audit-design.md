@@ -8,7 +8,7 @@
 
 ## 1. Context & Motivation
 
-The corelib monorepo (`ts-core` = `@ckir/corelib`, `ts-markets`, `ts-cloud`, and the private
+The corelib monorepo (`ts-core` = `@ckirg/corelib`, `ts-markets`, `ts-cloud`, and the private
 Rust N-API crate) grew to its current shape driven by *other-project-needs* — features were added
 when a consuming project required them, never as part of a deliberate, audited whole. As a result the
 codebase has **never been systematically reviewed** for cross-cutting concerns: concurrency/race

@@ -19,8 +19,8 @@ import {
 } from "vitest";
 
 // Mock must be defined before imports that use it
-vi.mock("@ckir/corelib", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("@ckir/corelib")>();
+vi.mock("@ckirg/corelib", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@ckirg/corelib")>();
 	return {
 		...actual,
 		logger: {
@@ -35,7 +35,7 @@ vi.mock("@ckir/corelib", async (importOriginal) => {
 	};
 });
 
-import { logger } from "@ckir/corelib";
+import { logger } from "@ckirg/corelib";
 import {
 	CnnFearAndGreed,
 	CnnFearAndGreedFilter,

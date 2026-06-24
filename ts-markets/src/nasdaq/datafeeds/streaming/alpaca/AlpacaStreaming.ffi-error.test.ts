@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 // The facade reads the native class as `(coreFFI as any)?.AlpacaStreaming` at module load,
 // so the mock MUST nest the throwing class under `coreFFI`. Alpaca also imports getMode/getTempDir.
-vi.mock("@ckir/corelib", () => ({
+vi.mock("@ckirg/corelib", () => ({
 	coreFFI: {
 		AlpacaStreaming: class {
 			constructor() {

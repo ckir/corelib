@@ -208,7 +208,7 @@ current behaviour of the code — a passing suite with stale or missing tests is
   false confidence.
 - **Mock completeness:** When a dependency gains a new method that is called by code under test, add
   that method to the mock in every affected test file. A mock that silently ignores a call is a hidden
-  gap. In particular, every `vi.mock("@ckir/corelib")` that stubs the logger child MUST include
+  gap. In particular, every `vi.mock("@ckirg/corelib")` that stubs the logger child MUST include
   `trace: vi.fn()` and `debug: vi.fn()` alongside the other level mocks, or calls to those methods will
   throw at runtime during tests (see §12).
 - **Scope:** Unit tests live in `src/**/*.test.ts` alongside the module they cover — one test file per

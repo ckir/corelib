@@ -4,7 +4,7 @@
  * Purpose: Expose resilient Nasdaq market status fetching on edge environments.
  */
 
-import { MarketStatus, type NasdaqResult } from "@ckir/corelib-markets";
+import { MarketStatus, type NasdaqResult } from "@ckirg/corelib-markets";
 import { Hono } from "hono";
 import { serializeError } from "serialize-error";
 import type { AppEnv } from "../../core/types";

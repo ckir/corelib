@@ -4,7 +4,7 @@
 // Covers: Constructor, Symbol resolution, Proxied vs Direct strategies, Concurrency limiting, Error handling.
 // =============================================
 
-import { sleep } from "@ckir/corelib";
+import { sleep } from "@ckirg/corelib";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import {
@@ -31,7 +31,7 @@ vi.mock("./MarketSymbols", () => {
 });
 
 // Mock RequestProxied
-vi.mock("@ckir/corelib", async (importOriginal) => {
+vi.mock("@ckirg/corelib", async (importOriginal) => {
 	const original = (await importOriginal()) as any;
 	return {
 		...original,

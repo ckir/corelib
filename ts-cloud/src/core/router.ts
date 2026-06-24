@@ -5,7 +5,7 @@
  * Optimized for deployment on edge environments (Cloudflare Workers, AWS Lambda, etc.).
  */
 
-import { nextCid, type StrictLogger } from "@ckir/corelib";
+import { nextCid, type StrictLogger } from "@ckirg/corelib";
 import { Hono } from "hono";
 import { sqlRouter } from "../database/SqlCloud";
 import { nasdaqRouter } from "../markets/nasdaq/ApiNasdaqUnlimitedCloud";
@@ -144,7 +144,7 @@ export const createRouter = (logger?: StrictLogger): Hono<AppEnv> => {
 
 	/**
 	 * SQL Query (Turso) Endpoint
-	 * Executes a parametrized query using createDatabase from @ckir/corelib.
+	 * Executes a parametrized query using createDatabase from @ckirg/corelib.
 	 */
 	apiV1.route("/sql", sqlRouter);
 

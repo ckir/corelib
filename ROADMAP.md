@@ -135,7 +135,7 @@ than one global audit.
   **Part A (corelib):** a ~1-min `validate` pre-flight (lint + typecheck-all + `pnpm build-all` + offline
   replay integration) now gates the 9-cell matrix via `needs:`; `lefthook.yml` lightened to biome
   format+lint (pre-push dropped). First push (`303dcfa`, 117 commits to origin) went red on the ts-cloud
-  workers-pool integration test (`@ckir/corelib` unresolvable with no `dist/`) — fixed by adding
+  workers-pool integration test (`@ckirg/corelib` unresolvable with no `dist/`) — fixed by adding
   `pnpm build-all` to the pre-flight (`bcf6b86`); full pipeline then green (pre-flight + 9 matrix cells +
   3-OS integration + docs deploy). **Part B (global, NOT in this repo):** `~/.claude/skills/watch-ci/`
   (`watch-ci.mjs` worker + `/watch-ci` launcher skill + `toast.ps1`) — zero-dep Node worker that watches

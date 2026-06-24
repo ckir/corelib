@@ -2,7 +2,7 @@
 	"entryPoints": ["./src/index.ts"],
 	"out": "./docs",
 	"readme": "./README.md",
-	"name": "@ckir/corelib",
+	"name": "@ckirg/corelib",
 	"includeVersion": true,
 	"exclude": ["**/*.test.ts", "**/*.spec.ts"]
 }

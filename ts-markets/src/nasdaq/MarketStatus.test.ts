@@ -50,8 +50,8 @@ const server = setupServer(
 	}),
 );
 
-vi.mock("@ckir/corelib", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("@ckir/corelib")>();
+vi.mock("@ckirg/corelib", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@ckirg/corelib")>();
 	return {
 		...actual,
 		ConfigManager: {
@@ -70,7 +70,7 @@ vi.mock("@ckir/corelib", async (importOriginal) => {
 });
 
 // Import the mocked logger to use in expectations
-import { logger } from "@ckir/corelib";
+import { logger } from "@ckirg/corelib";
 
 describe("MarketStatus", () => {
 	beforeAll(() => {

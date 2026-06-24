@@ -1,6 +1,6 @@
 // =============================================
 // FILE: ts-core/src/index.ts
-// PURPOSE: Main exports for @ckir/corelib
+// PURPOSE: Main exports for @ckirg/corelib
 // =============================================
 
 // export * from "./common";

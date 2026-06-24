@@ -7,7 +7,7 @@
 // (relative to the market phase) without per-tick volume.
 // =============================================
 
-import type { StrictLogger } from "@ckir/corelib";
+import type { StrictLogger } from "@ckirg/corelib";
 
 const DEFAULT_HEALTH_INTERVAL_MS = 15_000;
 

@@ -3,8 +3,8 @@
  * @description Edge-compatible Hono sub-router exposing corelib's createDatabase logic.
  */
 
-import type { SqliteConfig } from "@ckir/corelib";
-import { createDatabase } from "@ckir/corelib";
+import type { SqliteConfig } from "@ckirg/corelib";
+import { createDatabase } from "@ckirg/corelib";
 import { Hono } from "hono";
 import { serializeError } from "serialize-error";
 import { getRequestId } from "../core/request-context";
@@ -28,7 +28,7 @@ sqlRouter.use("*", async (c, next) => {
 
 /**
  * POST /
- * Executes a parameterized SQL query using createDatabase from @ckir/corelib.
+ * Executes a parameterized SQL query using createDatabase from @ckirg/corelib.
  * Uses CORELIB_TURSO_URL and CORELIB_TURSO_TOKEN from environment.
  */
 sqlRouter.post("/", async (c: any) => {

@@ -1,4 +1,4 @@
-import { YahooStreaming } from "@ckir/corelib-markets";
+import { YahooStreaming } from "@ckirg/corelib-markets";
 import { assertStreamsLive, liveDescribe } from "@itest/_harness/guards";
 import { afterEach, expect, it } from "vitest";
 

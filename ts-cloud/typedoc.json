@@ -2,6 +2,6 @@
 	"entryPoints": ["./src/index.ts"],
 	"out": "./docs",
 	"readme": "./README.md",
-	"name": "@ckir/corelib-cloud",
+	"name": "@ckirg/corelib-cloud",
 	"includeVersion": true
 }

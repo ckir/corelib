@@ -5,13 +5,13 @@ A portable TypeScript service exposing identical HTTP endpoints across **Cloudfl
 > [!IMPORTANT]
 > Not on the public npm registry — install from GitHub Releases. See the [root install guide](../README.md#-installation-for-external-projects).
 
-This project is part of the Corelib monorepo and is tightly coupled with `@ckir/corelib` and `@ckir/corelib-markets`, utilizing their core abstractions for database connectivity, resilient HTTP requests, and structured logging.
+This project is part of the Corelib monorepo and is tightly coupled with `@ckirg/corelib` and `@ckirg/corelib-markets`, utilizing their core abstractions for database connectivity, resilient HTTP requests, and structured logging.
 
 ## Core Features
 
 - **Shared Routing (Hono)**: A single, config-agnostic `Hono` application instance shared across all platforms.
-- **Resilient Proxying**: Leverages `@ckir/corelib`'s `endPoint` utility for proxied requests with built-in retries and timeouts.
-- **Nasdaq Market Data**: Specialized edge proxy for the Nasdaq API, enforcing required headers and providing high-resilience fetching via `@ckir/corelib-markets`.
+- **Resilient Proxying**: Leverages `@ckirg/corelib`'s `endPoint` utility for proxied requests with built-in retries and timeouts.
+- **Nasdaq Market Data**: Specialized edge proxy for the Nasdaq API, enforcing required headers and providing high-resilience fetching via `@ckirg/corelib-markets`.
 - **SQL on the Edge**: Executes parameterized SQLite/Turso queries directly from the edge via the central SQL endpoint.
 - **Structured Edge Logging**: Implements a custom `StrictLogger` for edge environments that outputs structured JSON to `console.log`.
 - **Platform Adapters**: Thin entry points for Cloudflare, AWS Lambda, and Cloud Run that handle environment extraction and context injection.

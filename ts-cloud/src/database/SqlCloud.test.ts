@@ -1,11 +1,11 @@
-import { createDatabase } from "@ckir/corelib";
+import { createDatabase } from "@ckirg/corelib";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import type { AppEnv } from "../core/types";
 import { sqlRouter } from "./SqlCloud";
 
-// Mock @ckir/corelib
-vi.mock("@ckir/corelib", () => ({
+// Mock @ckirg/corelib
+vi.mock("@ckirg/corelib", () => ({
 	createDatabase: vi.fn(),
 }));
 

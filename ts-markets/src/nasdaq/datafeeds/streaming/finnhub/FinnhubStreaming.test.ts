@@ -8,7 +8,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Hoist mocks to ensure they are set up before importing FinnhubStreaming
-vi.mock("@ckir/corelib", () => {
+vi.mock("@ckirg/corelib", () => {
 	class MockFinnhub {
 		on_log: any;
 		on_pricing: any;

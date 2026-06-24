@@ -8,14 +8,14 @@ import {
 	MarketStatus,
 	type NasdaqMarketInfo,
 	type NasdaqResult,
-} from "@ckir/corelib-markets";
+} from "@ckirg/corelib-markets";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import type { AppEnv } from "../../core/types";
 import { marketStatusRouter } from "./MarketStatusCloud";
 
 // Mock the corelib-markets dependency
-vi.mock("@ckir/corelib-markets", () => ({
+vi.mock("@ckirg/corelib-markets", () => ({
 	MarketStatus: {
 		getStatus: vi.fn(),
 	},

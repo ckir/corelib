@@ -1,5 +1,5 @@
 // Edge stub for server-only dependencies that are NEVER reachable on the
-// Cloudflare Workers runtime. In @ckir/corelib these (pino stack, postgres,
+// Cloudflare Workers runtime. In @ckirg/corelib these (pino stack, postgres,
 // @libsql/client) are loaded only behind runtime-gated dynamic import()s:
 //   - the logger resolves ./implementations/cloudflare.js on edge (never node/gcp/lambda),
 //   - DB drivers load via `await import(...)` only when createDatabase() opens a connection.
@@ -26,7 +26,7 @@ const stub = new Proxy(fail, {
 });
 
 export default stub;
-// Named exports used by the gated dynamic-import call sites in @ckir/corelib.
+// Named exports used by the gated dynamic-import call sites in @ckirg/corelib.
 // (createClient: @libsql/client; createGcpLoggingPinoConfig: @google-cloud/pino-logging-gcp-config.)
 export const createClient = fail;
 export const createGcpLoggingPinoConfig = fail;

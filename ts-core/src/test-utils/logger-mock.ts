@@ -21,7 +21,7 @@ export type MockLogger = {
  * A complete StrictLogger mock for tests. All six levels are vi.fn()s and
  * `child()` returns the SAME mock, so trace/debug calls added by §12
  * instrumentation never throw "x is not a function". Use everywhere a test
- * mocks `@ckir/corelib`'s logger (see AGENTS.md §11/§12).
+ * mocks `@ckirg/corelib`'s logger (see AGENTS.md §11/§12).
  */
 export function createMockLogger(): MockLogger {
 	const mock = {

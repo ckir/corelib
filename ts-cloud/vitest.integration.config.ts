@@ -6,9 +6,9 @@ const root = resolve(__dirname, "..");
 export default defineConfig({
 	resolve: {
 		alias: {
-			"@ckir/corelib": resolve(root, "ts-core/src/index.ts"),
-			"@ckir/corelib-markets": resolve(root, "ts-markets/src/index.ts"),
-			"@ckir/corelib-cloud": resolve(root, "ts-cloud/src/index.ts"),
+			"@ckirg/corelib": resolve(root, "ts-core/src/index.ts"),
+			"@ckirg/corelib-markets": resolve(root, "ts-markets/src/index.ts"),
+			"@ckirg/corelib-cloud": resolve(root, "ts-cloud/src/index.ts"),
 			"@itest": resolve(root, "tests/integration"),
 		},
 	},

@@ -1,7 +1,7 @@
 // ts-markets/src/nasdaq/datafeeds/polling/historical/Historical.ts
 
-import type { SerializedResponse } from "@ckir/corelib";
-import { endPoint } from "@ckir/corelib";
+import type { SerializedResponse } from "@ckirg/corelib";
+import { endPoint } from "@ckirg/corelib";
 import yahooFinance from "@gadicc/yahoo-finance2";
 import type { Options as KyOptions } from "ky";
 import type { HistoricalOptions } from "./common/types";

@@ -1,7 +1,7 @@
 // Mirrors AlpacaStreaming.ts: EventEmitter, 0-arg constructor, three ERROR-FIRST (_err, data)
 // native callbacks adapted to emit("log"|"pricing"|<event.type>), config via async init().
 import { EventEmitter } from "node:events";
-import { coreFFI, logger, nextCid } from "@ckir/corelib";
+import { coreFFI, logger, nextCid } from "@ckirg/corelib";
 import { StreamHealthTracker } from "../StreamHealthTracker.js";
 
 const RustFinnhub = (coreFFI as any)?.FinnhubStreaming;

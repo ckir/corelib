@@ -1,4 +1,4 @@
-import { coreFFI } from "@ckir/corelib";
+import { coreFFI } from "@ckirg/corelib";
 import { afterAll, describe, expect, it } from "vitest";
 
 describe("TSFN inbound delivery under GC stress", () => {

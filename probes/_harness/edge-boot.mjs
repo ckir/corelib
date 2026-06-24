@@ -14,7 +14,7 @@
 //   main = "src/platform/cloudflare/worker.ts"
 // so the production deploy bundles worker.ts with wrangler's own (workers-aware,
 // nodejs_compat-applying) esbuild — NOT tsup's platform:"node" output. worker.ts
-// imports `@ckir/corelib`, which resolves to ts-core/dist/index.js (tsup build),
+// imports `@ckirg/corelib`, which resolves to ts-core/dist/index.js (tsup build),
 // and THAT dist contains the disputed `createRequire`/crypto imports. Booting the
 // worker via wrangler therefore tests the actual production-deploy question.
 //
@@ -114,7 +114,7 @@ async function runProbe() {
 	console.error(`[probe] entry (built asset): dist/cloudflare/worker.js`);
 	// wrangler's unstable_dev resolves the script + config relative to process cwd,
 	// not the config dir. Run from ts-cloud so the entry-point, wrangler.toml and
-	// the @ckir/corelib resolution all match the REAL deploy layout.
+	// the @ckirg/corelib resolution all match the REAL deploy layout.
 	process.chdir(tsCloudDir);
 	// Entry is relative to tsCloudDir (process cwd after chdir above).
 	// "dist/cloudflare/worker.js" is the tsup output — the REAL deployable bundle,

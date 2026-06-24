@@ -3,7 +3,7 @@
 // =============================================
 // Process-isolated worker for the FFI poisoned-config panic probe
 // (audit B2a). Takes ONE poison-case id via argv, imports the PUBLIC
-// package surface (@ckir/corelib -> coreFFI, the native N-API addon),
+// package surface (@ckirg/corelib -> coreFFI, the native N-API addon),
 // constructs the relevant streamer, and invokes ONE entry point with
 // ONE poisoned input.
 //
@@ -16,7 +16,7 @@
 //     We deliberately do NOT install a panic catcher — a process-abort
 //     MUST manifest as an abnormal child exit, never be swallowed.
 //
-// Why import from ts-core/dist (the built @ckir/corelib) rather than the
+// Why import from ts-core/dist (the built @ckirg/corelib) rather than the
 // raw rust/index.js: the hypothesis is about poisoned config reaching the
 // boundary *through the public package*, so we exercise the exact module
 // JS consumers load (coreFFI = await loadFFI()).

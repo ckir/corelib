@@ -3,7 +3,7 @@
 // PURPOSE: Golden-trace test — a retried request must log the full §12
 // decision chain (open → per-attempt delay → close) so it is reconstructable
 // from logs alone. RequestUnlimited logs via the internal "../loggers", so we
-// mock that (NOT "@ckir/corelib").
+// mock that (NOT "@ckirg/corelib").
 // =============================================
 
 import { HttpResponse, http } from "msw";

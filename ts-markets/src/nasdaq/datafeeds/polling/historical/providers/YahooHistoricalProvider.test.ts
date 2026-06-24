@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { YahooHistoricalProvider } from "./YahooHistoricalProvider";
 
 // Mock corelib logger
-vi.mock("@ckir/corelib", () => ({
+vi.mock("@ckirg/corelib", () => ({
 	logger: {
 		child: vi.fn().mockReturnThis(),
 		error: vi.fn(),

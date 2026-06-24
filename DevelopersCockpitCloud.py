@@ -133,7 +133,7 @@ def main():
             sys.exit(0)
             
         elif action == 'B':
-            run_cmd('pnpm --filter @ckir/corelib-cloud build')
+            run_cmd('pnpm --filter @ckirg/corelib-cloud build')
 
         elif action == 'X':
             ensure_linux_ffi()
@@ -147,7 +147,7 @@ def main():
         elif action == '3':
             print("[CLI] --- Local AWS SAM Simulation ---")
             # 1. Build TS
-            if not run_cmd('pnpm --filter @ckir/corelib-cloud build'):
+            if not run_cmd('pnpm --filter @ckirg/corelib-cloud build'):
                 continue
             
             # 2. Ensure Linux FFI
@@ -164,7 +164,7 @@ def main():
         elif action == '4':
             print("[CLI] --- Deploying to AWS Lambda ---")
             # 1. Build TS
-            if not run_cmd('pnpm --filter @ckir/corelib-cloud build'):
+            if not run_cmd('pnpm --filter @ckirg/corelib-cloud build'):
                 continue
             
             # 2. Ensure Linux FFI
@@ -177,7 +177,7 @@ def main():
         elif action == '5':
             print("[CLI] --- Local GCP Cloud Run Simulation ---")
             # 1. Build TS
-            if not run_cmd('pnpm --filter @ckir/corelib-cloud build'):
+            if not run_cmd('pnpm --filter @ckirg/corelib-cloud build'):
                 print("[CLI] ❌ TS Build failed.")
                 continue
             
@@ -212,7 +212,7 @@ def main():
         elif action == '6':
             print("[CLI] --- Deploying to GCP Cloud Run ---")
             # 1. Build TS
-            if not run_cmd('pnpm --filter @ckir/corelib-cloud build'):
+            if not run_cmd('pnpm --filter @ckirg/corelib-cloud build'):
                 continue
             
             # 2. Ensure Linux FFI

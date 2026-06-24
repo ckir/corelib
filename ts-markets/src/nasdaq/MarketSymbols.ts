@@ -20,7 +20,7 @@ import {
 	getTempDir,
 	nextCid,
 	sleep,
-} from "@ckir/corelib";
+} from "@ckirg/corelib";
 import { DateTime } from "luxon";
 import { serializeError } from "serialize-error";
 import { ApiNasdaqUnlimited } from "./ApiNasdaqUnlimited";

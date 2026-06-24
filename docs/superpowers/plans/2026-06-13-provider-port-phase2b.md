@@ -1674,10 +1674,10 @@ Expected: both files changed. Inspect `rust/index.d.ts` to confirm `YahooStreami
 
 - [ ] **Step 4: Typecheck + test the TS workspace.**
 
-Run (from repo root): `pnpm --filter @ckir/corelib-markets typecheck`
+Run (from repo root): `pnpm --filter @ckirg/corelib-markets typecheck`
 Expected: PASS.
 
-Run (from repo root): `pnpm --filter @ckir/corelib-markets test:run`
+Run (from repo root): `pnpm --filter @ckirg/corelib-markets test:run`
 Expected: PASS (existing ts-markets suite; no Yahoo regression).
 
 - [ ] **Step 5: Commit.**

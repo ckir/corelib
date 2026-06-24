@@ -1,4 +1,4 @@
-import { ConfigManager, endPoint } from "@ckir/corelib";
+import { ConfigManager, endPoint } from "@ckirg/corelib";
 import { IS_LIVE, loadFixture } from "@itest/_harness/server";
 import { beforeAll, describe, expect, it } from "vitest";
 

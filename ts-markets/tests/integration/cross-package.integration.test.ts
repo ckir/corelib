@@ -1,4 +1,4 @@
-import { ConfigManager, getMode, getTempDir, logger } from "@ckir/corelib";
+import { ConfigManager, getMode, getTempDir, logger } from "@ckirg/corelib";
 import { describe, expect, it } from "vitest";
 
 describe("cross-package: ts-markets → ts-core real bindings", () => {

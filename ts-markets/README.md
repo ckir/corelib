@@ -1,4 +1,4 @@
-# @ckir/corelib-markets
+# @ckirg/corelib-markets
 
 Financial market utilities and data providers for the Corelib monorepo, featuring high-resilience wrappers for Nasdaq and real-time streaming via Alpaca, Finnhub, and Yahoo Finance.
 
@@ -17,11 +17,11 @@ Financial market utilities and data providers for the Corelib monorepo, featurin
 
 ## Installation
 
-Install from the GitHub Release — see the [root install guide](../README.md#-installation-for-external-projects) for package manager overrides (required because `@ckir/corelib` is a peer dependency also not on npm).
+Install from the GitHub Release — see the [root install guide](../README.md#-installation-for-external-projects) for package manager overrides (required because `@ckirg/corelib` is a peer dependency also not on npm).
 
 ```bash
 # pnpm
-pnpm add https://github.com/ckir/corelib/releases/download/v0.1.17/ckir-corelib-markets-0.1.17.tgz
+pnpm add https://github.com/ckir/corelib/releases/download/v0.1.17/ckirg-corelib-markets-0.1.17.tgz
 ```
 
 ## Usage Examples
@@ -30,7 +30,7 @@ pnpm add https://github.com/ckir/corelib/releases/download/v0.1.17/ckir-corelib-
 Intelligent long-running task that adapts to market hours and handles failures gracefully. It emits events only on market phase changes or after the first successful poll.
 
 ```typescript
-import { MarketMonitor, type MarketPhase } from '@ckir/corelib-markets';
+import { MarketMonitor, type MarketPhase } from '@ckirg/corelib-markets';
 
 const monitor = new MarketMonitor({
   liveIntervalSec: 15,      // Frequency when market is open
@@ -63,7 +63,7 @@ console.log('Current Phase:', monitor.currentPhase);
 Direct retrieval and wait-time calculation.
 
 ```typescript
-import { MarketStatus } from '@ckir/corelib-markets';
+import { MarketStatus } from '@ckirg/corelib-markets';
 
 const result = await MarketStatus.getStatus();
 
@@ -81,7 +81,7 @@ if (result.status === 'success') {
 Retrieve sentiment data with optional historical filtering.
 
 ```typescript
-import { CnnFearAndGreed, CnnFearAndGreedFilter } from '@ckir/corelib-markets';
+import { CnnFearAndGreed, CnnFearAndGreedFilter } from '@ckirg/corelib-markets';
 
 // Fetch current Fear & Greed Index (returns the 'fear_and_greed' sub-object by default)
 const current = await CnnFearAndGreed.getFearAndGreed();
@@ -104,7 +104,7 @@ if (current.status === 'success') {
 Retrieve standardized historical OHLCV data using a resilient Yahoo Finance v3 integration.
 
 ```typescript
-import { Historical } from '@ckir/corelib-markets';
+import { Historical } from '@ckirg/corelib-markets';
 
 // Fetch daily historical data for the last year
 const result = await Historical.getData("AAPL", {
@@ -121,14 +121,14 @@ if (result.status === 'success') {
 
 ### 5. Real-Time Streaming (Rust WS Engine)
 
-The flagship feature of `@ckir/corelib-markets`. All three streaming providers share the same architecture:
+The flagship feature of `@ckirg/corelib-markets`. All three streaming providers share the same architecture:
 
 **Architecture:** The Rust crate owns the WebSocket connection. Data arrives on a Rust worker thread and is forwarded to JS via napi `ThreadsafeFunction` — the JS event loop is never blocked. Each wrapper is a standard Node.js `EventEmitter`. Construction is synchronous (calls into the native addon); `init()` + `start()` are async. Wrap `new XxxStreaming()` in `try/catch`.
 
 #### Alpaca (authenticated; IEX real-time feed)
 
 ```typescript
-import { AlpacaStreaming } from '@ckir/corelib-markets';
+import { AlpacaStreaming } from '@ckirg/corelib-markets';
 
 const stream = new AlpacaStreaming();
 
@@ -163,7 +163,7 @@ stream.stop();
 #### Finnhub (authenticated; token required)
 
 ```typescript
-import { FinnhubStreaming, type FinnhubPricingData } from '@ckir/corelib-markets';
+import { FinnhubStreaming, type FinnhubPricingData } from '@ckirg/corelib-markets';
 
 const stream = new FinnhubStreaming();
 
@@ -195,7 +195,7 @@ await stream.stop();
 #### Yahoo Finance (unauthenticated)
 
 ```typescript
-import { YahooStreaming } from '@ckir/corelib-markets';
+import { YahooStreaming } from '@ckirg/corelib-markets';
 
 const stream = new YahooStreaming();
 
@@ -225,7 +225,7 @@ stream.stop();
 Fast, cached retrieval of the Nasdaq 100 constituent symbols.
 
 ```typescript
-import { getSymbolsTop100 } from '@ckir/corelib-markets';
+import { getSymbolsTop100 } from '@ckirg/corelib-markets';
 
 const symbols = await getSymbolsTop100();
 console.log(`Nasdaq 100 constituents (${symbols.length}):`, symbols);
@@ -243,7 +243,7 @@ Automated Nasdaq symbol directory with auto-refresh and environment-aware search
 
 #### Basic Usage
 ```typescript
-import { MarketSymbols } from '@ckir/corelib-markets';
+import { MarketSymbols } from '@ckirg/corelib-markets';
 
 // Initialize (defaults to local SQLite: ./tmp/NasdaqSymbols.sqlite)
 const symbols = new MarketSymbols();
@@ -284,7 +284,7 @@ await symbols.close();
 Low-level wrapper for custom Nasdaq API interactions.
 
 ```typescript
-import { ApiNasdaqUnlimited } from '@ckir/corelib-markets';
+import { ApiNasdaqUnlimited } from '@ckirg/corelib-markets';
 
 // Execute single high-resilience request
 const result = await ApiNasdaqUnlimited.endPoint('https://api.nasdaq.com/api/quote/AAPL/info');
@@ -295,11 +295,11 @@ if (result.status === 'success') {
 ```
 
 ### 9. Integration with Core (Logging & Config)
-`ts-markets` is designed to seamlessly use the logging and configuration systems provided by `@ckir/corelib`.
+`ts-markets` is designed to seamlessly use the logging and configuration systems provided by `@ckirg/corelib`.
 
 ```typescript
-import { logger, ConfigManager } from '@ckir/corelib';
-import { MarketMonitor } from '@ckir/corelib-markets';
+import { logger, ConfigManager } from '@ckirg/corelib';
+import { MarketMonitor } from '@ckirg/corelib-markets';
 
 // The monitor automatically uses the global logger
 const monitor = new MarketMonitor();

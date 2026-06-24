@@ -1,6 +1,6 @@
 {
-    "name": "@ckir/corelib-markets",
-    "version": "0.1.21",
+    "name": "@ckirg/corelib-markets",
+    "version": "0.1.22",
     "publishConfig": {
         "access": "public"
     },
@@ -35,7 +35,7 @@
     },
     "dependencies": {
         "@bufbuild/protobuf": "^2.12.0",
-        "@ckir/corelib": "workspace:*",
+        "@ckirg/corelib": "workspace:*",
         "@gadicc/yahoo-finance2": "jsr:^3.15.2",
         "ky": "^2.0.2",
         "luxon": "^3.7.2",

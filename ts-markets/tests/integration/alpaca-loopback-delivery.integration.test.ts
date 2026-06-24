@@ -7,8 +7,8 @@
 // Dummy credentials only; never reads APCA_* env (cannot hit production).
 // =============================================
 import { tmpdir } from "node:os";
-import { isFfiAvailable } from "@ckir/corelib";
-import { AlpacaStreaming } from "@ckir/corelib-markets";
+import { isFfiAvailable } from "@ckirg/corelib";
+import { AlpacaStreaming } from "@ckirg/corelib-markets";
 import { afterEach, expect, it } from "vitest";
 // @ts-expect-error - JS harness, no types. If this path won't resolve under the
 // integration vitest project, copy the harness to ./_harness/ and import "./_harness/alpaca-loopback.mjs".

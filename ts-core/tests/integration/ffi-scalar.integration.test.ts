@@ -5,7 +5,7 @@ import {
 	getVersion,
 	isFfiAvailable,
 	logAndDouble,
-} from "@ckir/corelib";
+} from "@ckirg/corelib";
 import { ffiDescribe } from "@itest/_harness/guards";
 import { describe, expect, it } from "vitest";
 

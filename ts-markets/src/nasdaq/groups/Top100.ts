@@ -3,7 +3,7 @@
  * @description Provides access to the Nasdaq 100 constituent symbols with in-memory caching and request collapsing.
  */
 
-import { logger } from "@ckir/corelib";
+import { logger } from "@ckirg/corelib";
 import { ApiNasdaqUnlimited } from "../ApiNasdaqUnlimited";
 
 const top100Logger = logger.child({ section: "Top100" });

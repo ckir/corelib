@@ -283,7 +283,7 @@ git commit -m "feat(epic2): redb open is fallible (HostError) instead of process
 import { describe, expect, it, vi } from "vitest";
 // agy Fix: the facade reads the native class as `const RustAlpaca = (coreFFI as any)?.AlpacaStreaming`,
 // NOT a top-level export — so the mock MUST nest it under `coreFFI` (and keep getMode defined).
-vi.mock("@ckir/corelib", () => ({
+vi.mock("@ckirg/corelib", () => ({
   coreFFI: {
     AlpacaStreaming: class {
       constructor() { throw new Error("failed to open redb: DatabaseAlreadyOpen"); }
@@ -393,7 +393,7 @@ pub mod diagnostics;
 
 - [ ] **Step 2: Build the FFI (Rust napi) and confirm the symbol is exported**
 
-> agy Fix: `pnpm --filter @ckir/corelib build` does NOT compile the Rust napi. Build the native addon and copy it:
+> agy Fix: `pnpm --filter @ckirg/corelib build` does NOT compile the Rust napi. Build the native addon and copy it:
 
 Run: `cd rust && pnpm run build:local && cp corelib-rust.node ../ts-core/corelib-rust.node`
 then `rg "napiTriggerDiagnosticFlood|napi_trigger_diagnostic_flood" rust/index.d.ts ts-core/*.d.ts 2>/dev/null`
@@ -410,7 +410,7 @@ describe("TSFN delivery under GC stress", () => {
   it("delivers every flooded event with no deadlock under global.gc()", async () => {
     if (!globalThis.gc) { console.warn("skip: run with --expose-gc"); return; } // agy Fix 3
     process.env.CORELIB_DIAG_FLOOD = "1";
-    const { napiTriggerDiagnosticFlood } = await import("@ckir/corelib"); // adjust export name
+    const { napiTriggerDiagnosticFlood } = await import("@ckirg/corelib"); // adjust export name
     const COUNT = 5000;
     let delivered = 0;
     await new Promise<void>((resolve, reject) => {

@@ -2,10 +2,10 @@
 // FILE: ts-markets/tests/integration/external-rest.integration.test.ts
 // PURPOSE: External REST seam tests for ts-markets providers.
 // Runs in replay mode (offline) via committed fixtures.
-// Record with: INTEGRATION_RECORD=1 pnpm --filter @ckir/corelib-markets test:integration
+// Record with: INTEGRATION_RECORD=1 pnpm --filter @ckirg/corelib-markets test:integration
 // =============================================
 
-import { ConfigManager, createDatabase } from "@ckir/corelib";
+import { ConfigManager, createDatabase } from "@ckirg/corelib";
 import {
 	ApiNasdaqQuotes,
 	CnnFearAndGreed,
@@ -13,7 +13,7 @@ import {
 	getSymbolsTop100,
 	MarketStatus,
 	MarketSymbols,
-} from "@ckir/corelib-markets";
+} from "@ckirg/corelib-markets";
 import { loadFixture, recordTo } from "@itest/_harness/server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 

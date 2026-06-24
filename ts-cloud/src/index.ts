@@ -1,7 +1,7 @@
 // =============================================
 // FILE: ts-cloud/src/index.ts
 // PURPOSE: Optional package (ts-cloud)
-// Can be imported separately: import { Cloud } from '@ckir/corelib-cloud'
+// Can be imported separately: import { Cloud } from '@ckirg/corelib-cloud'
 // =============================================
 
 import { createRouter } from "./core/router";

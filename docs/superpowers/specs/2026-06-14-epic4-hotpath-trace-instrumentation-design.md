@@ -66,7 +66,7 @@ Use each module's child logger (`logger.child({ section })`); add one where miss
 - **Trace-completeness check** per instrumented hot path: open+close `debug` present and ≥1 per-item `trace` on a populated path.
 
 ### Testing & mocks (§11 — cross-cutting, do NOT skip)
-- The logger-child mocks need `trace`/`debug` `vi.fn()` (§11) or the new calls throw at runtime. **Do NOT manually sweep dozens of inline mocks** (brittle, merge-conflict-prone — agy spec-review). Instead introduce a **central `createMockLogger()` test helper** (all levels + `child()` returning itself) and migrate the inline `vi.mock("@ckir/corelib")` logger stubs onto it, so any future level addition is a one-line change. (The plan state-verifies the current mock shape before migrating.)
+- The logger-child mocks need `trace`/`debug` `vi.fn()` (§11) or the new calls throw at runtime. **Do NOT manually sweep dozens of inline mocks** (brittle, merge-conflict-prone — agy spec-review). Instead introduce a **central `createMockLogger()` test helper** (all levels + `child()` returning itself) and migrate the inline `vi.mock("@ckirg/corelib")` logger stubs onto it, so any future level addition is a one-line change. (The plan state-verifies the current mock shape before migrating.)
 - Rust: ring-buffer unit tests (bounded growth, wrap-around) + dump-trigger test.
 
 ### Error handling / non-functional

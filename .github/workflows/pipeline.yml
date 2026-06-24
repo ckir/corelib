@@ -41,7 +41,7 @@ jobs:
         run: pnpm typecheck-all
 
       # Build the TS packages so the workers-pool integration config can resolve
-      # @ckir/corelib via its package.json exports (dist). Pure tsup (no Rust/napi,
+      # @ckirg/corelib via its package.json exports (dist). Pure tsup (no Rust/napi,
       # offline); the .node addon is prebuilt/committed. ~20-40s, still gates the matrix.
       - name: Build TypeScript packages
         run: pnpm build-all
@@ -135,8 +135,8 @@ jobs:
         run: |
           case "${{ matrix.runtime }}" in
             node) pnpm test-all ;;
-            bun)  RUNTIME=bun pnpm --filter '@ckir/*' exec bun x vitest run ;;
-            deno) RUNTIME=deno pnpm --filter '@ckir/*' exec deno run -A npm:vitest run ;;
+            bun)  RUNTIME=bun pnpm --filter '@ckirg/*' exec bun x vitest run ;;
+            deno) RUNTIME=deno pnpm --filter '@ckirg/*' exec deno run -A npm:vitest run ;;
           esac
 
   # ---------------------------------------------------------
@@ -228,9 +228,9 @@ jobs:
           <body>
               <h1>Corelib Monorepo Documentation</h1>
               <ul>
-                  <li><a href="ts-core/index.html">@ckir/corelib</a><p>Base logic, FFI, logging, and resilient HTTP.</p></li>
-                  <li><a href="ts-markets/index.html">@ckir/corelib-markets</a><p>Market data tooling (Nasdaq, Yahoo).</p></li>
-                  <li><a href="ts-cloud/index.html">@ckir/corelib-cloud</a><p>Cloud-specific extensions.</p></li>
+                  <li><a href="ts-core/index.html">@ckirg/corelib</a><p>Base logic, FFI, logging, and resilient HTTP.</p></li>
+                  <li><a href="ts-markets/index.html">@ckirg/corelib-markets</a><p>Market data tooling (Nasdaq, Yahoo).</p></li>
+                  <li><a href="ts-cloud/index.html">@ckirg/corelib-cloud</a><p>Cloud-specific extensions.</p></li>
                   <li><a href="rust/corelib_rust/index.html">corelib-rust</a><p>Native Rust core documentation.</p></li>
               </ul>
           </body>
@@ -269,9 +269,9 @@ jobs:
       - name: Pack Packages
         run: |
           mkdir dist-packages
-          pnpm --filter @ckir/corelib pack --pack-destination ./dist-packages
-          pnpm --filter @ckir/corelib-cloud pack --pack-destination ./dist-packages
-          pnpm --filter @ckir/corelib-markets pack --pack-destination ./dist-packages
+          pnpm --filter @ckirg/corelib pack --pack-destination ./dist-packages
+          pnpm --filter @ckirg/corelib-cloud pack --pack-destination ./dist-packages
+          pnpm --filter @ckirg/corelib-markets pack --pack-destination ./dist-packages
       - uses: actions/upload-artifact@v7
         with:
           name: ts-packages
@@ -411,6 +411,6 @@ jobs:
           # Leading ./ is REQUIRED: `npm publish artifacts/x.tgz` is read as a GitHub
           # repo spec (owner/repo); `./artifacts/x.tgz` is read as a local tarball.
           # base package first (markets/cloud depend on it); [0-9] avoids matching -markets/-cloud
-          npm publish ./artifacts/ckir-corelib-[0-9]*.tgz     --access public
-          npm publish ./artifacts/ckir-corelib-markets-*.tgz  --access public
-          npm publish ./artifacts/ckir-corelib-cloud-*.tgz    --access public
+          npm publish ./artifacts/ckirg-corelib-[0-9]*.tgz     --access public
+          npm publish ./artifacts/ckirg-corelib-markets-*.tgz  --access public
+          npm publish ./artifacts/ckirg-corelib-cloud-*.tgz    --access public

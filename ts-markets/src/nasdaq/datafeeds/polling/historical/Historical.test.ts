@@ -1,4 +1,4 @@
-import { logger } from "@ckir/corelib";
+import { logger } from "@ckirg/corelib";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import {
@@ -13,8 +13,8 @@ import {
 import { Historical } from "./Historical";
 
 // Mock corelib logger to prevent console noise during tests
-vi.mock("@ckir/corelib", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("@ckir/corelib")>();
+vi.mock("@ckirg/corelib", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@ckirg/corelib")>();
 	return {
 		...actual,
 		logger: {

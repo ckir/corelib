@@ -17,12 +17,12 @@
 ## Conventions for implementer subagents (READ FIRST — applies to EVERY task)
 
 1. **Step 0 — state verification.** Before editing, open each target file and confirm the quoted "Current state" matches reality. If it differs, STOP and report `STATE_MISMATCH: <what differs>` — do not adapt.
-2. **SHAPE_DIVERGENCE rule.** If making the code work would change the shape/type/encoding of any value, import path, or exported name shown here — even to compile — STOP and report `[original] → [yours] because <reason>`. Names like `@ckir/corelib`, `endPoint`, `coreFFI` are contracts; don't "fix" them.
+2. **SHAPE_DIVERGENCE rule.** If making the code work would change the shape/type/encoding of any value, import path, or exported name shown here — even to compile — STOP and report `[original] → [yours] because <reason>`. Names like `@ckirg/corelib`, `endPoint`, `coreFFI` are contracts; don't "fix" them.
 3. **NAME THE ORACLE.** Each task's tests are the oracle; if a value seems wrong, surface it — don't edit the test to match the code.
 4. **No elided lists** — paste full code blocks; don't `...` over imports or cases.
 5. **Exact commands.** Run from the repo root unless stated. Tools: `pnpm` (workspaces), `vitest`, `biome`, `tsc`. The local commit gate is **lefthook pre-commit = `verify:fast` (format/lint/typecheck, TS-only)** — never `--no-verify`. Integration tests are **CI-only**; they are NOT part of `verify:full` (the push gate stays unit-only).
 6. **Commit trailer:** every commit ends with `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`.
-7. **Package identities (verified):** ts-core = `@ckir/corelib`, ts-markets = `@ckir/corelib-markets`, ts-cloud = `@ckir/corelib-cloud`. All at version `0.1.17`. Vitest `^4.1.8`, msw `^2.14.6` already devDeps in ts-core + ts-markets (NOT ts-cloud); `@cloudflare/vitest-pool-workers ^0.16.13` in ts-cloud.
+7. **Package identities (verified):** ts-core = `@ckirg/corelib`, ts-markets = `@ckirg/corelib-markets`, ts-cloud = `@ckirg/corelib-cloud`. All at version `0.1.17`. Vitest `^4.1.8`, msw `^2.14.6` already devDeps in ts-core + ts-markets (NOT ts-cloud); `@cloudflare/vitest-pool-workers ^0.16.13` in ts-cloud.
 
 ---
 
@@ -93,7 +93,7 @@ describe("ConfigManager.initialize(args)", () => {
 
 - [ ] **Step 2: Run it — expect FAIL** (TS error: `initialize` takes 0 args).
 
-Run: `pnpm --filter @ckir/corelib exec vitest run src/configs/ConfigManager.argv.test.ts`
+Run: `pnpm --filter @ckirg/corelib exec vitest run src/configs/ConfigManager.argv.test.ts`
 Expected: FAIL (type error / arity).
 
 - [ ] **Step 3: Widen the signature.** In `ts-core/src/configs/ConfigManager.ts`, change the method declaration and the argv read:
@@ -113,12 +113,12 @@ then update the single `parseAsync` call to use `argv`:
 
 - [ ] **Step 4: Run it — expect PASS.**
 
-Run: `pnpm --filter @ckir/corelib exec vitest run src/configs/ConfigManager.argv.test.ts`
+Run: `pnpm --filter @ckirg/corelib exec vitest run src/configs/ConfigManager.argv.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Full ts-core unit suite stays green.**
 
-Run: `pnpm --filter @ckir/corelib test:run`
+Run: `pnpm --filter @ckirg/corelib test:run`
 Expected: PASS (no regression).
 
 - [ ] **Step 6: Commit.**
@@ -146,7 +146,7 @@ EOF
 - Create: `tsconfig.integration.json`
 - Modify: root `package.json`, `ts-core/package.json`, `ts-markets/package.json`, `ts-cloud/package.json` (scripts only)
 
-**Current state (verify):** No `tests/integration/` dir. `tsconfig.base.json` defines only the three `@ckir/*` package `paths`. Root scripts include `build-all`, `test-all:run`, `verify:full`, etc. Each package has `test`/`test:run`/`typecheck` scripts.
+**Current state (verify):** No `tests/integration/` dir. `tsconfig.base.json` defines only the three `@ckirg/*` package `paths`. Root scripts include `build-all`, `test-all:run`, `verify:full`, etc. Each package has `test`/`test:run`/`typecheck` scripts.
 
 - [ ] **Step 1: Create the tier directories** (keep them in git):
 
@@ -164,9 +164,9 @@ printf '' > tests/integration/_contracts/.gitkeep
   "compilerOptions": {
     "types": ["node"],
     "paths": {
-      "@ckir/corelib": ["./ts-core/src/index.ts"],
-      "@ckir/corelib-markets": ["./ts-markets/src/index.ts"],
-      "@ckir/corelib-cloud": ["./ts-cloud/src/index.ts"],
+      "@ckirg/corelib": ["./ts-core/src/index.ts"],
+      "@ckirg/corelib-markets": ["./ts-markets/src/index.ts"],
+      "@ckirg/corelib-cloud": ["./ts-cloud/src/index.ts"],
       "@itest/*": ["./tests/integration/*"]
     }
   },
@@ -239,7 +239,7 @@ EOF
 
 ## Task 3: Per-package integration vitest configs (×4)
 
-Each config matches its package's runtime and wires the `@ckir/*` source aliases (white-box) + the `@itest/*` harness alias + the harness setup file.
+Each config matches its package's runtime and wires the `@ckirg/*` source aliases (white-box) + the `@itest/*` harness alias + the harness setup file.
 
 **Files:**
 - Create: `ts-core/vitest.integration.config.ts`
@@ -270,7 +270,7 @@ const root = resolve(__dirname, "..");
 export default defineConfig({
   resolve: {
     alias: {
-      "@ckir/corelib": resolve(root, "ts-core/src/index.ts"),
+      "@ckirg/corelib": resolve(root, "ts-core/src/index.ts"),
       "@itest": resolve(root, "tests/integration"),
     },
   },
@@ -295,8 +295,8 @@ const root = resolve(__dirname, "..");
 export default defineConfig({
   resolve: {
     alias: {
-      "@ckir/corelib": resolve(root, "ts-core/src/index.ts"),
-      "@ckir/corelib-markets": resolve(root, "ts-markets/src/index.ts"),
+      "@ckirg/corelib": resolve(root, "ts-core/src/index.ts"),
+      "@ckirg/corelib-markets": resolve(root, "ts-markets/src/index.ts"),
       "@itest": resolve(root, "tests/integration"),
     },
   },
@@ -321,9 +321,9 @@ const root = resolve(__dirname, "..");
 export default defineConfig({
   resolve: {
     alias: {
-      "@ckir/corelib": resolve(root, "ts-core/src/index.ts"),
-      "@ckir/corelib-markets": resolve(root, "ts-markets/src/index.ts"),
-      "@ckir/corelib-cloud": resolve(root, "ts-cloud/src/index.ts"),
+      "@ckirg/corelib": resolve(root, "ts-core/src/index.ts"),
+      "@ckirg/corelib-markets": resolve(root, "ts-markets/src/index.ts"),
+      "@ckirg/corelib-cloud": resolve(root, "ts-cloud/src/index.ts"),
       "@itest": resolve(root, "tests/integration"),
     },
   },
@@ -349,9 +349,9 @@ const root = resolve(__dirname, "..");
 export default defineWorkersConfig({
   resolve: {
     alias: {
-      "@ckir/corelib": resolve(root, "ts-core/src/index.ts"),
-      "@ckir/corelib-markets": resolve(root, "ts-markets/src/index.ts"),
-      "@ckir/corelib-cloud": resolve(root, "ts-cloud/src/index.ts"),
+      "@ckirg/corelib": resolve(root, "ts-core/src/index.ts"),
+      "@ckirg/corelib-markets": resolve(root, "ts-markets/src/index.ts"),
+      "@ckirg/corelib-cloud": resolve(root, "ts-cloud/src/index.ts"),
     },
   },
   test: {
@@ -387,7 +387,7 @@ git add ts-core/vitest.integration.config.ts ts-markets/vitest.integration.confi
 git commit -m "$(cat <<'EOF'
 chore(itest): per-package runtime-matched integration vitest configs
 
-ts-core/ts-markets/ts-cloud(node) run under node with @ckir/* source aliases +
+ts-core/ts-markets/ts-cloud(node) run under node with @ckirg/* source aliases +
 @itest harness alias + shared setup; ts-cloud(worker) runs workers-pool for
 edge/proxy only. Configs are separate from the unit configs.
 
@@ -477,7 +477,7 @@ describe("findUnscrubbedSecrets", () => {
 
 - [ ] **Step 2: Run — expect FAIL** (module missing).
 
-Run: `pnpm --filter @ckir/corelib exec vitest run --root ../ tests/integration/_harness/scrubber.test.ts`
+Run: `pnpm --filter @ckirg/corelib exec vitest run --root ../ tests/integration/_harness/scrubber.test.ts`
 Expected: FAIL (cannot find `./scrubber`).
 
 - [ ] **Step 3: Implement `tests/integration/_harness/scrubber.ts`:**
@@ -593,7 +593,7 @@ function safeParse(s: string): unknown {
 
 - [ ] **Step 4: Run — expect PASS.**
 
-Run: `pnpm --filter @ckir/corelib exec vitest run --root ../ tests/integration/_harness/scrubber.test.ts`
+Run: `pnpm --filter @ckirg/corelib exec vitest run --root ../ tests/integration/_harness/scrubber.test.ts`
 Expected: PASS (6 tests).
 
 - [ ] **Step 5: Commit.**
@@ -811,7 +811,7 @@ export async function endItest(): Promise<void> {
 
 - [ ] **Step 4: Run the server tests — expect PASS.**
 
-Run: `pnpm --filter @ckir/corelib exec vitest run --root ../ tests/integration/_harness/server.test.ts`
+Run: `pnpm --filter @ckirg/corelib exec vitest run --root ../ tests/integration/_harness/server.test.ts`
 Expected: PASS (3 tests).
 
 - [ ] **Step 5: Add `msw` to ts-cloud? NO** — the worker project never imports the harness server. Confirm no change needed.
@@ -843,7 +843,7 @@ Vitest runs files in parallel; concurrent tests must never collide on a shared d
 - Create: `tests/integration/_harness/temp.ts`
 - Test: `tests/integration/_harness/temp.test.ts`
 
-**Current state (verify):** `createDatabase(config)` is exported from `@ckir/corelib` (`ts-core/src/database/index.ts`); for SQLite it returns a `SqliteDb` when `config.dialect === "sqlite"`. `getTempDir()` is exported from `@ckir/corelib`.
+**Current state (verify):** `createDatabase(config)` is exported from `@ckirg/corelib` (`ts-core/src/database/index.ts`); for SQLite it returns a `SqliteDb` when `config.dialect === "sqlite"`. `getTempDir()` is exported from `@ckirg/corelib`.
 
 - [ ] **Step 1: Write the failing tests** `tests/integration/_harness/temp.test.ts`:
 
@@ -886,7 +886,7 @@ describe("temp isolation", () => {
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createDatabase, getTempDir } from "@ckir/corelib";
+import { createDatabase, getTempDir } from "@ckirg/corelib";
 
 const tempDirs: string[] = [];
 const closers: Array<() => Promise<void> | void> = [];
@@ -919,7 +919,7 @@ export async function cleanupAll(): Promise<void> {
 
 - [ ] **Step 4: Run — expect PASS.**
 
-Run: `pnpm --filter @ckir/corelib exec vitest run --root ../ tests/integration/_harness/temp.test.ts`
+Run: `pnpm --filter @ckirg/corelib exec vitest run --root ../ tests/integration/_harness/temp.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Finalize the harness setup file** now that `./server` (Task 5) and `./temp` exist — replace the skeleton `tests/integration/_harness/setup.ts` with the full lifecycle:
@@ -942,7 +942,7 @@ afterAll(async () => {
 
 - [ ] **Step 6: Re-verify the smoke + harness tests run end-to-end under the integration config:**
 
-Run: `pnpm --filter @ckir/corelib test:integration`
+Run: `pnpm --filter @ckirg/corelib test:integration`
 Expected: `_smoke` + scrubber/server/temp harness tests run and PASS.
 
 - [ ] **Step 7: Commit.**
@@ -953,7 +953,7 @@ git commit -m "$(cat <<'EOF'
 feat(itest): per-test temp-dir + isolated SQLite + finalize harness setup
 
 getTestTempDir() (unique mkdtemp) and createTestDatabase() (:memory: stateful via
-@ckir/corelib createDatabase) so parallel files never collide; cleanupAll() prunes
+@ckirg/corelib createDatabase) so parallel files never collide; cleanupAll() prunes
 dirs and disconnects DBs. setup.ts now wires the MSW + temp lifecycle for seam suites.
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
@@ -968,13 +968,13 @@ EOF
 **Files:**
 - Create: `tests/integration/_harness/guards.ts`
 
-**Current state (verify):** `isFfiAvailable` is exported from `@ckir/corelib` (TS wrapper in `ts-core/src/core/index.ts`).
+**Current state (verify):** `isFfiAvailable` is exported from `@ckirg/corelib` (TS wrapper in `ts-core/src/core/index.ts`).
 
 - [ ] **Step 1: Implement `tests/integration/_harness/guards.ts`:**
 
 ```ts
 import { describe } from "vitest";
-import { isFfiAvailable } from "@ckir/corelib";
+import { isFfiAvailable } from "@ckirg/corelib";
 
 /** Skip the suite (loudly) when the native addon isn't present for this platform. */
 export const ffiDescribe: typeof describe = (() => {
@@ -1138,7 +1138,7 @@ describe("coverage-validator", () => {
 
 - [ ] **Step 4: Verify validator logic.** Temporarily comment out the three `live-streaming` cells in `coverage.matrix.ts`, run the validator test (expect PASS — no external cells yet, no orphans), then restore the cells.
 
-Run: `pnpm --filter @ckir/corelib exec vitest run --root ../ tests/integration/coverage-validator.test.ts`
+Run: `pnpm --filter @ckirg/corelib exec vitest run --root ../ tests/integration/coverage-validator.test.ts`
 Expected: PASS with the live-streaming cells commented; FAIL (missing test files) with them restored — restore them and leave the test to go green in Task 15.
 
 - [ ] **Step 5: Commit.**
@@ -1164,14 +1164,14 @@ EOF
 **Files:**
 - Create: `ts-core/tests/integration/ffi-scalar.integration.test.ts`
 
-**Current state (verify):** `@ckir/corelib` exports `coreFFI`, `isFfiAvailable`, `Core`. The Rust addon exports `getVersion(): string` and `logAndDouble(msg: string, value: number): number`. `ts-core/package.json.version === "0.1.17"` (asserted equal to `getVersion()`).
+**Current state (verify):** `@ckirg/corelib` exports `coreFFI`, `isFfiAvailable`, `Core`. The Rust addon exports `getVersion(): string` and `logAndDouble(msg: string, value: number): number`. `ts-core/package.json.version === "0.1.17"` (asserted equal to `getVersion()`).
 
 - [ ] **Step 1: Write the suite:**
 
 ```ts
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { coreFFI, getVersion, isFfiAvailable, logAndDouble } from "@ckir/corelib";
+import { coreFFI, getVersion, isFfiAvailable, logAndDouble } from "@ckirg/corelib";
 import { describe, expect, it } from "vitest";
 import { ffiDescribe } from "@itest/_harness/guards";
 
@@ -1201,11 +1201,11 @@ describe("ffi availability fallback", () => {
 });
 ```
 
-> **Oracle note:** `getVersion` / `logAndDouble` are re-exported from `@ckir/corelib` via `export * from "./core"`. In Step 0 confirm they are exported by name from `ts-core/src/core/index.ts` (the digest shows `coreFFI` @ line 132, `isFfiAvailable` @ 138, `Core` @ 181). If `getVersion`/`logAndDouble` are only reachable as `coreFFI.getVersion`, import them that way and report SHAPE_DIVERGENCE.
+> **Oracle note:** `getVersion` / `logAndDouble` are re-exported from `@ckirg/corelib` via `export * from "./core"`. In Step 0 confirm they are exported by name from `ts-core/src/core/index.ts` (the digest shows `coreFFI` @ line 132, `isFfiAvailable` @ 138, `Core` @ 181). If `getVersion`/`logAndDouble` are only reachable as `coreFFI.getVersion`, import them that way and report SHAPE_DIVERGENCE.
 
 - [ ] **Step 2: Run.**
 
-Run: `pnpm --filter @ckir/corelib test:integration`
+Run: `pnpm --filter @ckirg/corelib test:integration`
 Expected: PASS where the `.node` addon exists; the `ffiDescribe` block SKIPS with the loud yellow diagnostic where it doesn't (the availability-fallback `describe` still runs).
 
 - [ ] **Step 3: Commit.**
@@ -1234,12 +1234,12 @@ EOF
 - Create fixtures: `tests/integration/_contracts/itest-core/*.json`
 - Modify: `tests/integration/coverage.matrix.ts` (add the external cells these tests reference)
 
-**Current state (verify):** `endPoint<T>(url, options): Promise<RequestResult<T>>` and `endPoints` exported from `@ckir/corelib` (`RequestUnlimited.ts`). `DEFAULT_REQUEST_OPTIONS.retry.limit = 5`; retry limit overridable via `ConfigManager` key `retrieve.retry.limit`.
+**Current state (verify):** `endPoint<T>(url, options): Promise<RequestResult<T>>` and `endPoints` exported from `@ckirg/corelib` (`RequestUnlimited.ts`). `DEFAULT_REQUEST_OPTIONS.retry.limit = 5`; retry limit overridable via `ConfigManager` key `retrieve.retry.limit`.
 
 - [ ] **Step 1: HTTP suite** `ts-core/tests/integration/http.integration.test.ts` (success + retry-then-200 via a sequential fixture; bounded retries so CI never stalls):
 
 ```ts
-import { ConfigManager, endPoint } from "@ckir/corelib";
+import { ConfigManager, endPoint } from "@ckirg/corelib";
 import { beforeAll, describe, expect, it } from "vitest";
 import { loadFixture } from "@itest/_harness/server";
 
@@ -1313,7 +1313,7 @@ describe("database (real SQLite composition)", () => {
 - [ ] **Step 4: Config suite** `ts-core/tests/integration/config.integration.test.ts`:
 
 ```ts
-import { ConfigManager } from "@ckir/corelib";
+import { ConfigManager } from "@ckirg/corelib";
 import { describe, expect, it } from "vitest";
 
 describe("ConfigManager (real init, no argv hijack)", () => {
@@ -1335,7 +1335,7 @@ describe("ConfigManager (real init, no argv hijack)", () => {
 
 - [ ] **Step 6: Run ts-core integration + validator.**
 
-Run: `pnpm --filter @ckir/corelib test:integration`
+Run: `pnpm --filter @ckirg/corelib test:integration`
 Expected: PASS (http replay, db, config).
 
 Run: `pnpm test:integration:validate`
@@ -1365,12 +1365,12 @@ EOF
 - Create: `ts-markets/tests/integration/cross-package.integration.test.ts`
 - Modify: `tests/integration/coverage.matrix.ts`
 
-**Current state (verify):** `@ckir/corelib-markets` consumes `@ckir/corelib`'s `logger`, `ConfigManager`, `endPoint`/`endPoints`, `getMode`, `getTempDir`, `coreFFI`. Pick stable, side-effect-free bindings.
+**Current state (verify):** `@ckirg/corelib-markets` consumes `@ckirg/corelib`'s `logger`, `ConfigManager`, `endPoint`/`endPoints`, `getMode`, `getTempDir`, `coreFFI`. Pick stable, side-effect-free bindings.
 
 - [ ] **Step 1: Write the suite** (real wiring, NO `vi.mock`):
 
 ```ts
-import { ConfigManager, getMode, getTempDir, logger } from "@ckir/corelib";
+import { ConfigManager, getMode, getTempDir, logger } from "@ckirg/corelib";
 import { describe, expect, it } from "vitest";
 
 describe("cross-package: ts-markets → ts-core real bindings", () => {
@@ -1406,7 +1406,7 @@ describe("cross-package: ts-markets → ts-core real bindings", () => {
 
 - [ ] **Step 3: Run.**
 
-Run: `pnpm --filter @ckir/corelib-markets test:integration`
+Run: `pnpm --filter @ckirg/corelib-markets test:integration`
 Expected: PASS.
 
 - [ ] **Step 4: Commit.**
@@ -1435,13 +1435,13 @@ Cover each REST provider × { success, 404, 500, timeout→retry, malformed-body
 - Create fixtures under `tests/integration/_contracts/{nasdaq,yahoo,cnn}/`
 - Modify: `tests/integration/coverage.matrix.ts`
 
-**Current state (verify):** providers exported from `@ckir/corelib-markets` (digest §I): `MarketStatus.getStatus()` (→ `https://api.nasdaq.com/api/market-info`), `ApiNasdaqQuotes` (→ `https://api.nasdaq.com/api/quote/{symbol}/info`), `getSymbolsTop100`, `Historical` (Yahoo via `@gadicc/yahoo-finance2`), `CnnFearAndGreed` (→ CNN). **No Alpaca REST exists** (Alpaca is streaming-only) — do NOT add an Alpaca REST case.
+**Current state (verify):** providers exported from `@ckirg/corelib-markets` (digest §I): `MarketStatus.getStatus()` (→ `https://api.nasdaq.com/api/market-info`), `ApiNasdaqQuotes` (→ `https://api.nasdaq.com/api/quote/{symbol}/info`), `getSymbolsTop100`, `Historical` (Yahoo via `@gadicc/yahoo-finance2`), `CnnFearAndGreed` (→ CNN). **No Alpaca REST exists** (Alpaca is streaming-only) — do NOT add an Alpaca REST case.
 
 - [ ] **Step 1: Write the suite** (record-or-replay; in replay it serves only fixtures, in record it captures real responses):
 
 ```ts
-import { ConfigManager } from "@ckir/corelib";
-import { MarketStatus } from "@ckir/corelib-markets";
+import { ConfigManager } from "@ckirg/corelib";
+import { MarketStatus } from "@ckirg/corelib-markets";
 import { beforeAll, describe, expect, it } from "vitest";
 import { loadFixture, recordTo } from "@itest/_harness/server";
 
@@ -1467,7 +1467,7 @@ describe("external REST (Nasdaq MarketStatus)", () => {
 
 - [ ] **Step 2: Record the fixtures against the real APIs (one-time, manual), then commit the scrubbed output.**
 
-Run: `pnpm --filter @ckir/corelib-markets test:integration:record` (note: define this convenience script if absent, or run the root `test:integration:record`)
+Run: `pnpm --filter @ckirg/corelib-markets test:integration:record` (note: define this convenience script if absent, or run the root `test:integration:record`)
 Then: inspect the printed `[itest:record]` scrub diffs, review the written `_contracts/**` files, and verify they contain no live secrets.
 
 > If recording against live Nasdaq/CNN is rate-limited or unstable, author the success fixture by hand from a known-good response shape and the failure fixtures as simple `{status:404|500, body:{...}}`. The fixture format is in §6.3 of the spec.
@@ -1500,7 +1500,7 @@ A timeout→retry case is an array fixture `[ {status:504}, {status:200, body:{.
 
 - [ ] **Step 5: Run replay + validator.**
 
-Run: `pnpm --filter @ckir/corelib-markets test:integration`
+Run: `pnpm --filter @ckirg/corelib-markets test:integration`
 Expected: PASS (all from fixtures; no live calls).
 
 Run: `pnpm test:integration:validate`
@@ -1535,7 +1535,7 @@ EOF
 - [ ] **Step 1: Write the suite:**
 
 ```ts
-import { createRouter } from "@ckir/corelib-cloud";
+import { createRouter } from "@ckirg/corelib-cloud";
 import { describe, expect, it } from "vitest";
 
 describe("ts-cloud router composition (node)", () => {
@@ -1547,7 +1547,7 @@ describe("ts-cloud router composition (node)", () => {
 });
 ```
 
-> **Oracle note:** confirm `createRouter` is exported from `@ckir/corelib-cloud` (digest shows it in `ts-cloud/src/core/router.ts`). If the package exports an already-built `app` instead of a factory, import that. Add a DB-composition case (`/api/v1/sql` or `/api/v1/markets/nasdaq/...`) using `createTestDatabase()` if the router accepts an injected DB; otherwise keep the health-route composition as the cross-package node case and rely on Task 10 for direct DB coverage. Report SHAPE_DIVERGENCE if the router can't be constructed without live env bindings.
+> **Oracle note:** confirm `createRouter` is exported from `@ckirg/corelib-cloud` (digest shows it in `ts-cloud/src/core/router.ts`). If the package exports an already-built `app` instead of a factory, import that. Add a DB-composition case (`/api/v1/sql` or `/api/v1/markets/nasdaq/...`) using `createTestDatabase()` if the router accepts an injected DB; otherwise keep the health-route composition as the cross-package node case and rely on Task 10 for direct DB coverage. Report SHAPE_DIVERGENCE if the router can't be constructed without live env bindings.
 
 - [ ] **Step 2: Register the cell** in `COVERAGE_MATRIX`:
 
@@ -1557,7 +1557,7 @@ describe("ts-cloud router composition (node)", () => {
 
 - [ ] **Step 3: Run.**
 
-Run: `pnpm --filter @ckir/corelib-cloud exec vitest run --config vitest.integration.config.ts`
+Run: `pnpm --filter @ckirg/corelib-cloud exec vitest run --config vitest.integration.config.ts`
 Expected: PASS.
 
 - [ ] **Step 4: Commit.**
@@ -1602,7 +1602,7 @@ describe("ts-cloud worker (edge/proxy)", () => {
 
 - [ ] **Step 2: Run the worker project.**
 
-Run: `pnpm --filter @ckir/corelib-cloud exec vitest run --config vitest.integration.worker.config.ts`
+Run: `pnpm --filter @ckirg/corelib-cloud exec vitest run --config vitest.integration.worker.config.ts`
 Expected: PASS in the workerd sandbox.
 
 - [ ] **Step 3: Commit.**
@@ -1674,7 +1674,7 @@ export async function assertStreamsLive(
 - [ ] **Step 2: Alpaca live suite** `ts-markets/tests/integration/AlpacaStreaming.live.integration.test.ts`:
 
 ```ts
-import { AlpacaStreaming } from "@ckir/corelib-markets";
+import { AlpacaStreaming } from "@ckirg/corelib-markets";
 import { afterEach, expect, it } from "vitest";
 import { assertStreamsLive, liveDescribe, requireEnv } from "@itest/_harness/guards";
 
@@ -1694,7 +1694,7 @@ liveDescribe("AlpacaStreaming (live)", () => {
 - [ ] **Step 3: Finnhub live suite** `FinnhubStreaming.live.integration.test.ts` (env `FINNHUB_API_KEY`; symbols `AAPL`/`MSFT`):
 
 ```ts
-import { FinnhubStreaming } from "@ckir/corelib-markets";
+import { FinnhubStreaming } from "@ckirg/corelib-markets";
 import { afterEach, expect, it } from "vitest";
 import { assertStreamsLive, liveDescribe, requireEnv } from "@itest/_harness/guards";
 
@@ -1714,7 +1714,7 @@ liveDescribe("FinnhubStreaming (live)", () => {
 - [ ] **Step 4: Yahoo live suite** `YahooStreaming.live.integration.test.ts` (tokenless; 24/7 `BTC-USD` so a frame arrives off-hours):
 
 ```ts
-import { YahooStreaming } from "@ckir/corelib-markets";
+import { YahooStreaming } from "@ckirg/corelib-markets";
 import { afterEach, expect, it } from "vitest";
 import { assertStreamsLive, liveDescribe } from "@itest/_harness/guards";
 
@@ -1732,17 +1732,17 @@ liveDescribe("YahooStreaming (live)", () => {
 
 - [ ] **Step 5: Verify guard behavior (default run skips; live run gated by creds).**
 
-Run (default, offline): `pnpm --filter @ckir/corelib-markets test:integration`
+Run (default, offline): `pnpm --filter @ckirg/corelib-markets test:integration`
 Expected: the three live suites are SKIPPED (no `INTEGRATION_LIVE`), no socket opened.
 
-Run (live, if creds available): `INTEGRATION_LIVE=1 pnpm --filter @ckir/corelib-markets exec vitest run --config vitest.integration.config.ts ...AlpacaStreaming.live...`
+Run (live, if creds available): `INTEGRATION_LIVE=1 pnpm --filter @ckirg/corelib-markets exec vitest run --config vitest.integration.config.ts ...AlpacaStreaming.live...`
 Expected: connects; passes (or loud-skips if creds missing).
 
 - [ ] **Step 6: Validator now fully green** (the three `testFilePath`s exist):
 
 Run: `pnpm test:integration:validate`
 Expected: `✓ coverage matrix valid` (external + live-streaming all satisfied). Re-run the validator unit test:
-Run: `pnpm --filter @ckir/corelib exec vitest run --root ../ tests/integration/coverage-validator.test.ts`
+Run: `pnpm --filter @ckirg/corelib exec vitest run --root ../ tests/integration/coverage-validator.test.ts`
 Expected: PASS.
 
 - [ ] **Step 7: Commit.**

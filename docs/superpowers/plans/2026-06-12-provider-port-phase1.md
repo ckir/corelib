@@ -840,7 +840,7 @@ Run: `Read ts-markets/src/nasdaq/datafeeds/streaming/alpaca/AlpacaStreaming.ts`
 // native callbacks adapted to emit("log"|"pricing"|<event.type>), config via async init().
 import { EventEmitter } from "node:events";
 // biome-ignore lint/suspicious/noExplicitAny: native FFI handle is dynamically typed
-import { coreFFI } from "@ckir/corelib";
+import { coreFFI } from "@ckirg/corelib";
 
 // biome-ignore lint/suspicious/noExplicitAny: native class
 const RustFinnhub = (coreFFI as any)?.FinnhubStreaming;
@@ -886,7 +886,7 @@ export class FinnhubStreaming extends EventEmitter {
 
 - [ ] **Step 3: Export it** — add `export * from "./nasdaq/datafeeds/streaming/finnhub/FinnhubStreaming";` to the streaming index and surface `FinnhubStreaming` from `ts-markets/src/index.ts` (match how `AlpacaStreaming` is exported — grep for it: `rg "AlpacaStreaming" ts-markets/src/index.ts`).
 
-- [ ] **Step 4: Typecheck** — `pnpm --filter @ckir/corelib-markets typecheck`. Expected: Done (no errors).
+- [ ] **Step 4: Typecheck** — `pnpm --filter @ckirg/corelib-markets typecheck`. Expected: Done (no errors).
 - [ ] **Step 5: Commit** — `git add -A && git commit -m "feat(ts-markets): FinnhubStreaming wrapper + exports"`
 
 ---

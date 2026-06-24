@@ -12,7 +12,7 @@ import {
 	logger,
 	nextCid,
 	type RequestResult,
-} from "@ckir/corelib";
+} from "@ckirg/corelib";
 
 const cnnLogger = logger.child({ section: "CnnFearAndGreed" });
 

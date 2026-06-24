@@ -146,7 +146,7 @@ git add -A rust && git commit -m "feat(epic5): Rust-side roundtrip-token latency
 - Create: `probes/_harness/soak-runner.mjs` (spawns the child)
 - Create: `probes/_harness/soak-child.mjs` (the precompiled bare-node entrypoint)
 
-- [ ] **Step 0 — state-verify:** confirm `@ckir/corelib` builds to `dist/` and the native binding loads from a built package (Epic 4 confirmed `ts-core/corelib-rust.node`). The soak child imports the BUILT package, not TS source.
+- [ ] **Step 0 — state-verify:** confirm `@ckirg/corelib` builds to `dist/` and the native binding loads from a built package (Epic 4 confirmed `ts-core/corelib-rust.node`). The soak child imports the BUILT package, not TS source.
 
 - [ ] **Step 1 — soak child** (`soak-child.mjs`): import the built binding, run `napiLoadGenerator(rate, duration, bursty, cb)` consuming ticks + calling `napiLatencyAck(seq)`, force `global.gc()` at baseline and terminal, print `BASELINE_RSS=<n> TERMINAL_RSS=<n> BASELINE_HEAP=<n> TERMINAL_HEAP=<n>` (from `process.memoryUsage()` after `global.gc()`). **Default fixed run: 1,000,000 payloads or 100 bursty cycles (~60–90 s).**
 - [ ] **Step 2 — soak runner** (`soak-runner.mjs`): `spawn('node', ['--max-old-space-size=128','--expose-gc', soakChildPath, ...args])`, parse the child's RSS/HEAP lines, compute post-GC deltas, print `PROBE_CONFIRMED soak heap_delta=<MB> rss_delta=<MB>` if heap delta ≥ 1 MB OR rss delta ≥ 5 MB OR child OOM-exited, else `PROBE_CLEAN soak ...`. (spec hard gate)

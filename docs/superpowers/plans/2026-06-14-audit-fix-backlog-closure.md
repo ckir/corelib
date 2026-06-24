@@ -237,8 +237,8 @@ git commit -m "test(epic3): edge-boot probe boots the BUILT dist/cloudflare/work
 > Step 0 (state-verify): confirm entry[0] has `noExternal: [/.*/]`, `platform: "node"`, `minify: true`, `outDir: "dist/cloudflare"`. Record the current built size: `ls -la ts-cloud/dist/cloudflare/worker.js` (expect ~6 MB).
 
 - [ ] **Step 1: Switch the Cloudflare worker entry to a thin, edge-correct build.** In entry[0] ONLY:
-  - `platform: "node"` → `platform: "neutral"` (NOT `"browser"` — that resolves `@ckir/corelib` to its logging-only `browser.js` stub and breaks `createDatabase`/`endPoint`).
-  - replace `noExternal: [/.*/]` with the externals (agy-completed list — server-only/runtime-provided deps reachable from `@ckir/corelib`):
+  - `platform: "node"` → `platform: "neutral"` (NOT `"browser"` — that resolves `@ckirg/corelib` to its logging-only `browser.js` stub and breaks `createDatabase`/`endPoint`).
+  - replace `noExternal: [/.*/]` with the externals (agy-completed list — server-only/runtime-provided deps reachable from `@ckirg/corelib`):
 ```ts
 			external: [
 				/^node:/,

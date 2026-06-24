@@ -4,8 +4,8 @@
 // Covers: Success, Logic Errors (rCode), Transport Errors, Headers (Standard vs Charting), Config Overrides, Parallel Requests.
 // =============================================
 
-vi.mock("@ckir/corelib", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("@ckir/corelib")>();
+vi.mock("@ckirg/corelib", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@ckirg/corelib")>();
 	return {
 		...actual,
 		logger: {
@@ -20,7 +20,7 @@ vi.mock("@ckir/corelib", async (importOriginal) => {
 	};
 });
 
-import { ConfigManager, logger } from "@ckir/corelib";
+import { ConfigManager, logger } from "@ckirg/corelib";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import {

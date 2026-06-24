@@ -5,7 +5,7 @@
  * Note: This proxy is transparent for single requests but returns RequestResult for bulk/error scenarios.
  */
 
-import { endPoint, type RequestResult } from "@ckir/corelib";
+import { endPoint, type RequestResult } from "@ckirg/corelib";
 import { type Context, Hono } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { AppEnv } from "../core/types";

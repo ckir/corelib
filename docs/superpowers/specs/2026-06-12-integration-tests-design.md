@@ -15,7 +15,7 @@ is consumed by `ts-markets` (Nasdaq/Yahoo/Alpaca/Finnhub data feeds) and `ts-clo
 with a private Rust core exposed via `corelib-rust.node` (N-API).
 
 The existing test suite is **co-located unit tests that mock the internal package boundary**
-(`vi.mock("@ckir/corelib", …)` throughout `ts-markets`/`ts-cloud`). That verifies units in isolation but
+(`vi.mock("@ckirg/corelib", …)` throughout `ts-markets`/`ts-cloud`). That verifies units in isolation but
 never exercises the real composition.
 
 **Goal:** an *exhaustive* integration tier that exercises the **real, unmocked composition** across three

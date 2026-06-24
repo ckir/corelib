@@ -1,7 +1,7 @@
 // =============================================
 // FILE: ts-core/src/utils/index.ts
 // PURPOSE: Utils category – exported as named import
-// Example: import { Utils, SysInfo } from '@ckir/corelib'
+// Example: import { Utils, SysInfo } from '@ckirg/corelib'
 // NEW: Re-exports SysInfo for telemetry
 // NEW: Multi-runtime abstractions for env, file, cwd, dirname
 // NEW: Added getPlatform and getMode from ConfigUtils

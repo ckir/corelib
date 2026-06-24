@@ -1,6 +1,6 @@
 {
-    "name": "@ckir/corelib-cloud",
-    "version": "0.1.21",
+    "name": "@ckirg/corelib-cloud",
+    "version": "0.1.22",
     "publishConfig": {
         "access": "public"
     },
@@ -26,8 +26,8 @@
         "clean": "del dist"
     },
     "dependencies": {
-        "@ckir/corelib": "workspace:*",
-        "@ckir/corelib-markets": "workspace:*",
+        "@ckirg/corelib": "workspace:*",
+        "@ckirg/corelib-markets": "workspace:*",
         "@hono/node-server": "^2.0.4",
         "hono": "^4.12.23",
         "ky": "^2.0.2",

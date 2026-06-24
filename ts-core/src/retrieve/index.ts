@@ -1,7 +1,7 @@
 // =============================================
 // FILE: ts-core/src/retrieve/index.ts
 // PURPOSE: Retrieve category – exported as named import
-// Example: import { Retrieve, RequestUnlimited } from '@ckir/corelib'
+// Example: import { Retrieve, RequestUnlimited } from '@ckirg/corelib'
 // NEW (2026-03-07): Added exports for RequestUnlimited and related types/utilities.
 // =============================================
 

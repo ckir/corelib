@@ -3,7 +3,7 @@ import {
 	nextCid,
 	RequestProxied,
 	type StrictLogger,
-} from "@ckir/corelib";
+} from "@ckirg/corelib";
 import { ApiNasdaqUnlimited, type NasdaqResult } from "./ApiNasdaqUnlimited";
 import { MarketSymbols } from "./MarketSymbols";
 

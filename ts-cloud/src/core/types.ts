@@ -1,4 +1,4 @@
-import type { StrictLogger } from "@ckir/corelib";
+import type { StrictLogger } from "@ckirg/corelib";
 
 /**
  * Environment configuration and variables for the Hono instance.

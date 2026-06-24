@@ -2,7 +2,7 @@
 // FILE: ts-markets/src/nasdaq/MarketSymbols.test.ts
 // =============================================
 
-import * as corelib from "@ckir/corelib";
+import * as corelib from "@ckirg/corelib";
 import { DateTime } from "luxon";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiNasdaqUnlimited } from "./ApiNasdaqUnlimited";
@@ -11,7 +11,7 @@ import { MarketSymbols } from "./MarketSymbols";
 // ---------------------------------------------------------------------------
 // 1. Mock External Dependencies
 // ---------------------------------------------------------------------------
-vi.mock("@ckir/corelib", async (importOriginal) => {
+vi.mock("@ckirg/corelib", async (importOriginal) => {
 	const actual = await importOriginal<typeof corelib>();
 	return {
 		...actual,

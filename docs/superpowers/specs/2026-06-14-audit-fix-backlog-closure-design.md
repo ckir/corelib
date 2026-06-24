@@ -89,7 +89,7 @@ These two findings are **technically co-dependent**: switching the Cloudflare wo
 **Problem:** the Cloudflare worker bundle is **6.29 MB** (gzip 901 KiB). `ts-cloud/tsup.config.ts`'s first entry (`worker: src/platform/cloudflare/worker.ts`) uses `platform:"node"` + `noExternal:[/.*/]`, so esbuild bundles heavy **server-only** transitive deps reachable from `ts-core` (`@google-cloud/*`, `@libsql/client`, `pino-pretty`) that the edge worker never executes.
 
 **Fix:** for the **Cloudflare worker entry ONLY** (the AWS-`handler` and CloudRun-`server` entries legitimately stay `platform:"node"` and must NOT be touched):
-- Use **`platform:"neutral"`** — NOT `"browser"`. (agy spec-review 1.1: `ts-core/package.json` declares `"browser": "./dist/browser.js"`, and `browser.ts` only re-exports logging interfaces; under `platform:"browser"` esbuild resolves `@ckir/corelib` to that stub and `createDatabase`/`endPoint` — which `ts-cloud` imports — go unresolved → build fails. `"neutral"` resolves the full default ESM entry `dist/index.js` while still allowing dependency pruning.)
+- Use **`platform:"neutral"`** — NOT `"browser"`. (agy spec-review 1.1: `ts-core/package.json` declares `"browser": "./dist/browser.js"`, and `browser.ts` only re-exports logging interfaces; under `platform:"browser"` esbuild resolves `@ckirg/corelib` to that stub and `createDatabase`/`endPoint` — which `ts-cloud` imports — go unresolved → build fails. `"neutral"` resolves the full default ESM entry `dist/index.js` while still allowing dependency pruning.)
 - Mark the server-only/Node-DB packages and `node:*` builtins as **`external`** (`@google-cloud/*`, `@libsql/client`, `pino-pretty`, `node:*`, and any other server-only deps the build surfaces) so they are not bundled; `node:*` is satisfied at runtime by `nodejs_compat` (already enabled).
 - Target: **~150 KB** (from 6.29 MB).
 
@@ -102,7 +102,7 @@ These two findings are **technically co-dependent**: switching the Cloudflare wo
 - **Phase-1 gcp console:** remove 3 progress logs; retain ONE justified bootstrap-fallback `console.error` for logger-init failure (+ propagate). (Not a blanket "remove all 4".)
 - **Phase-2 status code:** fatal path → **500** (body unchanged).
 - **Phase-3 ordering:** node-import refactor (3a) precedes bundle change (3b) in the same phase — co-dependent.
-- **Phase-3 platform:** `platform:"neutral"` (NOT `"browser"` — avoids the `@ckir/corelib` browser-stub export clash) for the **Cloudflare worker entry only**; externalize server-only deps + `node:*`; AWS/CloudRun entries untouched.
+- **Phase-3 platform:** `platform:"neutral"` (NOT `"browser"` — avoids the `@ckirg/corelib` browser-stub export clash) for the **Cloudflare worker entry only**; externalize server-only deps + `node:*`; AWS/CloudRun entries untouched.
 - **Phase-3 node usage:** `await import` in the already-async `decryptConfig`/`loadFFI`; for the SYNC `SysInfo`/`utils` paths keep the static `node:module` import (externalized in the edge build → resolved via `nodejs_compat`, not bundled) but guard the `createRequire()` *call* with `detectRuntime()` (since `globalThis.require` is `undefined` under Node/Bun ESM). Optional `__EDGE_RUNTIME__` build-define for full dead-code-elimination.
 - **Phase-1 scope:** error-serialization is a full SWEEP of raw-error logger sites (incl. agy-found `SqlCloud.ts`, `NasdaqPolling.ts`, and the db rollback catches), not just the 4 the audit named.
 

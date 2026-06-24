@@ -58,7 +58,7 @@ const {
 	};
 });
 
-vi.mock("@ckir/corelib", async () => {
+vi.mock("@ckirg/corelib", async () => {
 	const mockLogger = {
 		child: vi.fn(() => mockChildLogger),
 		// Also provide direct methods for cases where child isn't used

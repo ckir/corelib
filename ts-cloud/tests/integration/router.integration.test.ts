@@ -1,4 +1,4 @@
-import { createRouter } from "@ckir/corelib-cloud";
+import { createRouter } from "@ckirg/corelib-cloud";
 import { describe, expect, it } from "vitest";
 
 describe("ts-cloud router composition (node)", () => {

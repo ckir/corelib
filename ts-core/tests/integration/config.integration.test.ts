@@ -1,4 +1,4 @@
-import { ConfigManager } from "@ckir/corelib";
+import { ConfigManager } from "@ckirg/corelib";
 import { describe, expect, it } from "vitest";
 
 describe("ConfigManager (real init, no argv hijack)", () => {

@@ -1,4 +1,4 @@
-import { FinnhubStreaming } from "@ckir/corelib-markets";
+import { FinnhubStreaming } from "@ckirg/corelib-markets";
 import {
 	assertStreamsLive,
 	liveDescribe,

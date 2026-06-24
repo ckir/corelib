@@ -1,4 +1,4 @@
-// Browser-safe entry point for @ckir/corelib.
+// Browser-safe entry point for @ckirg/corelib.
 // Only exports that are free of Node.js / Bun / Deno runtime dependencies.
 
 export type { LogMethod, StrictLogger } from "./loggers/common/index.js";

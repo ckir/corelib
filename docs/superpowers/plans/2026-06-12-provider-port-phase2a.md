@@ -14,7 +14,7 @@
 - Rust tests/builds run from the `rust/` directory. Default features include `finnhub`. CLI bins need the `clap` feature.
   - Unit tests: `cargo test` (add `-- <name>` to target one).
   - Lint: `cargo clippy`. Bins compile: `cargo build --features clap`.
-- TS tests run from repo root: `pnpm --filter @ckir/corelib-markets test:run`.
+- TS tests run from repo root: `pnpm --filter @ckirg/corelib-markets test:run`.
 - Never bypass lefthook. Commits end with the `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>` trailer.
 - Each task ends green (`cargo test` + `cargo clippy` clean) before the next starts.
 
@@ -635,7 +635,7 @@ it("emits 'market' when the unified callback fires", async () => {
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `pnpm --filter @ckir/corelib-markets test:run`
+Run: `pnpm --filter @ckirg/corelib-markets test:run`
 Expected: FAIL — no `"market"` emission (only 3 callbacks wired).
 
 - [ ] **Step 3: Implement** — in `FinnhubStreaming.ts`, pass a 4th constructor arg to the FFI class:
@@ -651,7 +651,7 @@ this.rust = new RustFinnhub(
 
 - [ ] **Step 4: Run to verify pass**
 
-Run: `pnpm --filter @ckir/corelib-markets test:run`
+Run: `pnpm --filter @ckirg/corelib-markets test:run`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -1279,7 +1279,7 @@ git commit -m "refactor(bin): drive alpaca_streamer CLI via shared host + Alpaca
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `pnpm --filter @ckir/corelib-markets test:run`
+Run: `pnpm --filter @ckirg/corelib-markets test:run`
 Expected: FAIL.
 
 - [ ] **Step 3: Implement** — in `AlpacaStreaming.ts`:
@@ -1303,7 +1303,7 @@ unsubscribe(input: string[] | { trades?: string[]; quotes?: string[]; bars?: str
 Run:
 ```
 cd rust && cargo build --release   # regenerates index.d.ts / index.js for the new ctor arg + AlpacaSubscribeOpts
-cd .. && pnpm --filter @ckir/corelib-markets test:run
+cd .. && pnpm --filter @ckirg/corelib-markets test:run
 ```
 Expected: PASS; `rust/index.d.ts` now shows `AlpacaSubscribeOpts` and the optional 4th constructor arg.
 

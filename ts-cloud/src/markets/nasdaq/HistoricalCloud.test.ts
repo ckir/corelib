@@ -3,12 +3,12 @@
  * @description Unit tests for the HistoricalCloud edge router.
  */
 
-import { Historical } from "@ckir/corelib-markets";
+import { Historical } from "@ckirg/corelib-markets";
 import { describe, expect, it, vi } from "vitest";
 import { historicalRouter } from "./HistoricalCloud";
 
 // Mock the Historical module from corelib-markets
-vi.mock("@ckir/corelib-markets", () => ({
+vi.mock("@ckirg/corelib-markets", () => ({
 	Historical: {
 		getData: vi.fn(),
 	},

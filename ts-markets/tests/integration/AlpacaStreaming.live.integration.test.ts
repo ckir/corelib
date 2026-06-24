@@ -1,4 +1,4 @@
-import { AlpacaStreaming } from "@ckir/corelib-markets";
+import { AlpacaStreaming } from "@ckirg/corelib-markets";
 import {
 	assertStreamsLive,
 	liveDescribe,

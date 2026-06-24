@@ -6,7 +6,7 @@
 
 **Architecture:** `StrictLogger` already exposes `trace`/`debug`/`child` with the strict `(msg, extras?)` signature (verified). Each module logs via its child logger (or the injected/context logger for DB & cloud). A new `createMockLogger()` test helper (all 6 levels + `child`→self) replaces ad-hoc mocks in the ~10 affected test files. Plan B (Rust ring-buffer flight recorder) is separate.
 
-**Tech Stack:** TypeScript, Vitest, pnpm workspaces, the `@ckir/corelib` `StrictLogger`. Spec: `docs/superpowers/specs/2026-06-14-epic4-hotpath-trace-instrumentation-design.md`.
+**Tech Stack:** TypeScript, Vitest, pnpm workspaces, the `@ckirg/corelib` `StrictLogger`. Spec: `docs/superpowers/specs/2026-06-14-epic4-hotpath-trace-instrumentation-design.md`.
 
 **Verify commands (pinned — avoid the global tsc shim):**
 - Typecheck: `node node_modules/.pnpm/typescript@6.0.3/node_modules/typescript/bin/tsc --noEmit -p <pkg>/tsconfig.json` (exit 0)
@@ -41,7 +41,7 @@ export type MockLogger = {
  * A complete StrictLogger mock for tests. All six levels are vi.fn()s and
  * `child()` returns the SAME mock, so trace/debug calls added by §12
  * instrumentation never throw "x is not a function". Use everywhere a test
- * mocks `@ckir/corelib`'s logger (see AGENTS.md §11/§12).
+ * mocks `@ckirg/corelib`'s logger (see AGENTS.md §11/§12).
  */
 export function createMockLogger(): MockLogger {
 	const mock = {
@@ -112,7 +112,7 @@ git commit -m "test(epic4): central createMockLogger() helper (all 6 levels + ch
   - `endPoints()` (batch) entry: `requestUnlimitedLogger.debug("endPoints: batch", { count: urls.length });` and after settling: `requestUnlimitedLogger.debug("endPoints: done", { ok, failed });`
   - SHAPE-DIVERGENCE STOP: add only log calls; do not change retry/backoff logic, return types, or the existing warn/error lines.
 
-- [ ] **Step 2: Adopt the mock + assert.** In `RequestUnlimited.retry.test.ts`, replace the inline logger mock with the helper and add assertions. Ensure the `vi.mock("@ckir/corelib")` returns a logger built from `createMockLogger` (capture it via `vi.hoisted`):
+- [ ] **Step 2: Adopt the mock + assert.** In `RequestUnlimited.retry.test.ts`, replace the inline logger mock with the helper and add assertions. Ensure the `vi.mock("@ckirg/corelib")` returns a logger built from `createMockLogger` (capture it via `vi.hoisted`):
 
 ```ts
 // `vi.mock` is HOISTED above imports, so the factory CANNOT reference the
@@ -125,7 +125,7 @@ const { mockLogger } = vi.hoisted(() => {
 	m.child = vi.fn(() => m);
 	return { mockLogger: m };
 });
-vi.mock("@ckir/corelib", async (orig) => ({ ...(await (orig() as Promise<object>)), default: mockLogger, logger: mockLogger }));
+vi.mock("@ckirg/corelib", async (orig) => ({ ...(await (orig() as Promise<object>)), default: mockLogger, logger: mockLogger }));
 ```
 (Only `vi.mock` factories hit the hoisting trap. Direct-construction tests — those that PASS a logger in, e.g. the DB and cloud-handler tests — just `import { createMockLogger }` normally. — agy plan-review.) Add to an existing retry test:
 ```ts
@@ -306,9 +306,9 @@ git commit -m "feat(epic4): §12 debug on cloud router + market-status + sql han
 import { describe, expect, it, vi } from "vitest";
 import { createMockLogger } from "../test-utils/logger-mock";
 
-// Mock @ckir/corelib's logger with the helper so endPoint() logs land on it.
+// Mock @ckirg/corelib's logger with the helper so endPoint() logs land on it.
 const { mockLogger } = vi.hoisted(() => ({ mockLogger: undefined as any }));
-vi.mock("@ckir/corelib", async (orig) => {
+vi.mock("@ckirg/corelib", async (orig) => {
 	const real = (await orig()) as Record<string, unknown>;
 	const { createMockLogger } = await import("../test-utils/logger-mock");
 	const l = createMockLogger();
@@ -361,7 +361,7 @@ git commit -m "test(epic4): golden-trace test — RequestUnlimited retry chain r
 
 **Cross-cutting rules (apply in every task — folded from agy plan-review):**
 - **Run the FULL package suite after each task, not just the touched test** — e.g. `cd ts-core && pnpm exec vitest run` (whole package), not only the new file. This catches *transitive* mock breakage: a test that mocks the logger source an instrumented module actually uses and exercises that path will throw if its mock lacks `trace`/`debug`. If any file breaks, migrate it to `createMockLogger`. (Don't rely on guessing "which ~10 files" — let the suite tell you.)
-- **Logger-source nuance:** ts-core modules import the logger via the internal `../loggers` (so a `vi.mock("@ckir/corelib")` does NOT affect them — they use the real logger, which has trace/debug); ts-markets/ts-cloud modules import `{ logger }` from `@ckir/corelib` (so their mocks DO apply). Migrate the mocks that actually apply + whatever the full-suite run flags.
+- **Logger-source nuance:** ts-core modules import the logger via the internal `../loggers` (so a `vi.mock("@ckirg/corelib")` does NOT affect them — they use the real logger, which has trace/debug); ts-markets/ts-cloud modules import `{ logger }` from `@ckirg/corelib` (so their mocks DO apply). Migrate the mocks that actually apply + whatever the full-suite run flags.
 - **Hot-loop allocation guard:** for per-item `trace` inside a hot loop (e.g. NasdaqPolling per-symbol; any per-row DB trace), hoist the logger and guard so the `extras` object isn't allocated when the logger is absent:
   ```ts
   const log = this.config.logger; // or the module's logger

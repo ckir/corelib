@@ -8,9 +8,9 @@
     "ignoreDeprecations": "6.0",
     "types": ["bun-types"],
     "paths": {
-      "@ckir/corelib": ["./ts-core/src/index.ts"],
-      "@ckir/corelib-markets": ["./ts-markets/src/index.ts"],
-      "@ckir/corelib-cloud": ["./ts-cloud/src/index.ts"]
+      "@ckirg/corelib": ["./ts-core/src/index.ts"],
+      "@ckirg/corelib-markets": ["./ts-markets/src/index.ts"],
+      "@ckirg/corelib-cloud": ["./ts-cloud/src/index.ts"]
     }
   }
 }

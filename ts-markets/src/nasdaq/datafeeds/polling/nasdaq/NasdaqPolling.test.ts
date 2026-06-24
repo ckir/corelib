@@ -26,7 +26,7 @@ const { mockTrace, mockDebug, mockWarn, mockError, mockInfo, mockChildLogger } =
 	});
 
 // Mock the dependencies
-vi.mock("@ckir/corelib", async () => {
+vi.mock("@ckirg/corelib", async () => {
 	const mockLogger = {
 		child: vi.fn(() => mockChildLogger),
 		...mockChildLogger,

@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { logger, nextCid } from "@ckir/corelib";
+import { logger, nextCid } from "@ckirg/corelib";
 import { serializeError } from "serialize-error";
 import { ApiNasdaqQuotes } from "../../../ApiNasdaqQuotes";
 

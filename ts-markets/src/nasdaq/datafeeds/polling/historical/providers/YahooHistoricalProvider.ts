@@ -1,6 +1,6 @@
 // ts-markets/src/nasdaq/datafeeds/polling/historical/providers/YahooHistoricalProvider.ts
 
-import { logger, nextCid } from "@ckir/corelib";
+import { logger, nextCid } from "@ckirg/corelib";
 
 const yahooHistoricalLogger = logger.child({
 	section: "YahooHistoricalProvider",

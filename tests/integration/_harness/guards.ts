@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { describe } from "vitest";
-import { isFfiAvailable } from "@ckir/corelib";
+import { isFfiAvailable } from "@ckirg/corelib";
 
 /** Skip the suite (loudly) when the native addon isn't present for this platform. */
 export const ffiDescribe: typeof describe = (() => {

@@ -8,7 +8,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Hoist mocks to ensure they are set up before importing AlpacaStreaming
-vi.mock("@ckir/corelib", () => {
+vi.mock("@ckirg/corelib", () => {
 	class MockAlpaca {
 		on_log: any;
 		on_pricing: any;
@@ -50,7 +50,7 @@ vi.mock("@ckir/corelib", () => {
 	};
 });
 
-import { getMode, getTempDir } from "@ckir/corelib";
+import { getMode, getTempDir } from "@ckirg/corelib";
 import { AlpacaStreaming } from "./AlpacaStreaming";
 
 describe("AlpacaStreaming (Exhaustive)", () => {

@@ -4,17 +4,17 @@
  * Verified scenarios: Single URL proxying, bulk endpoint processing, validation errors, and crash resilience.
  */
 
-import { endPoint } from "@ckir/corelib";
+import { endPoint } from "@ckirg/corelib";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { nasdaqRouter } from "./ApiNasdaqUnlimitedCloud";
 
 // Mock the corelib dependency
-vi.mock("@ckir/corelib", () => ({
+vi.mock("@ckirg/corelib", () => ({
 	endPoint: vi.fn(),
 }));
 
 // Mock the corelib-markets dependency
-vi.mock("@ckir/corelib-markets", () => ({
+vi.mock("@ckirg/corelib-markets", () => ({
 	getNasdaqHeaders: vi.fn(() => ({ "x-test": "header" })),
 }));
 

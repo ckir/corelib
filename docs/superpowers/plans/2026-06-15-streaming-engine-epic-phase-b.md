@@ -441,7 +441,7 @@ import { afterEach, expect, it } from "vitest";
 // @ts-expect-error - JS harness, no types. If this path won't resolve under the
 // integration vitest project, copy the harness to ./_harness/ and import "./_harness/alpaca-loopback.mjs".
 import { AlpacaLoopbackServer } from "../../../probes/_harness/alpaca-loopback.mjs";
-import { AlpacaStreaming } from "@ckir/corelib-markets";
+import { AlpacaStreaming } from "@ckirg/corelib-markets";
 
 let server: InstanceType<typeof AlpacaLoopbackServer> | undefined;
 let stream: AlpacaStreaming | undefined;
@@ -508,7 +508,7 @@ it("[b3.alpaca] a frame round-trips Node ws -> Rust -> on_pricing", async () => 
 
 - [ ] **Step 3: Build the RELEASE addon + run the test.**
 
-Run: `cd rust && pnpm exec napi build --release && cp corelib-rust.node ../ts-core/corelib-rust.node` then build the TS packages the test imports (`pnpm build-all`, or at least `@ckir/corelib` + `@ckir/corelib-markets`), then run the test via the ts-markets integration project (the same command CI uses for the integration tier — check `ts-markets/package.json` for the `test:integration`/`vitest` script; e.g. `pnpm --filter @ckir/corelib-markets test:integration` or `pnpm vitest run ts-markets/tests/integration/alpaca-loopback-delivery.integration.test.ts`).
+Run: `cd rust && pnpm exec napi build --release && cp corelib-rust.node ../ts-core/corelib-rust.node` then build the TS packages the test imports (`pnpm build-all`, or at least `@ckirg/corelib` + `@ckirg/corelib-markets`), then run the test via the ts-markets integration project (the same command CI uses for the integration tier — check `ts-markets/package.json` for the `test:integration`/`vitest` script; e.g. `pnpm --filter @ckirg/corelib-markets test:integration` or `pnpm vitest run ts-markets/tests/integration/alpaca-loopback-delivery.integration.test.ts`).
 Expected (PASS path): GREEN — the engine delivers across the napi/Node boundary on release. If the harness import fails to resolve, apply the copy-to-`_harness/` fallback from Step 2 and re-run. If GREEN, skip Step 4; go to Step 5.
 
 - [ ] **Step 4: If RED — characterize + root-cause (REQUIRED; do not caveat).** Only if Step 3 fails (`no pricing` / `streamingCount` never > 0):

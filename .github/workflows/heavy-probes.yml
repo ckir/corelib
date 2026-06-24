@@ -21,7 +21,7 @@ jobs:
           echo "PROBE_START ${{ inputs.probe }}"
           P="${{ inputs.probe }}"
           if [[ "$P" == js:* ]]; then
-            pnpm build-all                                          # JS/soak probes import the BUILT @ckir/corelib binding
+            pnpm build-all                                          # JS/soak probes import the BUILT @ckirg/corelib binding
             # loadFFI looks for the UNSUFFIXED corelib-rust.node, but `napi build --platform` emits a
             # platform-suffixed file, and ts-core postinstall SKIPS the release fetch on CI — so copy it.
             cp rust/corelib-rust.*.node ts-core/corelib-rust.node

@@ -1,4 +1,4 @@
-import { logger } from "@ckir/corelib";
+import { logger } from "@ckirg/corelib";
 import { createRouter } from "../../core/router";
 
 const workerLogger = logger.child({ section: "Worker" });

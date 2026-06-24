@@ -1,4 +1,4 @@
-import type { StrictLogger } from "@ckir/corelib";
+import type { StrictLogger } from "@ckirg/corelib";
 
 export function createEdgeLogger(
 	bindings: Record<string, unknown> = {},

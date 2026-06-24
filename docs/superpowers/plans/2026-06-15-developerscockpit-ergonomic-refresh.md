@@ -158,10 +158,10 @@ class TestBumpTargetSet(unittest.TestCase):
         files = {
             "package.json": '{\n  "name": "root",\n  "version": "0.1.17"\n}\n',
             "ts-core/package.json": '{\n  "version": "0.1.17"\n}\n',
-            "ts-markets/package.json": '{\n  "version": "0.1.17",\n  "dependencies": { "@ckir/corelib": "workspace:*" }\n}\n',
+            "ts-markets/package.json": '{\n  "version": "0.1.17",\n  "dependencies": { "@ckirg/corelib": "workspace:*" }\n}\n',
             "ts-cloud/package.json": '{\n  "version": "0.1.17"\n}\n',
             "rust/Cargo.toml": '[package]\nname = "corelib-rust"\nversion = "0.1.17"\nedition = "2021"\n',
-            "README.md": "Install: download/v0.1.17/ckir-corelib-0.1.17.tgz and ckir-corelib-markets-0.1.17.tgz\n",
+            "README.md": "Install: download/v0.1.17/ckirg-corelib-0.1.17.tgz and ckirg-corelib-markets-0.1.17.tgz\n",
             # historical doc — MUST NOT be touched
             "docs/superpowers/old.md": "At the time this was version 0.1.17 (historical).\n",
         }

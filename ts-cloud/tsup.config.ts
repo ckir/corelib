@@ -9,9 +9,9 @@ export default defineConfig([
 		// workerd has no node_modules resolution, so these bare specifiers must be
 		// inlined. A catch-all noExternal:[/.*/] would also pull in the Node-only
 		// deps below (and override the RegExp externals), so we list explicitly.
-		noExternal: ["@ckir/corelib", "@ckir/corelib-markets", "hono"],
+		noExternal: ["@ckirg/corelib", "@ckirg/corelib-markets", "hono"],
 		// Carve-outs. All of these are reachable ONLY behind runtime-gated dynamic
-		// import()s in @ckir/corelib (logger picks ./implementations/cloudflare.js on
+		// import()s in @ckirg/corelib (logger picks ./implementations/cloudflare.js on
 		// edge; DB drivers load via `await import(...)` only when a DB is created), so
 		// they never execute during edge boot. Node builtins are supplied by
 		// nodejs_compat at load time; platform:"neutral" can't resolve them at build.

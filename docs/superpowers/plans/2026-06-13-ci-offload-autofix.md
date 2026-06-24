@@ -11,7 +11,7 @@
 **Spec:** `docs/superpowers/specs/2026-06-13-ci-offload-autofix-design.md` (Approved).
 
 **Outcome (2026-06-13):** Part A (Tasks 1–2) merged to `main` (`303dcfa`) + a follow-up pre-flight fix
-(`bcf6b86`, add `pnpm build-all` so the workers-pool integration test resolves `@ckir/corelib`); full
+(`bcf6b86`, add `pnpm build-all` so the workers-pool integration test resolves `@ckirg/corelib`); full
 corelib pipeline green (pre-flight + 9 matrix cells + 3-OS integration + docs). Part B (Tasks 3–6) built +
 verified under `~/.claude/skills/watch-ci/` (helper tests 5/5; dry-run clean; `scrubLog` regex-order bug
 caught via SHAPE_DIVERGENCE and fixed; `claude -p … --dangerously-skip-permissions` oracle confirmed on
