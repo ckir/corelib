@@ -20,9 +20,9 @@ This repository is structured as a pnpm monorepo, integrating TypeScript's flexi
 
 ```mermaid
 graph TD
-    A[Your App] -->|npm install| B["@ckir/corelib (ts-core)"]
-    A -->|npm install| C["@ckir/corelib-markets (ts-markets)"]
-    A -->|npm install| D["@ckir/corelib-cloud (ts-cloud)"]
+    A[Your App] -->|npm install| B["@ckirg/corelib (ts-core)"]
+    A -->|npm install| C["@ckirg/corelib-markets (ts-markets)"]
+    A -->|npm install| D["@ckirg/corelib-cloud (ts-cloud)"]
     C --> B
     D --> B
     D --> C
@@ -37,9 +37,9 @@ graph TD
 
 | Package | Description | Documentation |
 | :--- | :--- | :--- |
-| **[`@ckir/corelib`](./ts-core/README.md)** | Core logic, FFI bridge, resilient HTTP, and database abstractions. | [README](./ts-core/README.md) |
-| **[`@ckir/corelib-markets`](./ts-markets/README.md)** | Market data tooling (Nasdaq, Yahoo) and financial indicators. | [README](./ts-markets/README.md) |
-| **[`@ckir/corelib-cloud`](./ts-cloud/README.md)** | Cloud-specific extensions for AWS, GCP, and Cloudflare. | [README](./ts-cloud/README.md) |
+| **[`@ckirg/corelib`](./ts-core/README.md)** | Core logic, FFI bridge, resilient HTTP, and database abstractions. | [README](./ts-core/README.md) |
+| **[`@ckirg/corelib-markets`](./ts-markets/README.md)** | Market data tooling (Nasdaq, Yahoo) and financial indicators. | [README](./ts-markets/README.md) |
+| **[`@ckirg/corelib-cloud`](./ts-cloud/README.md)** | Cloud-specific extensions for AWS, GCP, and Cloudflare. | [README](./ts-cloud/README.md) |
 | **[`corelib-rust`](./rust/README.md)** | Native Rust core exposed via N-API (FFI). | [README](./rust/README.md) |
 
 ---
@@ -50,29 +50,29 @@ These packages are published to the **public npm registry** under the `@ckir` sc
 
 ### 1. Install
 ```bash
-npm install @ckir/corelib @ckir/corelib-markets
-# or: pnpm add @ckir/corelib @ckir/corelib-markets
-# or: bun add  @ckir/corelib @ckir/corelib-markets
+npm install @ckirg/corelib @ckirg/corelib-markets
+# or: pnpm add @ckirg/corelib @ckirg/corelib-markets
+# or: bun add  @ckirg/corelib @ckirg/corelib-markets
 ```
 
-### 2. Required `.npmrc` (when using `@ckir/corelib-markets`)
-`@ckir/corelib-markets` depends on `@gadicc/yahoo-finance2`, distributed via **JSR**. Add the JSR registry mapping to your project's `.npmrc`, or installs will 404 on the transitive `@jsr/...` package:
+### 2. Required `.npmrc` (when using `@ckirg/corelib-markets`)
+`@ckirg/corelib-markets` depends on `@gadicc/yahoo-finance2`, distributed via **JSR**. Add the JSR registry mapping to your project's `.npmrc`, or installs will 404 on the transitive `@jsr/...` package:
 ```
 @jsr:registry=https://npm.jsr.io
 ```
 
 ### 🦀 The Native Rust Binary
-`@ckir/corelib` ships a `postinstall` that downloads the correct prebuilt Rust binary (`corelib-rust-*.node`) for your OS/arch from the matching GitHub Release.
+`@ckirg/corelib` ships a `postinstall` that downloads the correct prebuilt Rust binary (`corelib-rust-*.node`) for your OS/arch from the matching GitHub Release.
 
 - **Supported targets:** `linux-x64`, `win32-x64`, `darwin-x64`, `darwin-arm64`. There is **no `linux-arm64`** build — Linux deployments must be x64 (e.g. not AWS Graviton / Ampere) until an arm64 binary is shipped.
 - **Bun consumers:** Bun blocks dependency `postinstall` scripts by default. Add corelib to `trustedDependencies` in your `package.json`, or the binary is never fetched and the FFI fails at runtime:
   ```json
-  "trustedDependencies": ["@ckir/corelib"]
+  "trustedDependencies": ["@ckirg/corelib"]
   ```
 - **`MODE=development` caveat:** the postinstall **skips** the download when `MODE=development` (or under CI's `GITHUB_ACTIONS`). Don't set `MODE=development` in a consuming app's `.env`, or you'll hit a "module not found" for the addon.
 - **Manual trigger** if the download was skipped or blocked:
   ```bash
-  node node_modules/@ckir/corelib/scripts/postinstall.js
+  node node_modules/@ckirg/corelib/scripts/postinstall.js
   ```
 
 ---
@@ -101,9 +101,9 @@ All workspace-wide commands are managed through `pnpm`:
 
 ## 📖 Usage Examples
 
-### 1. Core Utilities (`@ckir/corelib`)
+### 1. Core Utilities (`@ckirg/corelib`)
 ```typescript
-import { logger, endPoint, RequestProxied, ConfigManager } from '@ckir/corelib';
+import { logger, endPoint, RequestProxied, ConfigManager } from '@ckirg/corelib';
 
 // 1. Resilient Fetch (ky-powered with retries)
 const result = await endPoint('https://api.nasdaq.com/api/market-info');
@@ -119,9 +119,9 @@ if (!config.isInitialized) await config.whenReady();
 const port = config.get("database.port"); // read at the use site, don't cache slices
 ```
 
-### 2. Market Data (`@ckir/corelib-markets`)
+### 2. Market Data (`@ckirg/corelib-markets`)
 ```typescript
-import { MarketMonitor, MarketSymbols, Historical, type MarketPhase } from '@ckir/corelib-markets';
+import { MarketMonitor, MarketSymbols, Historical, type MarketPhase } from '@ckirg/corelib-markets';
 
 // 1. Resilient Status Poller
 const monitor = new MarketMonitor();
@@ -143,7 +143,7 @@ if (history.status === 'success') {
 
 ### 2b. Real-Time Streaming (flagship — Rust WS engine, zero event-loop blocking)
 ```typescript
-import { AlpacaStreaming } from '@ckir/corelib-markets';
+import { AlpacaStreaming } from '@ckirg/corelib-markets';
 
 const stream = new AlpacaStreaming();
 
@@ -164,7 +164,7 @@ stream.on('error',        (e) => console.error('error', e));
 // (Finnhub uses token auth; Yahoo is unauthenticated — see ts-markets/README.md)
 ```
 
-### 3. Edge Proxy Services (`@ckir/corelib-cloud`)
+### 3. Edge Proxy Services (`@ckirg/corelib-cloud`)
 A portable TypeScript service exposing corelib logic on **Cloudflare Workers**, **AWS Lambda**, and **Cloud Run**.
 
 ```bash
@@ -183,9 +183,9 @@ curl -X POST https://your-edge-service/api/v1/markets/nasdaq \
 Detailed API documentation is generated for each package and published via GitHub Pages:
 
 - **[Unified Documentation Index](https://ckir.github.io/corelib/index.html)**
-- **[Core Utilities Documentation](https://ckir.github.io/corelib/ts-core/index.html)** (`@ckir/corelib`)
-- **[Market Data Documentation](https://ckir.github.io/corelib/ts-markets/index.html)** (`@ckir/corelib-markets`)
-- **[Cloud Extensions Documentation](https://ckir.github.io/corelib/ts-cloud/index.html)** (`@ckir/corelib-cloud`)
+- **[Core Utilities Documentation](https://ckir.github.io/corelib/ts-core/index.html)** (`@ckirg/corelib`)
+- **[Market Data Documentation](https://ckir.github.io/corelib/ts-markets/index.html)** (`@ckirg/corelib-markets`)
+- **[Cloud Extensions Documentation](https://ckir.github.io/corelib/ts-cloud/index.html)** (`@ckirg/corelib-cloud`)
 - **[Rust Native Core Documentation](https://ckir.github.io/corelib/rust/corelib_rust/index.html)** (`corelib-rust`)
 
 ---
