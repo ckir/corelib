@@ -348,3 +348,34 @@ jobs:
         with:
           files: artifacts/*
           generate_release_notes: true
+
+  # ---------------------------------------------------------
+  # STAGE 5: NPM PUBLISH (Only after a successful GitHub Release)
+  # Publishes the exact tarballs the release built, so npm == release assets.
+  # Runs AFTER `release` so the native binaries are on the GitHub Release
+  # before the npm package (whose postinstall downloads them) is consumable.
+  # Requires repo secret NPM_TOKEN (npm "Automation" token, bypasses OTP).
+  # ---------------------------------------------------------
+  publish-npm:
+    name: Publish to npm
+    needs: [release]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: 'https://registry.npmjs.org'
+      - uses: actions/download-artifact@v8
+        with:
+          name: ts-packages
+          path: artifacts
+      - name: Publish @ckir packages in dependency order
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -e
+          # base package first (markets/cloud depend on it); [0-9] avoids matching -markets/-cloud
+          npm publish artifacts/ckir-corelib-[0-9]*.tgz       --access public
+          npm publish artifacts/ckir-corelib-markets-*.tgz    --access public
+          npm publish artifacts/ckir-corelib-cloud-*.tgz      --access public
