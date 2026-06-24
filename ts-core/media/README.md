@@ -20,9 +20,9 @@ This repository is structured as a pnpm monorepo, integrating TypeScript's flexi
 
 ```mermaid
 graph TD
-    A[Your App] -->|GitHub Release .tgz| B["@ckir/corelib (ts-core)"]
-    A -->|GitHub Release .tgz| C["@ckir/corelib-markets (ts-markets)"]
-    A -->|GitHub Release .tgz| D["@ckir/corelib-cloud (ts-cloud)"]
+    A[Your App] -->|npm install| B["@ckir/corelib (ts-core)"]
+    A -->|npm install| C["@ckir/corelib-markets (ts-markets)"]
+    A -->|npm install| D["@ckir/corelib-cloud (ts-cloud)"]
     C --> B
     D --> B
     D --> C
@@ -46,55 +46,34 @@ graph TD
 
 ## 📦 Installation for External Projects
 
-Since these packages are not published to the public NPM registry, you can install them directly from the GitHub Release assets.
+These packages are published to the **public npm registry** under the `@ckir` scope.
 
-### 1. Install via Direct URL (Recommended)
-You can point your package manager directly to the `.tgz` file in the GitHub Release. Replace `v0.1.18` with the desired version.
-
+### 1. Install
 ```bash
-# Using pnpm
-pnpm add https://github.com/ckir/corelib/releases/download/v0.1.18/ckir-corelib-0.1.18.tgz
-pnpm add https://github.com/ckir/corelib/releases/download/v0.1.18/ckir-corelib-markets-0.1.18.tgz
-
-# Using npm
-npm install https://github.com/ckir/corelib/releases/download/v0.1.18/ckir-corelib-0.1.18.tgz
+npm install @ckir/corelib @ckir/corelib-markets
+# or: pnpm add @ckir/corelib @ckir/corelib-markets
+# or: bun add  @ckir/corelib @ckir/corelib-markets
 ```
 
-### ⚠️ Important: Handling Internal Dependencies
-Because `@ckir/corelib-markets` depends on `@ckir/corelib`, and neither is on NPM, your package manager might try to find `@ckir/corelib` on the public registry and fail (404). 
-
-To fix this, add an **override** to your `package.json` so the manager knows to use the specific version for the sub-dependency:
-
-**For pnpm (`package.json`):**
-```json
-"pnpm": {
-  "overrides": {
-    "@ckir/corelib": "https://github.com/ckir/corelib/releases/download/v0.1.18/ckir-corelib-0.1.18.tgz"
-  }
-}
+### 2. Required `.npmrc` (when using `@ckir/corelib-markets`)
+`@ckir/corelib-markets` depends on `@gadicc/yahoo-finance2`, distributed via **JSR**. Add the JSR registry mapping to your project's `.npmrc`, or installs will 404 on the transitive `@jsr/...` package:
 ```
-
-**For npm (`package.json`):**
-```json
-"overrides": {
-  "@ckir/corelib": "https://github.com/ckir/corelib/releases/download/v0.1.18/ckir-corelib-0.1.18.tgz"
-}
-```
-
-**For yarn (`package.json`):**
-```json
-"resolutions": {
-  "@ckir/corelib": "https://github.com/ckir/corelib/releases/download/v0.1.18/ckir-corelib-0.1.18.tgz"
-}
+@jsr:registry=https://npm.jsr.io
 ```
 
 ### 🦀 The Native Rust Binary
-The `@ckir/corelib` package includes a `postinstall` script that automatically downloads the correct prebuilt Rust binary (`corelib-rust-*.node`) for your OS (Windows, Linux, or macOS) from the GitHub Release.
+`@ckir/corelib` ships a `postinstall` that downloads the correct prebuilt Rust binary (`corelib-rust-*.node`) for your OS/arch from the matching GitHub Release.
 
-If the automatic download is blocked or fails, you can trigger it manually:
-```bash
-node node_modules/@ckir/corelib/scripts/postinstall.js
-```
+- **Supported targets:** `linux-x64`, `win32-x64`, `darwin-x64`, `darwin-arm64`. There is **no `linux-arm64`** build — Linux deployments must be x64 (e.g. not AWS Graviton / Ampere) until an arm64 binary is shipped.
+- **Bun consumers:** Bun blocks dependency `postinstall` scripts by default. Add corelib to `trustedDependencies` in your `package.json`, or the binary is never fetched and the FFI fails at runtime:
+  ```json
+  "trustedDependencies": ["@ckir/corelib"]
+  ```
+- **`MODE=development` caveat:** the postinstall **skips** the download when `MODE=development` (or under CI's `GITHUB_ACTIONS`). Don't set `MODE=development` in a consuming app's `.env`, or you'll hit a "module not found" for the addon.
+- **Manual trigger** if the download was skipped or blocked:
+  ```bash
+  node node_modules/@ckir/corelib/scripts/postinstall.js
+  ```
 
 ---
 
