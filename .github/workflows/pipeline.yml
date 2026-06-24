@@ -375,7 +375,9 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -e
+          # Leading ./ is REQUIRED: `npm publish artifacts/x.tgz` is read as a GitHub
+          # repo spec (owner/repo); `./artifacts/x.tgz` is read as a local tarball.
           # base package first (markets/cloud depend on it); [0-9] avoids matching -markets/-cloud
-          npm publish artifacts/ckir-corelib-[0-9]*.tgz       --access public
-          npm publish artifacts/ckir-corelib-markets-*.tgz    --access public
-          npm publish artifacts/ckir-corelib-cloud-*.tgz      --access public
+          npm publish ./artifacts/ckir-corelib-[0-9]*.tgz     --access public
+          npm publish ./artifacts/ckir-corelib-markets-*.tgz  --access public
+          npm publish ./artifacts/ckir-corelib-cloud-*.tgz    --access public
