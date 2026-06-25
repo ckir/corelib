@@ -206,4 +206,3 @@ export function getSysInfo() {
 			return fallback();
 	}
 }
-

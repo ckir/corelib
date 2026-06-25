@@ -16,7 +16,11 @@ import {
 	it,
 	vi,
 } from "vitest";
-import { DEFAULT_REQUEST_OPTIONS, endPoint, endPoints } from "./RequestUnlimited";
+import {
+	DEFAULT_REQUEST_OPTIONS,
+	endPoint,
+	endPoints,
+} from "./RequestUnlimited";
 
 const { mockTrace, mockDebug, mockLogger } = vi.hoisted(() => {
 	const trace = vi.fn();
