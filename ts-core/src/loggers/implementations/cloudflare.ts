@@ -2,6 +2,7 @@
 
 import { getSysInfo } from "../../utils/SysInfo";
 import type { StrictLogger } from "../common";
+import { normalizeExtras } from "../common/normalize-extras";
 
 const LEVEL_MAP: Record<string, number> = {
 	trace: 10,
@@ -59,7 +60,7 @@ class CloudflareLogger implements StrictLogger {
 			level,
 			time: Date.now(),
 			...this.context,
-			...extras,
+			...normalizeExtras(extras),
 			...(this.state.telemetryEnabled && { telemetry: this.getTelemetry() }),
 			msg,
 		};

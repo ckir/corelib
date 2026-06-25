@@ -1,5 +1,6 @@
 // Browser-compatible StrictLogger — uses console, zero Node.js dependencies.
 import type { StrictLogger } from "../common/index.js";
+import { normalizeExtras } from "../common/normalize-extras.js";
 
 const LEVEL_MAP: Record<string, number> = {
 	trace: 10,
@@ -46,7 +47,10 @@ class BrowserLogger implements StrictLogger {
 		extras?: Record<string, unknown>,
 	): void {
 		if ((LEVEL_MAP[lvl] ?? 30) < this.levelVal) return;
-		consoleFn(`[${lvl.toUpperCase()}]`, msg, { ...this.ctx, ...extras });
+		consoleFn(`[${lvl.toUpperCase()}]`, msg, {
+			...this.ctx,
+			...normalizeExtras(extras),
+		});
 	}
 
 	trace(msg: string, extras?: Record<string, unknown>): void {

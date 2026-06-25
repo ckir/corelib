@@ -2,6 +2,7 @@
 
 import type { Logger as PinoLogger } from "pino";
 import { getSysInfo } from "../../utils/SysInfo";
+import { normalizeExtras } from "./normalize-extras";
 
 declare global {
 	/**
@@ -139,42 +140,42 @@ export class StrictLoggerWrapper implements StrictLogger {
 	trace(msg: string, extras?: Record<string, unknown>) {
 		this.validate(msg, extras);
 		this.pinoInstance.trace(
-			{ ...this.context, ...extras, telemetry: this.getTelemetry() },
+			{ ...this.context, ...normalizeExtras(extras), telemetry: this.getTelemetry() },
 			msg,
 		);
 	}
 	debug(msg: string, extras?: Record<string, unknown>) {
 		this.validate(msg, extras);
 		this.pinoInstance.debug(
-			{ ...this.context, ...extras, telemetry: this.getTelemetry() },
+			{ ...this.context, ...normalizeExtras(extras), telemetry: this.getTelemetry() },
 			msg,
 		);
 	}
 	info(msg: string, extras?: Record<string, unknown>) {
 		this.validate(msg, extras);
 		this.pinoInstance.info(
-			{ ...this.context, ...extras, telemetry: this.getTelemetry() },
+			{ ...this.context, ...normalizeExtras(extras), telemetry: this.getTelemetry() },
 			msg,
 		);
 	}
 	warn(msg: string, extras?: Record<string, unknown>) {
 		this.validate(msg, extras);
 		this.pinoInstance.warn(
-			{ ...this.context, ...extras, telemetry: this.getTelemetry() },
+			{ ...this.context, ...normalizeExtras(extras), telemetry: this.getTelemetry() },
 			msg,
 		);
 	}
 	error(msg: string, extras?: Record<string, unknown>) {
 		this.validate(msg, extras);
 		this.pinoInstance.error(
-			{ ...this.context, ...extras, telemetry: this.getTelemetry() },
+			{ ...this.context, ...normalizeExtras(extras), telemetry: this.getTelemetry() },
 			msg,
 		);
 	}
 	fatal(msg: string, extras?: Record<string, unknown>) {
 		this.validate(msg, extras);
 		this.pinoInstance.fatal(
-			{ ...this.context, ...extras, telemetry: this.getTelemetry() },
+			{ ...this.context, ...normalizeExtras(extras), telemetry: this.getTelemetry() },
 			msg,
 		);
 	}
