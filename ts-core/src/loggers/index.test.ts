@@ -15,7 +15,7 @@ vi.mock("@google-cloud/pino-logging-gcp-config", () => ({
 	},
 }));
 
-import { SysInfo } from "../utils/SysInfo";
+import * as SysInfoModule from "../utils/SysInfo";
 // Import edge environment implementations for explicit testing
 import createCloudflareLogger from "./implementations/cloudflare";
 import createGcpLogger from "./implementations/gcp";
@@ -108,16 +108,16 @@ describe("Logger Implementation (StrictLoggerWrapper)", () => {
 	});
 
 	describe("Telemetry Functionality", () => {
-		it("defaults telemetry to off and does not call SysInfo.get()", () => {
-			const spy = vi.spyOn(SysInfo, "get");
+		it("defaults telemetry to off and does not call getSysInfo()", () => {
+			const spy = vi.spyOn(SysInfoModule, "getSysInfo");
 			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
 			logger!.info(testMessage);
 			expect(spy).not.toHaveBeenCalled();
 			spy.mockRestore();
 		});
 
-		it("calls SysInfo.get() when telemetry is enabled", () => {
-			const spy = vi.spyOn(SysInfo, "get");
+		it("calls getSysInfo() when telemetry is enabled", () => {
+			const spy = vi.spyOn(SysInfoModule, "getSysInfo");
 			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
 			logger!.setTelemetry("on");
 			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
@@ -151,7 +151,7 @@ describe("Logger Implementation (StrictLoggerWrapper)", () => {
 			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
 			const child = logger!.child({ module: "telemetry-test" });
 
-			const spy = vi.spyOn(SysInfo, "get");
+			const spy = vi.spyOn(SysInfoModule, "getSysInfo");
 			child.info(testMessage);
 			expect(spy).toHaveBeenCalled();
 
@@ -166,7 +166,7 @@ describe("Logger Implementation (StrictLoggerWrapper)", () => {
 			// biome-ignore lint/style/noNonNullAssertion: logger is loaded in beforeAll
 			logger!.setTelemetry("on");
 
-			const spy = vi.spyOn(SysInfo, "get");
+			const spy = vi.spyOn(SysInfoModule, "getSysInfo");
 			child.info(testMessage);
 			expect(spy).toHaveBeenCalled(); // Child is on because parent is on
 

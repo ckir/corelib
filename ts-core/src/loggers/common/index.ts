@@ -1,7 +1,7 @@
 // ts-core/src/loggers/common/index.ts
 
 import type { Logger as PinoLogger } from "pino";
-import { SysInfo } from "../../utils/SysInfo";
+import { getSysInfo } from "../../utils/SysInfo";
 
 declare global {
 	/**
@@ -94,7 +94,7 @@ export class StrictLoggerWrapper implements StrictLogger {
 	private state: { telemetryEnabled: boolean };
 	private context: Record<string, unknown>;
 	private telemetryCache: {
-		value: ReturnType<typeof SysInfo.get>;
+		value: ReturnType<typeof getSysInfo>;
 		expiresAt: number;
 	} | null = null;
 
@@ -113,7 +113,7 @@ export class StrictLoggerWrapper implements StrictLogger {
 		const now = Date.now();
 		if (!this.telemetryCache || now >= this.telemetryCache.expiresAt) {
 			this.telemetryCache = {
-				value: SysInfo.get(),
+				value: getSysInfo(),
 				expiresAt: now + TELEMETRY_CACHE_TTL_MS,
 			};
 		}
