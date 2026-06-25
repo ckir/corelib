@@ -16,7 +16,11 @@ import {
 	it,
 	vi,
 } from "vitest";
-import { endPoint, endPoints, RequestUnlimited } from "./RequestUnlimited";
+import {
+	DEFAULT_REQUEST_OPTIONS,
+	endPoint,
+	endPoints,
+} from "./RequestUnlimited";
 
 const { mockTrace, mockDebug, mockLogger } = vi.hoisted(() => {
 	const trace = vi.fn();
@@ -339,8 +343,8 @@ describe("RequestUnlimited", () => {
 		});
 
 		it("should use DEFAULT_REQUEST_OPTIONS when no options provided", () => {
-			expect(RequestUnlimited.defaults.timeout).toBe(50000);
-			expect((RequestUnlimited.defaults.retry as any).limit).toBe(5);
+			expect(DEFAULT_REQUEST_OPTIONS.timeout).toBe(50000);
+			expect((DEFAULT_REQUEST_OPTIONS.retry as any).limit).toBe(5);
 		});
 	});
 });

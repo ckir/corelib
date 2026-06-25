@@ -82,10 +82,3 @@ export async function serializeResponse<T = unknown>(
 		body: body as T | string,
 	};
 }
-
-/**
- * @deprecated Use serializeResponse instead.
- */
-export const RequestResponseSerialize = {
-	serialize: serializeResponse,
-};

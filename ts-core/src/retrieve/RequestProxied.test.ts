@@ -27,7 +27,6 @@ vi.mock("./RequestUnlimited", () => {
 		endPoint: mockEndPoint,
 		endPoints: mockEndPoints,
 		DEFAULT_REQUEST_OPTIONS: {},
-		RequestUnlimited: {},
 	};
 });
 

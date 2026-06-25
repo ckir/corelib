@@ -324,12 +324,3 @@ export async function endPoints<T = unknown>(
 	});
 	return mapped;
 }
-
-/**
- * @deprecated Use endPoint/endPoints functions directly.
- */
-export const RequestUnlimited = {
-	defaults: DEFAULT_REQUEST_OPTIONS,
-	endPoint,
-	endPoints,
-};

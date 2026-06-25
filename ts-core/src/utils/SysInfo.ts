@@ -206,13 +206,3 @@ export function getSysInfo() {
 			return fallback();
 	}
 }
-
-/**
- * @deprecated Use getSysInfo or detectRuntime instead.
- */
-export const SysInfo = {
-	/**
-	 * Gets system information.
-	 */
-	get: getSysInfo,
-};
