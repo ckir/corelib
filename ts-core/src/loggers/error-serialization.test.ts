@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { StrictLoggerWrapper } from "./common";
-import createCloudflareLogger from "./implementations/cloudflare";
 import browserLogger from "./implementations/browser";
+import createCloudflareLogger from "./implementations/cloudflare";
 
 describe("logger extras error serialization (wiring)", () => {
 	it("Pino StrictLoggerWrapper serializes an Error in extras", () => {

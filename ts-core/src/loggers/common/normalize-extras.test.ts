@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { serializeError } from "serialize-error";
+import { describe, expect, it } from "vitest";
 import { normalizeExtras } from "./normalize-extras";
 
 describe("normalizeExtras", () => {
