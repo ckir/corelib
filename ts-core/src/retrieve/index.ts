@@ -17,8 +17,4 @@ export const Retrieve = {
 export { RequestProxied } from "./RequestProxied";
 export type { SerializedResponse } from "./RequestResponseSerialize";
 export type { RequestResult } from "./RequestUnlimited";
-export {
-	endPoint,
-	endPoints,
-	RequestUnlimited,
-} from "./RequestUnlimited";
+export { endPoint, endPoints } from "./RequestUnlimited";
