@@ -60,8 +60,9 @@ RUN ls -la target/release/corelib-rust.node target/release/yahoo_streamer target
 
 # ---------------------------------------------------------
 # STAGE 3: Minimal runtime image (for copying artifacts)
+# Using alpine instead of scratch to allow docker create to work
 # ---------------------------------------------------------
-FROM scratch AS artifacts
+FROM alpine AS artifacts
 
 # Copy the built artifacts
 COPY --from=build-release /app/rust/target/release/corelib-rust.node /corelib-rust.node
