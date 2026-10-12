@@ -261,7 +261,7 @@ jobs:
 
       - name: Cache cargo
         if: matrix.target != 'ts-packages'
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/bin/
