@@ -63,6 +63,20 @@ foreach ($pattern in $requiredAssets) {
     }
 }
 
+# 2b. Check for optional/extended CLI assets (e.g. nasdaq_polling)
+$optionalAssets = @(
+    "nasdaq_polling-linux-x64",
+    "nasdaq_polling-darwin-x64",
+    "nasdaq_polling-darwin-arm64",
+    "nasdaq_polling-win32-x64.exe"
+)
+foreach ($pattern in $optionalAssets) {
+    $matched = $assets | Where-Object { $_ -like $pattern }
+    if ($matched) {
+        Write-Host "  ℹ️  [Extended CLI] $($matched -join ', ')" -ForegroundColor Cyan
+    }
+}
+
 if ($missing.Count -eq 0) {
     Write-Host "`n[SUCCESS] All 15 release assets are present." -ForegroundColor Green
 } else {
@@ -93,4 +107,8 @@ if ($tgzAssets) {
 Write-Host "`n--- Checksum Verification ---" -ForegroundColor Cyan
 Write-Host "Run this to verify all asset checksums:" -ForegroundColor White
 Write-Host "gh release download $v --repo $REPO --pattern '*' --dir ./release-verify" -ForegroundColor Yellow
-Write-Host "cd ./release-verify && sha256sum *" -ForegroundColor Yellow
+if ($IsWindows -or ($env:OS -eq "Windows_NT")) {
+    Write-Host "Get-ChildItem ./release-verify | Get-FileHash -Algorithm SHA256" -ForegroundColor Yellow
+} else {
+    Write-Host "cd ./release-verify && sha256sum *" -ForegroundColor Yellow
+}

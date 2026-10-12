@@ -154,8 +154,9 @@ def run_cmd(cmd, ignore_error=False):
             print(f"[CLI] Error: {e}")
         return False
 
-def build_rust_windows():
-    print("[CLI] Building Rust FFI for Windows...")
+def build_rust_local():
+    os_name = platform.system()
+    print(f"[CLI] Building Rust FFI for {os_name}...")
     # Use napi build directly in rust dir for better isolation
     if run_cmd(f'cd rust {CMD_SEP} pnpm exec napi build --release'):
         # Copy to ts-core for local development
@@ -165,11 +166,13 @@ def build_rust_windows():
             try:
                 import shutil
                 shutil.copy2(src, dst)
-                print(f"[CLI] ✅ Windows binary updated in {dst} for local development.")
+                print(f"[CLI] ✅ Binary updated in {dst} for local development.")
             except Exception as e:
                 print(f"[CLI] Error copying binary: {e}")
         else:
             print("[CLI] Error: corelib-rust.node not found after build.")
+
+build_rust_windows = build_rust_local
 
 def build_rust_linux():
     print("[CLI] Building Linux Rust FFI via Docker...")
@@ -194,16 +197,21 @@ def build_rust_linux():
         run_cmd('docker cp corelib-temp:/app/rust/corelib-rust.node rust/corelib-rust.linux.node')
         
         print("[CLI] ✅ Linux binary placed in ts-cloud/dist/ folders for deployment.")
-        print("[CLI] 💡 Local Windows development remains unaffected.")
+        print("[CLI] 💡 Local development remains unaffected.")
     finally:
         run_cmd('docker rm -f corelib-temp', ignore_error=True)
 
 def get_health_cmd():
     tools = [
-        'pnpm --version', 'cargo --version', 'python --version', 'gh --version',
+        'pnpm --version', 'cargo --version', 'python --version', 'git --version', 'gh --version',
         'pnpm -C ts-cloud exec wrangler --version', 'gcloud --version', 'sam --version', 'docker --version',
-        'act --version', 'wsl --version', 'fd --version', 'sd --version', 'rip --version', 'sops --version --check-for-updates'
+        'act --version', 'fd --version', 'sd --version', 'rip --version', 'sops --version --check-for-updates',
+        'rg --version', 'bat --version', 'eza --version', 'jq --version', 'yq --version',
+        'ast-grep --version', 'rtk --version', 'watchexec --version', 'ruff --version',
+        'htmlq --version', 'mdcat --version', 'websocat --version', 'lefthook version', 'dot -V'
     ]
+    if IS_WINDOWS:
+        tools.append('wsl --version')
     
     runtime = config.get('RUNTIME', 'node').lower()
     if runtime == 'bun': tools.append('bun --version')
@@ -282,15 +290,19 @@ ACTIONS = [
     # [1] INNER LOOP
     Action("W", "INNER LOOP", "Watch all", cmd="pnpm run watch-all"),
     Action("B", "INNER LOOP", "Build all", cmd="pnpm run build-all"),
-    Action("R", "INNER LOOP", "Build Rust (local)", handler=build_rust_windows),
+    Action("R", "INNER LOOP", "Build Rust (local)", handler=build_rust_local),
     Action("F", "INNER LOOP", "Format all", cmd="pnpm run format-all", note="mutates"),
     # [2] QUALITY GATE
     Action("Y", "QUALITY GATE", "Verify fast (format+lint+typecheck)", cmd="pnpm run verify:fast", note="mutates"),
     Action("N", "QUALITY GATE", "Typecheck all", cmd="pnpm run typecheck-all"),
     Action("L", "QUALITY GATE", "Lint all", cmd="pnpm run lint-all", note="mutates"),
+    Action("O", "QUALITY GATE", "Rust clippy (lint)", cmd="cargo clippy --manifest-path rust/Cargo.toml --all-targets -- -D warnings"),
     Action("T", "QUALITY GATE", "Unit tests", cmd="pnpm run test-all:run"),
     Action("U", "QUALITY GATE", "Rust tests", cmd="cargo test --manifest-path rust/Cargo.toml -- --test-threads=1"),
-    Action("I", "QUALITY GATE", "Integration tests", cmd="pnpm run test:integration"),
+    Action("I", "QUALITY GATE", "Integration tests (replay)", cmd="pnpm run test:integration"),
+    Action("M", "QUALITY GATE", "Integration tests (record)", cmd="pnpm run test:integration:record"),
+    Action("Z", "QUALITY GATE", "Integration tests (live)", cmd="pnpm run test:integration:live"),
+    Action("S", "QUALITY GATE", "Integration matrix validate", cmd="pnpm run test:integration:validate"),
     Action("J", "QUALITY GATE", "Verify full (build+test)", cmd="pnpm run verify:full"),
     # [3] SHIP & RELEASE
     Action("X", "SHIP & RELEASE", "Build Rust (Linux/Docker)", handler=build_rust_linux),
@@ -302,7 +314,7 @@ ACTIONS = [
     # [4] HOUSEKEEPING
     Action("P", "HOUSEKEEPING", "Health check (tool versions)", handler=health_check),
     Action("C", "HOUSEKEEPING", "Clean & reinstall", cmd="pnpm run clean-all"),
-    Action("D", "HOUSEKEEPING", "Generate docs", cmd="pnpm run docs"),
+    Action("D", "HOUSEKEEPING", "Generate docs", cmd="pnpm run docs-all"),
     Action("A", "HOUSEKEEPING", "Dependency graph (SVG)",
            cmd="npx depcruise --config .dependency-cruiser.json --output-type dot ts-core/src ts-markets/src ts-cloud/src | dot -T svg > full-modules.svg"),
     Action("Q", "HOUSEKEEPING", "Quit", handler=lambda: sys.exit(0)),

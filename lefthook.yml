@@ -1,7 +1,5 @@
-# token-discipline local gate (lightened 2026-06-13): the low-spec machine does only
-# biome format+lint locally (sub-second on staged files). Typecheck + build + test are
-# offloaded to the CI `validate` pre-flight (which gates the matrix); see
-# docs/superpowers/specs/2026-06-13-ci-offload-autofix-design.md.
+# token-discipline local gate: format+lint and rust clippy locally.
+# Full verification (build-all + test-all:run) runs on pre-push and in CI validate pre-flight.
 pre-commit:
   parallel: false
   commands:
@@ -16,3 +14,9 @@ pre-commit:
         - "**/*.d.ts"
         - "**/src/index.ts"
       run: echo "[token-discipline] API/type boundary changed -> CI validate will typecheck; local typecheck optional"
+
+pre-push:
+  parallel: false
+  commands:
+    verify-full:
+      run: pnpm verify:full
