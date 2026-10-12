@@ -304,7 +304,7 @@ ACTIONS = [
     Action("C", "HOUSEKEEPING", "Clean & reinstall", cmd="pnpm run clean-all"),
     Action("D", "HOUSEKEEPING", "Generate docs", cmd="pnpm run docs"),
     Action("A", "HOUSEKEEPING", "Dependency graph (SVG)",
-           cmd="npx depcruise --config .dependency-cruiser.js --output-type dot ts-core/src ts-markets/src ts-cloud/src | dot -T svg > full-modules.svg"),
+           cmd="npx depcruise --config .dependency-cruiser.json --output-type dot ts-core/src ts-markets/src ts-cloud/src | dot -T svg > full-modules.svg"),
     Action("Q", "HOUSEKEEPING", "Quit", handler=lambda: sys.exit(0)),
 ]
 

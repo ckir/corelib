@@ -23,11 +23,13 @@ vi.mock("@ckirg/corelib", async (importOriginal) => {
 		sleep: vi.fn(),
 		default: {
 			child: vi.fn(() => ({
+				trace: vi.fn(),
 				debug: vi.fn(),
 				warn: vi.fn(),
 				error: vi.fn(),
 				info: vi.fn(),
 			})),
+			trace: vi.fn(),
 			debug: vi.fn(),
 			warn: vi.fn(),
 			error: vi.fn(),

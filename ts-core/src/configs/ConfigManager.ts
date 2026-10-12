@@ -559,7 +559,7 @@ export class ConfigManager extends EventEmitter {
 					.slice(prefix.length)
 					.toLowerCase()
 					.replace(/_/g, ".");
-				ConfigManager._logger.trace("env override", { key: configPath });
+				ConfigManager._logger.debug("env override", { key: configPath });
 				const value = this.parseValue(env[envKey]);
 				this.setPath(target, configPath, value);
 			}
@@ -672,6 +672,13 @@ export class ConfigManager extends EventEmitter {
 					(p: string) => readTextFileSync(p),
 				);
 			}
+			ConfigManager._logger.debug(
+				"getAppName: edge runtime detected, using fallback app name",
+				{
+					runtime,
+					fallback: "edge-app",
+				},
+			);
 			return "edge-app";
 		} catch (e) {
 			this.logError(

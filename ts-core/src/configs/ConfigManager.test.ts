@@ -122,10 +122,10 @@ describe("ConfigManager", () => {
 			expect.objectContaining({ keys: expect.any(Number) }),
 		);
 
-		// env override logged by KEY NAME only
-		const envCalls = traceSpy.mock.calls.filter((c) => c[0] === "env override");
+		// env override logged by KEY NAME only at debug level
+		const envCalls = debugSpy.mock.calls.filter((c) => c[0] === "env override");
 		expect(envCalls.length).toBeGreaterThan(0);
-		// REDACTION: no trace extras carry a value field, and the secret never appears anywhere logged
+		// REDACTION: no debug/trace extras carry a value field, and the secret never appears anywhere logged
 		for (const c of [...traceSpy.mock.calls, ...debugSpy.mock.calls]) {
 			expect(JSON.stringify(c[1] ?? {})).not.toContain(SECRET);
 		}

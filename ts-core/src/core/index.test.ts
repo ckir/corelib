@@ -5,7 +5,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-const { mockLogger, mockDebug, mockTrace } = vi.hoisted(() => {
+const { mockLogger, mockTrace } = vi.hoisted(() => {
 	const trace = vi.fn();
 	const debug = vi.fn();
 	const child = {

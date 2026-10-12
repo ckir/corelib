@@ -1,44 +1,57 @@
-# Use a stable Rust + Node environment
-FROM rust:1.93-slim-bookworm
+# =============================================
+# FILE: rust/Dockerfile.linux
+# PURPOSE: Multi-stage Docker build for Linux x64 FFI binaries
+# Builds: corelib-rust.node, yahoo_streamer, alpaca_streamer
+# =============================================
 
-# Install Node.js and build essentials
-RUN apt-get update && apt-get install -y \
-    curl \
-    gnupg \
-    build-essential \
-    python3 \
-    libssl-dev \
+# ---------------------------------------------------------
+# STAGE 1: Build environment with all dependencies
+# ---------------------------------------------------------
+FROM rust:1.82-slim-bookworm AS builder
+
+# Install system dependencies for OpenSSL, pkg-config, and napi-rs
+RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
-    && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
-    && apt-get install -y nodejs \
-    && npm install -g pnpm@11.5.2 \
+    libssl-dev \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
 
-# Set environment variables
-ENV CI=true
-
-# Copy workspace configuration
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
-COPY rust/package.json ./rust/
-COPY ts-core/package.json ./ts-core/
-COPY ts-cloud/package.json ./ts-cloud/
-COPY ts-markets/package.json ./ts-markets/
-
-# Install dependencies (cached layer)
-RUN pnpm install --frozen-lockfile --ignore-scripts
+# Copy Cargo files first for better caching
+COPY rust/Cargo.toml rust/Cargo.lock ./rust/
+COPY rust/build.rs ./rust/ 2>/dev/null || true
 
 # Copy source code
 COPY rust/src ./rust/src
-COPY rust/Cargo.toml rust/Cargo.lock ./rust/
-COPY ts-core/src ./ts-core/src
 
-# Build both the FFI Node module and the CLI binary
-RUN cd rust && \
-    pnpm exec napi build --release && \
-    cargo build --release --bin yahoo_streamer --features clap
+# ---------------------------------------------------------
+# STAGE 2: Build the cdylib (.node) and CLI binaries
+# ---------------------------------------------------------
+FROM builder AS build-release
 
-# Default command just keeps the container alive if run directly
-CMD ["ls", "-l", "rust/corelib-rust.node"]
+WORKDIR /app/rust
+
+# Install napi-cli for building the Node.js native addon
+RUN cargo install --locked napi-cli@3.7.0
+
+# Build the native module (cdylib) with napi features
+# This produces corelib-rust.node
+RUN napi build --release --platform linux-x64
+
+# Build CLI binaries with clap feature
+RUN cargo build --release --features clap --bin yahoo_streamer --bin alpaca_streamer
+
+# Verify outputs exist
+RUN ls -la target/release/corelib-rust.node target/release/yahoo_streamer target/release/alpaca_streamer
+
+# ---------------------------------------------------------
+# STAGE 3: Minimal runtime image (for copying artifacts)
+# ---------------------------------------------------------
+FROM scratch AS artifacts
+
+# Copy the built artifacts
+COPY --from=build-release /app/rust/target/release/corelib-rust.node /corelib-rust.node
+COPY --from=build-release /app/rust/target/release/yahoo_streamer /yahoo_streamer
+COPY --from=build-release /app/rust/target/release/alpaca_streamer /alpaca_streamer

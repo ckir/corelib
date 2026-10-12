@@ -172,6 +172,106 @@ describe("RequestProxied (Exhaustive)", () => {
 			expect(calledUrls[2]).toContain(PROXY3);
 			expect(calledUrls[3]).toContain(PROXY1);
 		});
+
+		it("tracks failures per proxy and evicts after 3 consecutive failures", async () => {
+			// Mock: first 2 calls succeed, next 4 fail (2 per proxy for PROXY1 and PROXY2), then PROXY3 succeeds
+			mockEndPoints
+				.mockResolvedValueOnce([
+					{ status: "success", value: { body: "ok1" } }, // PROXY1
+					{ status: "success", value: { body: "ok2" } }, // PROXY2
+					{ status: "success", value: { body: "ok3" } }, // PROXY3
+				])
+				.mockResolvedValueOnce([
+					{ status: "error", reason: { message: "fail" } }, // PROXY1 - failure 1
+					{ status: "error", reason: { message: "fail" } }, // PROXY2 - failure 1
+					{ status: "success", value: { body: "ok3" } }, // PROXY3
+				])
+				.mockResolvedValueOnce([
+					{ status: "error", reason: { message: "fail" } }, // PROXY1 - failure 2
+					{ status: "error", reason: { message: "fail" } }, // PROXY2 - failure 2
+					{ status: "success", value: { body: "ok3" } }, // PROXY3
+				])
+				.mockResolvedValueOnce([
+					{ status: "error", reason: { message: "fail" } }, // PROXY1 - failure 3 -> evicted
+					{ status: "error", reason: { message: "fail" } }, // PROXY2 - failure 3 -> evicted
+					{ status: "success", value: { body: "ok3" } }, // PROXY3
+				]);
+
+			// First batch - all succeed
+			const r1 = await proxied.endPoints([
+				"https://t1.com",
+				"https://t2.com",
+				"https://t3.com",
+			]);
+			expect(r1.every((r) => r.status === "success")).toBe(true);
+
+			// Second batch - PROXY1, PROXY2 fail once
+			const r2 = await proxied.endPoints([
+				"https://t1.com",
+				"https://t2.com",
+				"https://t3.com",
+			]);
+			expect(r2[0].status).toBe("error");
+			expect(r2[1].status).toBe("error");
+			expect(r2[2].status).toBe("success");
+
+			// Third batch - PROXY1, PROXY2 fail twice
+			const r3 = await proxied.endPoints([
+				"https://t1.com",
+				"https://t2.com",
+				"https://t3.com",
+			]);
+			expect(r3[0].status).toBe("error");
+			expect(r3[1].status).toBe("error");
+			expect(r3[2].status).toBe("success");
+
+			// Fourth batch - PROXY1, PROXY2 fail third time -> should be evicted
+			const r4 = await proxied.endPoints([
+				"https://t1.com",
+				"https://t2.com",
+				"https://t3.com",
+			]);
+			expect(r4[0].status).toBe("error");
+			expect(r4[1].status).toBe("error");
+			expect(r4[2].status).toBe("success");
+
+			// PROXY1 and PROXY2 should now be evicted
+			expect((proxied as any).activeProxies.length).toBe(1);
+			expect((proxied as any).activeProxies[0]).toBe(PROXY3);
+		});
+
+		it("resets failure streak on success in endPoints", async () => {
+			mockEndPoints
+				.mockResolvedValueOnce([
+					{ status: "error", reason: { message: "fail" } }, // PROXY1 - failure 1
+					{ status: "success", value: { body: "ok2" } }, // PROXY2
+				])
+				.mockResolvedValueOnce([
+					{ status: "success", value: { body: "ok1" } }, // PROXY1 - success, streak reset
+					{ status: "error", reason: { message: "fail" } }, // PROXY2 - failure 1
+				])
+				.mockResolvedValueOnce([
+					{ status: "error", reason: { message: "fail" } }, // PROXY1 - failure 1 (new streak)
+					{ status: "error", reason: { message: "fail" } }, // PROXY2 - failure 2
+				])
+				.mockResolvedValueOnce([
+					{ status: "error", reason: { message: "fail" } }, // PROXY1 - failure 2
+					{ status: "error", reason: { message: "fail" } }, // PROXY2 - failure 3 -> evicted
+				])
+				.mockResolvedValueOnce([
+					{ status: "error", reason: { message: "fail" } }, // PROXY1 - failure 3 -> evicted
+					{ status: "success", value: { body: "ok2" } }, // PROXY2 (already evicted, but called)
+				]);
+
+			await proxied.endPoints(["https://t1.com", "https://t2.com"]); // P1 fail, P2 ok
+			await proxied.endPoints(["https://t1.com", "https://t2.com"]); // P1 ok (reset), P2 fail
+			await proxied.endPoints(["https://t1.com", "https://t2.com"]); // P1 fail, P2 fail
+			await proxied.endPoints(["https://t1.com", "https://t2.com"]); // P1 fail, P2 fail (3rd) -> evicted
+			await proxied.endPoints(["https://t1.com", "https://t2.com"]); // P1 fail (3rd) -> evicted
+
+			expect((proxied as any).activeProxies.length).toBe(1);
+			expect((proxied as any).activeProxies[0]).toBe(PROXY3);
+		});
 	});
 
 	// ===================================================================

@@ -1,0 +1,204 @@
+# =============================================
+# FILE: .github/dependabot.yml
+# PURPOSE: Automated dependency updates for Corelib Monorepo
+# Updates: npm (pnpm), GitHub Actions, Cargo (Rust), Docker base images
+# =============================================
+
+version: 2
+updates:
+  # ---------------------------------------------------------
+  # NPM / PNPM DEPENDENCIES (all workspace packages)
+  # ---------------------------------------------------------
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    labels:
+      - "dependencies"
+      - "npm"
+    # Group minor/patch updates together, keep major separate for review
+    groups:
+      minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      major:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+    # Only allow secure updates by default for minor/patch
+    # Major updates require manual review
+    allow:
+      - dependency-type: "direct"
+      - dependency-type: "indirect"
+    # Ignore specific packages that need careful handling
+    ignore:
+      # TypeScript major versions need migration testing
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      # Biome major versions may have breaking config changes
+      - dependency-name: "@biomejs/biome"
+        update-types: ["version-update:semver-major"]
+      # Vitest major versions may break test API
+      - dependency-name: "vitest"
+        update-types: ["version-update:semver-major"]
+      # Rust FFI related - napi-rs major needs coordination
+      - dependency-name: "@napi-rs/cli"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "napi"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "napi-derive"
+        update-types: ["version-update:semver-major"]
+
+  # ---------------------------------------------------------
+  # PNPM WORKSPACE DEPENDENCIES (per-package)
+  # ---------------------------------------------------------
+  - package-ecosystem: "npm"
+    directory: "/ts-core"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:30"
+      timezone: "UTC"
+    labels:
+      - "dependencies"
+      - "npm"
+      - "ts-core"
+    groups:
+      minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "pino"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "ky"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "npm"
+    directory: "/ts-markets"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "UTC"
+    labels:
+      - "dependencies"
+      - "npm"
+      - "ts-markets"
+    groups:
+      minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "@gadicc/yahoo-finance2"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "luxon"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "npm"
+    directory: "/ts-cloud"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:30"
+      timezone: "UTC"
+    labels:
+      - "dependencies"
+      - "npm"
+      - "ts-cloud"
+    groups:
+      minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "hono"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@cloudflare/workers-types"
+        update-types: ["version-update:semver-major"]
+
+  # ---------------------------------------------------------
+  # GITHUB ACTIONS
+  # ---------------------------------------------------------
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "05:00"
+      timezone: "UTC"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    # Keep actions up to date automatically (they're usually backward compatible)
+    allow:
+      - dependency-type: "direct"
+      - dependency-type: "indirect"
+
+  # ---------------------------------------------------------
+  # CARGO (RUST) DEPENDENCIES
+  # ---------------------------------------------------------
+  - package-ecosystem: "cargo"
+    directory: "/rust"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "06:00"
+      timezone: "UTC"
+    labels:
+      - "dependencies"
+      - "cargo"
+      - "rust"
+    # Group minor/patch, keep major for manual review
+    groups:
+      minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      # napi-rs ecosystem - major versions need FFI testing
+      - dependency-name: "napi"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "napi-derive"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "napi-build"
+        update-types: ["version-update:semver-major"]
+      # Tokio major versions need async runtime testing
+      - dependency-name: "tokio"
+        update-types: ["version-update:semver-major"]
+      # Redb database - major versions may change storage format
+      - dependency-name: "redb"
+        update-types: ["version-update:semver-major"]
+      # OpenSSL sys - major may break builds
+      - dependency-name: "openssl-sys"
+        update-types: ["version-update:semver-major"]
+
+  # ---------------------------------------------------------
+  # DOCKER BASE IMAGES (for rust/Dockerfile.linux)
+  # ---------------------------------------------------------
+  - package-ecosystem: "docker"
+    directory: "/rust"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+      time: "06:00"
+      timezone: "UTC"
+    labels:
+      - "dependencies"
+      - "docker"
+      - "rust"
+    # Only update the base image tag in Dockerfile
+    allow:
+      - dependency-type: "direct"
+
+# ---------------------------------------------------------
+# SECURITY SETTINGS
+# ---------------------------------------------------------
+# Enable security advisories for all ecosystems
+# (Dependabot alerts are separate from version updates)
+# These are enabled by default on GitHub but can be configured here
+# if needed for specific registries.

@@ -51,7 +51,6 @@ export const Markets = {
 	},
 };
 
-export * as Luxon from "luxon";
 export type {
 	HistoricalQuote,
 	HistoricalResult,

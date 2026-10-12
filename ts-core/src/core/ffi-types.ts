@@ -1,0 +1,277 @@
+// =============================================
+// FILE: ts-core/src/core/ffi-types.ts
+// PURPOSE: Type definitions for the Rust FFI interface (coreFFI)
+// These types mirror the N-API exports from rust/src/lib.rs
+// =============================================
+
+/**
+ * Base FFI interface that all native modules must implement.
+ * The actual implementation is loaded dynamically from the native binary.
+ */
+export interface CoreFFI {
+	/** Simple test function: logs in Rust and returns doubled value */
+	logAndDouble?: (msg: string, value: number) => number;
+	/** Returns the native library version */
+	getVersion?: () => string;
+
+	// Streaming modules (conditionally available) - these are constructors
+	AlpacaStreaming?: AlpacaStreamingConstructor;
+	YahooStreaming?: YahooStreamingConstructor;
+	FinnhubStreaming?: FinnhubStreamingConstructor;
+
+	// Retrieve modules
+	ky?: KyFFI;
+	unlimited?: UnlimitedFFI;
+	proxied?: ProxiedFFI;
+}
+
+/**
+ * Constructor type for AlpacaStreaming - matches the N-API class export
+ */
+export interface AlpacaStreamingConstructor {
+	new (
+		logCallback: (err: unknown, record: LogRecord) => void,
+		pricingCallback: (err: unknown, data: AlpacaPricingData) => void,
+		eventCallback: (err: unknown, event: StreamingEvent) => void,
+		marketCallback: (err: unknown, json: string) => void,
+	): AlpacaStreamingFFI;
+}
+
+/**
+ * Constructor type for YahooStreaming - matches the N-API class export
+ */
+export interface YahooStreamingConstructor {
+	new (
+		logCallback: (err: unknown, record: LogRecord) => void,
+		pricingCallback: (err: unknown, data: YahooPricingData) => void,
+		eventCallback: (err: unknown, event: StreamingEvent) => void,
+		marketCallback: (err: unknown, json: string) => void,
+	): YahooStreamingFFI;
+}
+
+/**
+ * Constructor type for FinnhubStreaming - matches the N-API class export
+ */
+export interface FinnhubStreamingConstructor {
+	new (
+		logCallback: (err: unknown, record: LogRecord) => void,
+		pricingCallback: (err: unknown, data: FinnhubPricingData) => void,
+		eventCallback: (err: unknown, event: StreamingEvent) => void,
+		marketCallback: (err: unknown, json: string) => void,
+	): FinnhubStreamingFFI;
+}
+
+/**
+ * Alpaca Streaming FFI interface
+ * Mirrors rust/src/markets/nasdaq/datafeeds/streaming/alpaca/alpaca_streamer.rs
+ */
+export interface AlpacaStreamingFFI {
+	/** Initialize with config object */
+	init: (config: AlpacaConfig) => Promise<void>;
+	/** Start the streaming connection */
+	start: () => Promise<void>;
+	/** Stop the streaming connection */
+	stop: () => void;
+	/** Subscribe to symbols */
+	subscribe: (opts: AlpacaSubscribeOpts) => void;
+	/** Unsubscribe from symbols */
+	unsubscribe: (opts: AlpacaSubscribeOpts) => void;
+	/** Clean local state/database */
+	clean: () => void;
+	/** Set log callback */
+	setLogCallback?: (callback: (record: LogRecord) => void) => void;
+	/** Set pricing callback */
+	setPricingCallback?: (callback: (data: AlpacaPricingData) => void) => void;
+	/** Set event callback */
+	setEventCallback?: (callback: (event: StreamingEvent) => void) => void;
+	/** Set market callback */
+	setMarketCallback?: (callback: (json: string) => void) => void;
+}
+
+/**
+ * Yahoo Streaming FFI interface
+ * Mirrors rust/src/markets/nasdaq/datafeeds/streaming/yahoo/yahoo_streamer.rs
+ */
+export interface YahooStreamingFFI {
+	init: (config: YahooConfig) => Promise<void>;
+	start: () => Promise<void>;
+	stop: () => void;
+	subscribe: (opts: YahooSubscribeOpts) => void;
+	unsubscribe: (opts: YahooSubscribeOpts) => void;
+	clean: () => void;
+	setLogCallback?: (callback: (record: LogRecord) => void) => void;
+	setPricingCallback?: (callback: (data: YahooPricingData) => void) => void;
+	setEventCallback?: (callback: (event: StreamingEvent) => void) => void;
+	setMarketCallback?: (callback: (json: string) => void) => void;
+}
+
+/**
+ * Finnhub Streaming FFI interface (optional feature)
+ * Mirrors rust/src/markets/nasdaq/datafeeds/streaming/finnhub/finnhub_streamer.rs
+ */
+export interface FinnhubStreamingFFI {
+	init: (config: FinnhubConfig) => Promise<void>;
+	start: () => Promise<void>;
+	stop: () => void;
+	subscribe: (opts: FinnhubSubscribeOpts) => void;
+	unsubscribe: (opts: FinnhubSubscribeOpts) => void;
+	clean: () => void;
+	setLogCallback?: (callback: (record: LogRecord) => void) => void;
+	setPricingCallback?: (callback: (data: FinnhubPricingData) => void) => void;
+	setEventCallback?: (callback: (event: StreamingEvent) => void) => void;
+	setMarketCallback?: (callback: (json: string) => void) => void;
+}
+
+/**
+ * Ky HTTP client FFI interface
+ * Mirrors rust/src/retrieve/ky.rs
+ */
+export interface KyFFI {
+	request: (options: KyRequestOptions) => Promise<KyResponse>;
+}
+
+/**
+ * Unlimited HTTP client FFI interface
+ * Mirrors rust/src/retrieve/unlimited.rs
+ */
+export interface UnlimitedFFI {
+	endPoint: (
+		url: string,
+		options: KyRequestOptions,
+	) => Promise<RequestResultFFI>;
+	endPoints: (
+		urls: string[],
+		options: KyRequestOptions,
+	) => Promise<RequestResultFFI[]>;
+}
+
+/**
+ * Proxied HTTP client FFI interface
+ * Mirrors rust/src/retrieve/proxied.rs
+ */
+export interface ProxiedFFI {
+	endPoint: (
+		url: string,
+		proxyUrls: string[],
+		options: KyRequestOptions,
+	) => Promise<RequestResultFFI>;
+	endPoints: (
+		urls: string[],
+		proxyUrls: string[],
+		options: KyRequestOptions,
+	) => Promise<RequestResultFFI[]>;
+}
+
+// =============================================
+// Config Types
+// =============================================
+
+export interface AlpacaConfig {
+	dbPath?: string;
+	silenceSeconds?: number;
+	baseUrl?: string;
+	keyId?: string;
+	secretKey?: string;
+}
+
+export interface YahooConfig {
+	dbPath?: string;
+	silenceSeconds?: number;
+	symbols?: string[];
+	noPersist?: boolean;
+}
+
+export interface FinnhubConfig {
+	token: string;
+	dbPath?: string;
+	silenceSeconds?: number;
+	symbols?: string[];
+}
+
+export interface KyRequestOptions {
+	method?: string;
+	headers?: Record<string, string>;
+	body?: string | Uint8Array;
+	timeout?: number;
+	retry?: {
+		limit?: number;
+		methods?: string[];
+		backoffLimit?: number;
+	};
+}
+
+export interface KyResponse {
+	status: number;
+	statusText: string;
+	headers: Record<string, string>;
+	body: string | Uint8Array;
+	ok: boolean;
+}
+
+export interface RequestResultFFI {
+	status: "success" | "error";
+	value?: KyResponse;
+	reason?: string | Record<string, unknown>;
+}
+
+// =============================================
+// Streaming Types
+// =============================================
+
+export interface AlpacaSubscribeOpts {
+	trades?: string[];
+	quotes?: string[];
+	bars?: string[];
+}
+
+export interface YahooSubscribeOpts {
+	symbols: string[];
+}
+
+export interface FinnhubSubscribeOpts {
+	symbols: string[];
+}
+
+export interface LogRecord {
+	level: string;
+	msg: string;
+	extras?: Record<string, unknown>;
+}
+
+export interface AlpacaPricingData {
+	symbol: string;
+	price: number;
+	size?: number;
+	timestamp: number;
+	exchange?: string;
+	conditions?: number[];
+	tape?: string;
+}
+
+export interface YahooPricingData {
+	symbol: string;
+	price: number;
+	change?: number;
+	changePercent?: number;
+	timestamp: number;
+	dayHigh?: number;
+	dayLow?: number;
+	volume?: number;
+}
+
+export interface FinnhubPricingData {
+	symbol: string;
+	price: number;
+	timestamp: number;
+	volume?: number;
+}
+
+export interface StreamingEvent {
+	type:
+		| "connected"
+		| "disconnected"
+		| "reconnecting"
+		| "silence-reconnect"
+		| "error";
+	data?: Record<string, unknown>;
+}

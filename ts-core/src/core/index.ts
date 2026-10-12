@@ -9,6 +9,7 @@ import "../types/edge-runtime";
 import { serializeError } from "serialize-error";
 import logger from "../loggers";
 import { detectRuntime } from "../utils/runtime";
+import type { CoreFFI } from "./ffi-types";
 
 let _createRequire: ((id: string) => unknown) | undefined;
 if (typeof __EDGE_RUNTIME__ === "undefined" || !__EDGE_RUNTIME__) {
@@ -51,7 +52,7 @@ const getRequire = () => {
 	return _require;
 };
 
-async function loadFFI() {
+async function loadFFI(): Promise<CoreFFI | null> {
 	coreLogger.trace("loadFFI: start", { runtime });
 	if (runtime === "cloudflare") {
 		coreLogger.trace("loadFFI: skipped (edge runtime)", { runtime });
@@ -130,7 +131,7 @@ async function loadFFI() {
 
 	try {
 		// Use require for all Node-compatible runtimes (Node, Bun, Deno 2+)
-		return getRequire()(libPath);
+		return getRequire()(libPath) as CoreFFI;
 	} catch (error) {
 		coreLogger.error(`Failed to load FFI from ${libPath}`, {
 			error: serializeError(error),
@@ -146,14 +147,14 @@ async function loadFFI() {
  * binary is loaded exactly once and the FFI handle is shared across instances.
  * Caching the promise (not the resolved value) also dedups concurrent instances.
  */
-const FFI_PROMISE_KEY = "__ckir_corelib_coreFFI_promise__";
+const FFI_PROMISE_KEY = "_ckir_corelib_coreFFI_promise_";
 const _ffiGlobal = globalThis as Record<string, unknown>;
 if (!_ffiGlobal[FFI_PROMISE_KEY]) {
 	_ffiGlobal[FFI_PROMISE_KEY] = loadFFI();
 }
 /**
  * Raw FFI exports from the native binary.
- * Use with caution and proper type casting.
+ * Typed as CoreFFI | null for type-safe access to native modules.
  */
 export const coreFFI = await (_ffiGlobal[FFI_PROMISE_KEY] as ReturnType<
 	typeof loadFFI
@@ -166,6 +167,17 @@ export const coreFFI = await (_ffiGlobal[FFI_PROMISE_KEY] as ReturnType<
 export function isFfiAvailable(): boolean {
 	return coreFFI !== null;
 }
+
+// Re-export FFI types for consumers
+export type {
+	AlpacaStreamingConstructor,
+	AlpacaStreamingFFI,
+	CoreFFI,
+	FinnhubStreamingConstructor,
+	FinnhubStreamingFFI,
+	YahooStreamingConstructor,
+	YahooStreamingFFI,
+} from "./ffi-types";
 
 /**
  * Native FFI function: Logs a message from Rust and returns the doubled value.

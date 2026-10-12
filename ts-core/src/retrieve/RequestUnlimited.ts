@@ -74,8 +74,12 @@ export function fullJitterDelay(attempt: number, backoffLimit: number): number {
  * @template T - The expected response body type.
  */
 export type RequestResult<T = unknown> =
-	| { status: "success"; value: SerializedResponse<T> }
-	| { status: "error"; reason: SerializedResponse<T> | ErrorObject };
+	| { status: "success"; value: SerializedResponse<T>; cid: number }
+	| {
+			status: "error";
+			reason: SerializedResponse<T> | ErrorObject;
+			cid: number;
+	  };
 
 /**
  * Default configuration for ky requests, including retry logic and hooks.
@@ -85,7 +89,7 @@ export const DEFAULT_REQUEST_OPTIONS: KyOptions = {
 	throwHttpErrors: true,
 	retry: {
 		limit: 5,
-		methods: ["get", "post", "put", "delete", "patch"],
+		methods: ["get", "head", "options"],
 		backoffLimit: 3000,
 		shouldRetry: ({ error, retryCount }) => {
 			if (error instanceof HTTPError && error.response) {
@@ -168,8 +172,8 @@ export async function endPoint<T = unknown>(
 	const { headers, hooks, ...remainingOptions } = options;
 
 	// 3. Read config-driven overrides (fall back to hardcoded defaults when ConfigManager is not initialized)
-	// Floor at MIN_TIMEOUT_MS: a poisoned `0` would otherwise disable ky's timeout entirely
-	// (ky treats 0 specially), defeating the bound this clamp exists to enforce. (agy convergent)
+	// Floor at MIN_TIMEOUT_MS: a config value of `0` would disable ky's timeout entirely,
+	// which defeats the safety bound this clamp enforces.
 	const cfgTimeout = clampNumber(
 		ConfigManager.get("retrieve.timeout"),
 		MIN_TIMEOUT_MS,
@@ -245,6 +249,7 @@ export async function endPoint<T = unknown>(
 		return {
 			status: "success",
 			value: response as SerializedResponse<T>,
+			cid,
 		};
 	} catch (error: unknown) {
 		// @ts-expect-error - ky error property
@@ -269,6 +274,7 @@ export async function endPoint<T = unknown>(
 			return {
 				status: "error",
 				reason: errorResponse as SerializedResponse<T>,
+				cid,
 			};
 		}
 
@@ -286,6 +292,7 @@ export async function endPoint<T = unknown>(
 		return {
 			status: "error",
 			reason: serializedError,
+			cid,
 		};
 	}
 }
@@ -309,9 +316,11 @@ export async function endPoints<T = unknown>(
 
 	const mapped = results.map((result) => {
 		if (result.status === "fulfilled") return result.value;
+		const errorCid = nextCid();
 		return {
 			status: "error",
 			reason: serializeError(result.reason),
+			cid: errorCid,
 		} as RequestResult<T>;
 	});
 

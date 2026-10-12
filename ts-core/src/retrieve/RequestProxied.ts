@@ -14,6 +14,7 @@
 import type { Options as KyOptions } from "ky";
 import { serializeError } from "serialize-error";
 import logger from "../loggers";
+import { nextCid } from "../utils/flight-recorder";
 import {
 	type RequestResult,
 	endPoint as unlimitedEndPoint,
@@ -41,6 +42,14 @@ export class RequestProxied {
 	constructor(proxies: string[]) {
 		if (!Array.isArray(proxies) || proxies.length === 0) {
 			throw new Error("RequestProxied: at least one proxy URL is required");
+		}
+		// Validate each proxy URL
+		for (const proxy of proxies) {
+			try {
+				new URL(proxy);
+			} catch {
+				throw new Error(`RequestProxied: invalid proxy URL "${proxy}"`);
+			}
 		}
 		this.activeProxies = [...proxies];
 	}
@@ -117,6 +126,7 @@ export class RequestProxied {
 			return {
 				status: "error",
 				reason: serializeError(new Error("No active proxies left")),
+				cid: nextCid(),
 			};
 		}
 
@@ -156,6 +166,7 @@ export class RequestProxied {
 		return {
 			status: "error",
 			reason: serializeError(new Error("All proxies failed")),
+			cid: nextCid(),
 		};
 	}
 
@@ -164,9 +175,7 @@ export class RequestProxied {
 	 *
 	 * Each original URL is assigned to a proxy via round-robin.
 	 * The constructed proxy URLs are then passed to RequestUnlimited.endPoints (parallelism + retries handled there).
-	 *
-	 * Note: failure tracking / auto-removal is currently only implemented for endPoint().
-	 *       endPoints uses the current activeProxies snapshot at call time.
+	 * Failure tracking / auto-removal is implemented per-proxy: after 3 consecutive failures a proxy is evicted.
 	 *
 	 * @param urls - Array of original target URLs.
 	 * @param suffix - Optional suffix applied to every proxy (default "").
@@ -178,15 +187,19 @@ export class RequestProxied {
 		options: KyOptions = {},
 	): Promise<RequestResult<T>[]> {
 		if (this.activeProxies.length === 0 || urls.length === 0) {
-			const noProxiesReason = serializeError(new Error("No active proxies"));
-			return urls.map(() => ({
-				status: "error" as const,
-				reason: noProxiesReason,
-			}));
+			return urls.map(() => {
+				const noProxiesReason = serializeError(new Error("No active proxies"));
+				return {
+					status: "error" as const,
+					reason: noProxiesReason,
+					cid: nextCid(),
+				};
+			});
 		}
 
-		// Explicit round-robin distribution
+		// Explicit round-robin distribution — track which proxy each URL maps to
 		const proxyUrls: string[] = [];
+		const proxyAssignments: string[] = []; // parallel array: proxyAssignments[i] = proxyBase used for proxyUrls[i]
 		for (let i = 0; i < urls.length; i++) {
 			const proxyBase = this.activeProxies[i % this.activeProxies.length];
 			const target = urls[i];
@@ -198,9 +211,23 @@ export class RequestProxied {
 						: target.url;
 
 			proxyUrls.push(this.buildProxyUrl(proxyBase, suffix, targetStr));
+			proxyAssignments.push(proxyBase);
 		}
 
 		// Delegate parallelism, retries, and result handling to RequestUnlimited
-		return await unlimitedEndPoints<T>(proxyUrls, options);
+		const results = await unlimitedEndPoints<T>(proxyUrls, options);
+
+		// Track success/failure per proxy and evict after 3 consecutive failures
+		for (let i = 0; i < results.length; i++) {
+			const proxyBase = proxyAssignments[i];
+			const result = results[i];
+			if (result.status === "success") {
+				this.trackSuccess(proxyBase);
+			} else {
+				this.trackFailure(proxyBase);
+			}
+		}
+
+		return results;
 	}
 }

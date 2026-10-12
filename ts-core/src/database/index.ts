@@ -29,9 +29,9 @@ export async function createDatabase(
 	config: SqliteConfig | PostgresConfig,
 ): Promise<Database> {
 	if (config.dialect === "postgres") {
-		return new PostgresDb(config as any);
+		return new PostgresDb(config);
 	}
-	return new SqliteDb(config as any);
+	return new SqliteDb(config);
 }
 
 /**

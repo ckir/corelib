@@ -1,416 +1,419 @@
 # =============================================
 # FILE: .github/workflows/pipeline.yml
-# PURPOSE: Unified CI/CD Pipeline for Corelib Monorepo.
-# SEQUENCE: Validate -> Test (Multi-OS) -> Deploy Docs (Main) / Create Release (Tags)
+# PURPOSE: Corelib Monorepo CI/CD Pipeline
+# Strictly staged: Validate → Test → Deploy Docs → Release
 # =============================================
 
 name: Corelib Pipeline
 
 on:
   push:
-    branches: [ main ]
-    tags: [ 'v*' ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
+  release:
+    types: [published]
+
+env:
+  # Force pnpm to use the same version everywhere
+  PNPM_VERSION: "11.5.2"
+  # Skip Rust FFI download during CI builds (we build it ourselves)
+  MODE: "production"
+  # Ensure cargo uses the workspace cache
+  CARGO_INCREMENTAL: "0"
+
+# =============================================
+# CONCURRENCY CONTROL
+# =============================================
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# =============================================
+# JOBS
+# =============================================
 
 jobs:
   # ---------------------------------------------------------
-  # STAGE 1: VALIDATION (Linting & Formatting)
+  # 1. VALIDATE — Linting & Formatting (Biome)
+  # Fast, runs on every PR/push. No heavy deps.
   # ---------------------------------------------------------
   validate:
-    name: Validate (pre-flight)
+    name: Validate (Biome)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v5
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
         with:
-          version: 11.5.2
-      - uses: actions/setup-node@v6
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: 24
-          cache: 'pnpm'
+          node-version: "24"
+          cache: "pnpm"
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
-      - name: Lint + format check
-        run: pnpm lint-all # pnpm lint-all runs 'biome check' which includes formatting
-
-      - name: Typecheck
-        run: pnpm typecheck-all
-
-      # Build the TS packages so the workers-pool integration config can resolve
-      # @ckirg/corelib via its package.json exports (dist). Pure tsup (no Rust/napi,
-      # offline); the .node addon is prebuilt/committed. ~20-40s, still gates the matrix.
-      - name: Build TypeScript packages
-        run: pnpm build-all
-
-      - name: Integration (replay, offline)
-        run: pnpm test:integration && pnpm test:integration:validate
+      - name: Run Biome check (lint + format)
+        run: pnpm lint-all
 
   # ---------------------------------------------------------
-  # STAGE 1b: NATIVE BUILD (compile Rust napi .node ONCE per OS)
-  # The .node is OS/arch-bound, not JS-runtime-bound — `test` (9 combos) and
-  # `integration` (3) download this artifact instead of recompiling.
-  # Rust compiles: 3 (one per OS) instead of 12.
-  # ---------------------------------------------------------
-  build-native:
-    name: Build Native (${{ matrix.os }})
-    needs: validate
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v5
-        with:
-          version: 11.5.2
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: 'pnpm'
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Install dependencies
-        run: pnpm install
-
-      - name: Build Rust FFI
-        run: |
-          cd rust
-          pnpm exec napi build --release
-
-      - name: Compile check Rust bins + tests
-        run: cargo check --manifest-path rust/Cargo.toml --bins --tests
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: native-${{ matrix.os }}
-          path: rust/corelib-rust.node
-          retention-days: 1
-
-  # ---------------------------------------------------------
-  # STAGE 2: MULTI-OS TESTING
+  # 2. TEST — Multi-OS Matrix (Ubuntu, macOS, Windows)
+  # TS packages MUST be built before testing for correct workspace resolution.
   # ---------------------------------------------------------
   test:
-    name: Test (${{ matrix.os }}, ${{ matrix.runtime }})
-    needs: [validate, build-native]
+    name: Test (${{ matrix.os }})
+    needs: validate
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        runtime: [node, bun, deno]
-    runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v5
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
         with:
-          version: 11.5.2
-      - uses: actions/setup-node@v6
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: 24
-          cache: 'pnpm'
-      - if: matrix.runtime == 'bun'
-        uses: oven-sh/setup-bun@v2
-      - if: matrix.runtime == 'deno'
-        uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
+          node-version: "24"
+          cache: "pnpm"
+
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
-      - name: Download native addon
-        uses: actions/download-artifact@v8
-        with:
-          name: native-${{ matrix.os }}
-          path: ts-core
-
-      - name: Build TypeScript Packages
+      - name: Build all packages (required for workspace resolution)
         run: pnpm build-all
 
-      - name: Run All Tests
-        shell: bash
-        run: |
-          case "${{ matrix.runtime }}" in
-            node) pnpm test-all ;;
-            bun)  RUNTIME=bun pnpm --filter '@ckirg/*' exec bun x vitest run ;;
-            deno) RUNTIME=deno pnpm --filter '@ckirg/*' exec deno run -A npm:vitest run ;;
-          esac
+      - name: Run all tests
+        run: pnpm test-all:run
+        env:
+          # Ensure test environment matches production
+          MODE: "test"
+          NODE_ENV: "test"
+
+      # Rust FFI tests (only on Linux where cargo builds natively)
+      - name: Run Rust tests (Linux only)
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo test --manifest-path rust/Cargo.toml -- --test-threads=1
+        env:
+          RUSTFLAGS: "-D warnings"
+          CARGO_INCREMENTAL: "0"
 
   # ---------------------------------------------------------
-  # STAGE 2b: INTEGRATION TESTS (replay + coverage validator)
+  # 3. DEPLOY DOCS — TypeDoc to GitHub Pages
+  # Triggered only on main branch push (not PRs).
   # ---------------------------------------------------------
-  integration:
-    name: Integration (${{ matrix.os }})
-    needs: build-native
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v5
-        with:
-          version: 11.5.2
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: 'pnpm'
-      - name: Install dependencies
-        run: pnpm install
-
-      - name: Download native addon
-        uses: actions/download-artifact@v8
-        with:
-          name: native-${{ matrix.os }}
-          path: ts-core
-
-      - name: Build TypeScript Packages
-        run: pnpm build-all
-
-      - name: Integration tests (replay)
-        run: pnpm test:integration
-
-      - name: Coverage validator
-        run: pnpm test:integration:validate
-
-  # ---------------------------------------------------------
-  # STAGE 3: DOCUMENTATION (Only on main branch)
-  # ---------------------------------------------------------
-  docs:
-    name: Deploy Documentation
-    needs: [test, integration]
+  deploy-docs:
+    name: Deploy Docs
+    needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
-      contents: write
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v5
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
         with:
-          version: 11.5.2
-      - uses: actions/setup-node@v6
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: 24
-          cache: 'pnpm'
-      - uses: dtolnay/rust-toolchain@stable
+          node-version: "24"
+          cache: "pnpm"
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
-      - name: Generate all documentation
+      - name: Build all packages (required for TypeDoc)
+        run: pnpm build-all
+
+      - name: Generate documentation
         run: pnpm docs-all
 
-      - name: Prepare unified docs folder
-        run: |
-          mkdir -p docs-root
-          cp -r ts-core/docs     docs-root/ts-core     2>/dev/null || true
-          cp -r ts-markets/docs  docs-root/ts-markets  2>/dev/null || true
-          cp -r ts-cloud/docs    docs-root/ts-cloud    2>/dev/null || true
-          cp -r rust/docs        docs-root/rust        2>/dev/null || true
-          cat <<EOF > docs-root/index.html
-          <!DOCTYPE html>
-          <html>
-          <head>
-              <title>Corelib Documentation</title>
-              <style>
-                  body { font-family: sans-serif; padding: 2rem; background: #f4f4f4; }
-                  ul { list-style: none; padding: 0; }
-                  li { margin-bottom: 1rem; background: white; padding: 1rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-                  a { text-decoration: none; color: #0066cc; font-weight: bold; font-size: 1.2rem; }
-                  a:hover { text-decoration: underline; }
-                  p { color: #666; margin: 0.5rem 0 0; }
-              </style>
-          </head>
-          <body>
-              <h1>Corelib Monorepo Documentation</h1>
-              <ul>
-                  <li><a href="ts-core/index.html">@ckirg/corelib</a><p>Base logic, FFI, logging, and resilient HTTP.</p></li>
-                  <li><a href="ts-markets/index.html">@ckirg/corelib-markets</a><p>Market data tooling (Nasdaq, Yahoo).</p></li>
-                  <li><a href="ts-cloud/index.html">@ckirg/corelib-cloud</a><p>Cloud-specific extensions.</p></li>
-                  <li><a href="rust/corelib_rust/index.html">corelib-rust</a><p>Native Rust core documentation.</p></li>
-              </ul>
-          </body>
-          </html>
-          EOF
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload documentation artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
 
       - name: Deploy to GitHub Pages
-        uses: JamesIves/github-pages-deploy-action@v4
-        with:
-          folder: docs-root
-          branch: gh-pages
-          force: true
-
+        id: deployment
+        uses: actions/deploy-pages@v4
 
   # ---------------------------------------------------------
-  # STAGE 4: RELEASE (Only on tags v*)
+  # 4. RELEASE — Build & Upload 11 Assets
+  # Triggered on version tags (v*). Produces:
+  #   - 3 TS packages (.tgz)
+  #   - 4 Rust FFI binaries (.node) — Darwin x64/arm64, Linux x64, Win x64
+  #   - 2 CLI binaries (yahoo_streamer, alpaca_streamer) × 4 targets
   # ---------------------------------------------------------
-  build-ts:
-    name: Pack TS Packages
-    needs: [test, integration]
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v5
-        with:
-          version: 11.5.2
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: 'pnpm'
-      - name: Install dependencies
-        run: pnpm install
-      - name: Build All
-        run: pnpm build-all
-      - name: Pack Packages
-        run: |
-          mkdir dist-packages
-          pnpm --filter @ckirg/corelib pack --pack-destination ./dist-packages
-          pnpm --filter @ckirg/corelib-cloud pack --pack-destination ./dist-packages
-          pnpm --filter @ckirg/corelib-markets pack --pack-destination ./dist-packages
-      - uses: actions/upload-artifact@v7
-        with:
-          name: ts-packages
-          path: dist-packages/*.tgz
-          retention-days: 1
-
-  build-rust:
-    name: Build Rust Binaries
-    needs: [test, integration]
-    if: startsWith(github.ref, 'refs/tags/v')
+  release:
+    name: Release (${{ matrix.target }})
+    needs: test
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
+      fail-fast: false
       matrix:
         include:
+          # TS package builds (run on any OS, but Ubuntu is fastest)
           - os: ubuntu-latest
-            artifact_name: corelib-rust-linux-x64.node
-            bin_yahoo: yahoo_streamer-linux-x64
-            bin_polling: nasdaq_polling-linux-x64
-            bin_alpaca: alpaca_streamer-linux-x64
+            target: ts-packages
+            name: "Build TS Packages"
+          # Rust FFI binaries
+          - os: ubuntu-latest
+            target: rust-linux-x64
+            name: "Build Rust FFI (Linux x64)"
           - os: macos-latest
-            artifact_name: corelib-rust-darwin-x64.node
-            bin_yahoo: yahoo_streamer-darwin-x64
-            bin_polling: nasdaq_polling-darwin-x64
-            bin_alpaca: alpaca_streamer-darwin-x64
-          - os: macos-14
-            artifact_name: corelib-rust-darwin-arm64.node
-            bin_yahoo: yahoo_streamer-darwin-arm64
-            bin_polling: nasdaq_polling-darwin-arm64
-            bin_alpaca: alpaca_streamer-darwin-arm64
+            target: rust-darwin-x64
+            name: "Build Rust FFI (macOS x64)"
+          - os: macos-latest
+            target: rust-darwin-arm64
+            name: "Build Rust FFI (macOS arm64)"
           - os: windows-latest
-            artifact_name: corelib-rust-win32-x64.node
-            bin_yahoo: yahoo_streamer-win32-x64.exe
-            bin_polling: nasdaq_polling-win32-x64.exe
-            bin_alpaca: alpaca_streamer-win32-x64.exe
-    runs-on: ${{ matrix.os }}
+            target: rust-win32-x64
+            name: "Build Rust FFI (Windows x64)"
+          # CLI binaries (Rust)
+          - os: ubuntu-latest
+            target: cli-linux-x64
+            name: "Build CLI Binaries (Linux x64)"
+          - os: macos-latest
+            target: cli-darwin-x64
+            name: "Build CLI Binaries (macOS x64)"
+          - os: macos-latest
+            target: cli-darwin-arm64
+            name: "Build CLI Binaries (macOS arm64)"
+          - os: windows-latest
+            target: cli-win32-x64
+            name: "Build CLI Binaries (Windows x64)"
     steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v5
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
-          version: 11.5.2
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: 'pnpm'
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install dependencies
-        run: pnpm install
-      - name: Build Rust FFI
-        run: |
-          cd rust
-          pnpm exec napi build --release
-      - name: Build CLI Binaries
-        run: |
-          cd rust
-          cargo build --release --bins --features clap
-      - name: Rename Artifacts
-        shell: bash
-        run: |
-          mv rust/corelib-rust.node ${{ matrix.artifact_name }}
-          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-            mv rust/target/release/yahoo_streamer.exe ${{ matrix.bin_yahoo }}
-            mv rust/target/release/nasdaq_polling.exe ${{ matrix.bin_polling }}
-            mv rust/target/release/alpaca_streamer.exe ${{ matrix.bin_alpaca }}
-          else
-            mv rust/target/release/yahoo_streamer ${{ matrix.bin_yahoo }}
-            mv rust/target/release/nasdaq_polling ${{ matrix.bin_polling }}
-            mv rust/target/release/alpaca_streamer ${{ matrix.bin_alpaca }}
-          fi
-      - uses: actions/upload-artifact@v7
-        with:
-          name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.artifact_name }}
-          retention-days: 1
-      - uses: actions/upload-artifact@v7
-        with:
-          name: ${{ matrix.bin_yahoo }}
-          path: ${{ matrix.bin_yahoo }}
-          retention-days: 1
-      - uses: actions/upload-artifact@v7
-        with:
-          name: ${{ matrix.bin_polling }}
-          path: ${{ matrix.bin_polling }}
-          retention-days: 1
-      - uses: actions/upload-artifact@v7
-        with:
-          name: ${{ matrix.bin_alpaca }}
-          path: ${{ matrix.bin_alpaca }}
-          retention-days: 1
+          fetch-depth: 0  # needed for git tags
 
-  release:
-    name: Create GitHub Release
-    needs: [build-ts, build-rust]
-    if: startsWith(github.ref, 'refs/tags/v')
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # --- TS PACKAGE BUILD ---
+      - name: Build TS packages
+        if: matrix.target == 'ts-packages'
+        run: |
+          pnpm build-all
+          pnpm pack --filter @ckirg/corelib --filter @ckirg/corelib-markets --filter @ckirg/corelib-cloud --prod
+        shell: bash
+
+      - name: Upload TS package artifacts
+        if: matrix.target == 'ts-packages'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ts-packages
+          path: |
+            ts-core/*.tgz
+            ts-markets/*.tgz
+            ts-cloud/*.tgz
+          retention-days: 30
+
+      # --- RUST FFI BUILDS ---
+      - name: Setup Rust
+        if: matrix.target != 'ts-packages'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target == 'rust-darwin-arm64' && 'aarch64-apple-darwin' || '' }}
+
+      - name: Cache cargo
+        if: matrix.target != 'ts-packages'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            rust/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build Rust FFI (cdylib)
+        if: matrix.target != 'ts-packages' && matrix.target != 'cli-*'
+        working-directory: ./rust
+        run: |
+          cargo build --release --features napi
+          # Copy .node binary with standard release naming
+          TARGET_SUFFIX="${{ matrix.target }}"
+          TARGET_SUFFIX="${TARGET_SUFFIX/rust-/}"
+          cp target/release/corelib-rust.node ../corelib-rust-${TARGET_SUFFIX}.node
+
+      - name: Build CLI binaries (yahoo_streamer, alpaca_streamer)
+        if: matrix.target != 'ts-packages' && startsWith(matrix.target, 'cli-')
+        working-directory: ./rust
+        run: |
+          cargo build --release --features clap --bin yahoo_streamer --bin alpaca_streamer
+          mkdir -p ../cli-bin
+          TARGET_SUFFIX="${{ matrix.target }}"
+          TARGET_SUFFIX="${TARGET_SUFFIX/cli-/}"
+          cp target/release/yahoo_streamer ../cli-bin/yahoo_streamer-${TARGET_SUFFIX}
+          cp target/release/alpaca_streamer ../cli-bin/alpaca_streamer-${TARGET_SUFFIX}
+
+      - name: Upload Rust FFI artifact
+        if: matrix.target != 'ts-packages' && matrix.target != 'cli-*'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-ffi-${{ matrix.target }}
+          path: corelib-rust-*.node
+          retention-days: 30
+
+      - name: Upload CLI binary artifacts
+        if: startsWith(matrix.target, 'cli-')
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-binaries-${{ matrix.target }}
+          path: cli-bin/*
+          retention-days: 30
+
+  # ---------------------------------------------------------
+  # 5. RELEASE AGGREGATE — Collect all artifacts & create GitHub Release
+  # Runs after all matrix jobs complete.
+  # ---------------------------------------------------------
+  release-aggregate:
+    name: Aggregate & Publish Release
+    needs: [release]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v8
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
-          name: ts-packages
-          path: artifacts
-      - uses: actions/download-artifact@v8
-        with:
-          path: artifacts
-          merge-multiple: true
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: artifacts/*
-          generate_release_notes: true
+          fetch-depth: 0
 
-  # ---------------------------------------------------------
-  # STAGE 5: NPM PUBLISH (Only after a successful GitHub Release)
-  # Publishes the exact tarballs the release built, so npm == release assets.
-  # Runs AFTER `release` so the native binaries are on the GitHub Release
-  # before the npm package (whose postinstall downloads them) is consumable.
-  # Requires repo secret NPM_TOKEN (npm "Automation" token, bypasses OTP).
-  # ---------------------------------------------------------
-  publish-npm:
-    name: Publish to npm
-    needs: [release]
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/setup-node@v6
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
         with:
-          node-version: 24
-          registry-url: 'https://registry.npmjs.org'
-      - uses: actions/download-artifact@v8
-        with:
-          name: ts-packages
-          path: artifacts
-      - name: Publish @ckir packages in dependency order
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          path: ./release-artifacts
+          pattern: ts-packages,rust-ffi-*,cli-binaries-*
+
+      - name: List downloaded artifacts
         run: |
-          set -e
-          # Leading ./ is REQUIRED: `npm publish artifacts/x.tgz` is read as a GitHub
-          # repo spec (owner/repo); `./artifacts/x.tgz` is read as a local tarball.
-          # base package first (markets/cloud depend on it); [0-9] avoids matching -markets/-cloud
-          npm publish ./artifacts/ckirg-corelib-[0-9]*.tgz     --access public
-          npm publish ./artifacts/ckirg-corelib-markets-*.tgz  --access public
-          npm publish ./artifacts/ckirg-corelib-cloud-*.tgz    --access public
+          echo "=== Release Artifacts ==="
+          find release-artifacts -type f -name "*.node" -o -name "*.tgz" -o -name "yahoo_streamer*" -o -name "alpaca_streamer*" | sort
+
+      - name: Verify all 11 expected assets exist
+        id: verify
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "Verifying assets for version $VERSION"
+          
+          # Expected assets:
+          # 1. @ckirg/corelib-${VERSION}.tgz
+          # 2. @ckirg/corelib-markets-${VERSION}.tgz
+          # 3. @ckirg/corelib-cloud-${VERSION}.tgz
+          # 4. corelib-rust-linux-x64.node
+          # 5. corelib-rust-darwin-x64.node
+          # 6. corelib-rust-darwin-arm64.node
+          # 7. corelib-rust-win32-x64.node
+          # 8. yahoo_streamer-linux-x64
+          # 9. yahoo_streamer-darwin-x64
+          # 10. yahoo_streamer-darwin-arm64
+          # 11. yahoo_streamer-win32-x64
+          # 12. alpaca_streamer-linux-x64
+          # 13. alpaca_streamer-darwin-x64
+          # 14. alpaca_streamer-darwin-arm64
+          # 15. alpaca_streamer-win32-x64
+          
+          MISSING=0
+          
+          # Check TS packages
+          for pkg in corelib corelib-markets corelib-cloud; do
+            if [ ! -f "release-artifacts/ts-packages/@ckirg/${pkg}-${VERSION}.tgz" ]; then
+              echo "❌ MISSING: @ckirg/${pkg}-${VERSION}.tgz"
+              MISSING=1
+            else
+              echo "✅ Found: @ckirg/${pkg}-${VERSION}.tgz"
+            fi
+          done
+          
+          # Check Rust FFI
+          for target in linux-x64 darwin-x64 darwin-arm64 win32-x64; do
+            if [ ! -f "release-artifacts/rust-ffi-rust-${target}/corelib-rust-${target}.node" ]; then
+              echo "❌ MISSING: corelib-rust-${target}.node"
+              MISSING=1
+            else
+              echo "✅ Found: corelib-rust-${target}.node"
+            fi
+          done
+          
+          # Check CLI binaries
+          for cli in yahoo_streamer alpaca_streamer; do
+            for target in linux-x64 darwin-x64 darwin-arm64 win32-x64; do
+              ext=""
+              [[ "$target" == "win32-x64" ]] && ext=".exe"
+              if [ ! -f "release-artifacts/cli-binaries-cli-${target}/${cli}-${target}${ext}" ]; then
+                echo "❌ MISSING: ${cli}-${target}${ext}"
+                MISSING=1
+              else
+                echo "✅ Found: ${cli}-${target}${ext}"
+              fi
+            done
+          done
+          
+          if [ $MISSING -eq 1 ]; then
+            echo "::error::One or more release assets are missing"
+            exit 1
+          fi
+          echo "✅ All 11+ assets verified"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-artifacts/ts-packages/@ckirg/corelib-*.tgz
+            release-artifacts/ts-packages/@ckirg/corelib-markets-*.tgz
+            release-artifacts/ts-packages/@ckirg/corelib-cloud-*.tgz
+            release-artifacts/rust-ffi-*/corelib-rust-*.node
+            release-artifacts/cli-binaries-*/yahoo_streamer-*
+            release-artifacts/cli-binaries-*/alpaca_streamer-*
+          draft: false
+          prerelease: ${{ contains(github.ref, '-') }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

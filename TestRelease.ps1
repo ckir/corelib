@@ -1,6 +1,7 @@
 # =============================================
 # FILE: TestRelease.ps1
 # PURPOSE: Uses GitHub CLI (gh) to verify the latest release and assets.
+# Validates 15 assets per AGENTS.md §4 (3 TS .tgz + 4 FFI .node + 8 CLI binaries)
 # =============================================
 
 $REPO = "ckir/corelib"
@@ -22,50 +23,74 @@ $assets = $latestRelease.assets | Select-Object -ExpandProperty name
 Write-Host "Assets found:"
 $assets | ForEach-Object { Write-Host " - $_" }
 
-$requiredBins = @(
-    "corelib-rust-linux-x64.node", 
-    "corelib-rust-darwin-x64.node", 
-    "corelib-rust-darwin-arm64.node", 
+# 11+ assets per AGENTS.md §4:
+# - 3 TS packages (.tgz): corelib, corelib-markets, corelib-cloud
+# - 4 Rust FFI .node: linux-x64, darwin-x64, darwin-arm64, win32-x64
+# - 8 CLI binaries: yahoo_streamer ×4 + alpaca_streamer ×4 (linux-x64, darwin-x64, darwin-arm64, win32-x64)
+
+$requiredAssets = @(
+    # TS Packages (3)
+    "ckirg-corelib-*.tgz",
+    "ckirg-corelib-markets-*.tgz",
+    "ckirg-corelib-cloud-*.tgz",
+    
+    # Rust FFI .node binaries (4)
+    "corelib-rust-linux-x64.node",
+    "corelib-rust-darwin-x64.node",
+    "corelib-rust-darwin-arm64.node",
     "corelib-rust-win32-x64.node",
+    
+    # CLI Binaries - yahoo_streamer (4)
     "yahoo_streamer-linux-x64",
-    "nasdaq_polling-linux-x64",
-    "alpaca_streamer-linux-x64",
     "yahoo_streamer-darwin-x64",
-    "nasdaq_polling-darwin-x64",
-    "alpaca_streamer-darwin-x64",
     "yahoo_streamer-darwin-arm64",
-    "nasdaq_polling-darwin-arm64",
-    "alpaca_streamer-darwin-arm64",
     "yahoo_streamer-win32-x64.exe",
-    "nasdaq_polling-win32-x64.exe",
+    
+    # CLI Binaries - alpaca_streamer (4)
+    "alpaca_streamer-linux-x64",
+    "alpaca_streamer-darwin-x64",
+    "alpaca_streamer-darwin-arm64",
     "alpaca_streamer-win32-x64.exe"
 )
 
 $missing = @()
-foreach ($bin in $requiredBins) {
-    if ($assets -notcontains $bin) {
-        $missing += $bin
+foreach ($pattern in $requiredAssets) {
+    $matched = $assets | Where-Object { $_ -like $pattern }
+    if (-not $matched) {
+        $missing += $pattern
+    } else {
+        Write-Host "  ✅ $($matched -join ', ')" -ForegroundColor Green
     }
 }
 
 if ($missing.Count -eq 0) {
-    Write-Host "`n[SUCCESS] All platform binaries are present in the release." -ForegroundColor Green
+    Write-Host "`n[SUCCESS] All 15 release assets are present." -ForegroundColor Green
 } else {
-    Write-Host "`n[WARNING] Some binaries are missing: $($missing -join ', ')" -ForegroundColor Red
+    Write-Host "`n[FAILURE] Missing assets:" -ForegroundColor Red
+    $missing | ForEach-Object { Write-Host "  ❌ $_" -ForegroundColor Red }
+    exit 1
 }
 
 # 3. Installation Guide
 Write-Host "`n--- Installation Instructions ---" -ForegroundColor Cyan
-Write-Host "To install the minimal ready-to-use package from this release:"
+Write-Host "To install packages from this release:"
 
-# Find the .tgz for corelib
-$corelibTgz = $assets | Where-Object { $_ -like "ckirg-corelib-*.tgz" }
+$v = $latestRelease.tagName
 
-if ($corelibTgz) {
-    $v = $latestRelease.tagName
-    $url = "https://github.com/$REPO/releases/download/$v/$corelibTgz"
-    Write-Host "`nRun this command:" -ForegroundColor White
-    Write-Host "pnpm add $url" -ForegroundColor Yellow
+# Find all .tgz packages
+$tgzAssets = $assets | Where-Object { $_ -like "*.tgz" }
+if ($tgzAssets) {
+    Write-Host "`nRun these commands:" -ForegroundColor White
+    foreach ($tgz in $tgzAssets) {
+        $url = "https://github.com/$REPO/releases/download/$v/$tgz"
+        Write-Host "pnpm add $url" -ForegroundColor Yellow
+    }
 } else {
-    Write-Host "No .tgz package found in assets. Ensure the 'build-ts' job in release.yml is working." -ForegroundColor Red
+    Write-Host "No .tgz packages found in assets." -ForegroundColor Red
 }
+
+# 4. Verify checksums (optional)
+Write-Host "`n--- Checksum Verification ---" -ForegroundColor Cyan
+Write-Host "Run this to verify all asset checksums:" -ForegroundColor White
+Write-Host "gh release download $v --repo $REPO --pattern '*' --dir ./release-verify" -ForegroundColor Yellow
+Write-Host "cd ./release-verify && sha256sum *" -ForegroundColor Yellow

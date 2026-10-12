@@ -6,10 +6,20 @@
 // =============================================
 
 import { EventEmitter } from "node:events";
-import { coreFFI, getMode, getTempDir, logger, nextCid } from "@ckirg/corelib";
+import {
+	type AlpacaStreamingConstructor,
+	type AlpacaStreamingFFI,
+	coreFFI,
+	getMode,
+	getTempDir,
+	logger,
+	nextCid,
+} from "@ckirg/corelib";
 import { StreamHealthTracker } from "../StreamHealthTracker.js";
 
-const RustAlpaca = (coreFFI as any)?.AlpacaStreaming;
+const RustAlpaca = coreFFI?.AlpacaStreaming as
+	| AlpacaStreamingConstructor
+	| undefined;
 const alpacaStreamingLogger = logger.child({ section: "AlpacaStreaming" });
 
 /**
@@ -23,7 +33,7 @@ const alpacaStreamingLogger = logger.child({ section: "AlpacaStreaming" });
  * db paths resolve.
  */
 export class AlpacaStreaming extends EventEmitter {
-	private rust: any;
+	private rust: AlpacaStreamingFFI;
 	private initialized = false;
 	private readonly health = new StreamHealthTracker(
 		"alpaca",

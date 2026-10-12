@@ -21,6 +21,7 @@ vi.mock("@ckirg/corelib", async (importOriginal) => {
 			error: vi.fn(),
 			info: vi.fn(),
 			trace: vi.fn(),
+			debug: vi.fn(),
 			child: vi.fn().mockReturnThis(),
 		},
 	};
