@@ -98,6 +98,16 @@ jobs:
       - name: Build all packages (required for workspace resolution)
         run: pnpm build-all
 
+      # Build Rust FFI for Linux (required for ts-core tests that use FFI)
+      - name: Build Rust FFI (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          docker build -t corelib-builder -f rust/Dockerfile.linux .
+          docker rm -f corelib-temp 2>/dev/null || true
+          docker create --name corelib-temp corelib-builder
+          docker cp corelib-temp:/app/rust/corelib-rust.node ts-core/corelib-rust.node
+          docker rm -f corelib-temp
+
       - name: Run all tests
         run: pnpm test-all:run
         env:
