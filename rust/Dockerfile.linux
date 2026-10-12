@@ -46,8 +46,8 @@ WORKDIR /app/rust
 RUN npm install -g @napi-rs/cli
 
 # Build the native module (cdylib) with napi features
-# This produces corelib-rust.node
-RUN napi build --release --platform linux-x64
+# This produces corelib-rust.node (platform is auto-detected)
+RUN napi build --release
 
 # Build CLI binaries with clap feature
 RUN cargo build --release --features clap --bin yahoo_streamer --bin alpaca_streamer
