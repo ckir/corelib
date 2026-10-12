@@ -35,11 +35,11 @@ fi
 if ! command -v lefthook &> /dev/null; then
   echo -e "${YELLOW}⚠️  lefthook not found in PATH${NC}"
   
-  # Try to install via pnpm if available
-  if command -v pnpm &> /dev/null; then
-    echo -e "${BLUE}📦 Installing lefthook via pnpm...${NC}"
-    pnpm add -D lefthook || {
-      echo -e "${RED}❌ Failed to install lefthook via pnpm${NC}"
+  # Try to install globally via npm
+  if command -v npm &> /dev/null; then
+    echo -e "${BLUE}📦 Installing lefthook globally via npm...${NC}"
+    npm install -g lefthook@1.13.6 || {
+      echo -e "${RED}❌ Failed to install lefthook via npm${NC}"
       echo -e "${YELLOW}   Please install lefthook manually:${NC}"
       echo -e "${YELLOW}   - macOS: brew install lefthook${NC}"
       echo -e "${YELLOW}   - Linux: curl -sSfL https://raw.githubusercontent.com/evilmartians/lefthook/master/install.sh | sh${NC}"
@@ -47,7 +47,7 @@ if ! command -v lefthook &> /dev/null; then
       exit 1
     }
   else
-    echo -e "${RED}❌ pnpm not found. Please install lefthook manually:${NC}"
+    echo -e "${RED}❌ npm not found. Please install lefthook manually:${NC}"
     echo -e "${YELLOW}   - macOS: brew install lefthook${NC}"
     echo -e "${YELLOW}   - Linux: curl -sSfL https://raw.githubusercontent.com/evilmartians/lefthook/master/install.sh | sh${NC}"
     echo -e "${YELLOW}   - Windows: scoop install lefthook${NC}"

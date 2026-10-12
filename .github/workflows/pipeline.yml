@@ -59,9 +59,7 @@ jobs:
           cache: "pnpm"
 
       - name: Install dependencies
-        run: |
-          pnpm approve-builds lefthook
-          pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Run Biome check (lint + format)
         run: pnpm lint-all
@@ -95,9 +93,7 @@ jobs:
           cache: "pnpm"
 
       - name: Install dependencies
-        run: |
-          pnpm approve-builds lefthook
-          pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Build all packages (required for workspace resolution)
         run: pnpm build-all
@@ -150,9 +146,7 @@ jobs:
           cache: "pnpm"
 
       - name: Install dependencies
-        run: |
-          pnpm approve-builds lefthook
-          pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Build all packages (required for TypeDoc)
         run: pnpm build-all
@@ -237,9 +231,7 @@ jobs:
           cache: "pnpm"
 
       - name: Install dependencies
-        run: |
-          pnpm approve-builds lefthook
-          pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       # --- TS PACKAGE BUILD ---
       - name: Build TS packages

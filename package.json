@@ -2,16 +2,12 @@
     "name": "corelib-monorepo",
     "version": "0.2.0",
     "packageManager": "pnpm@11.5.2",
-    "pnpm": {
-        "allowBuilds": ["lefthook"]
-    },
     "devDependencies": {
         "@biomejs/biome": "catalog:",
         "@types/ws": "catalog:",
         "cross-env": "^10.1.0",
         "del-cli": "^7.0.0",
         "dependency-cruiser": "^17.4.0",
-        "lefthook": "^1.11.0",
         "msw": "^2.14.6",
         "nx": "^22.7.2",
         "tsup": "catalog:",
