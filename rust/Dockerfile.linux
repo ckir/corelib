@@ -46,11 +46,11 @@ WORKDIR /app/rust
 RUN npm install -g @napi-rs/cli
 
 # Build the native module (cdylib) with napi features
-# This produces corelib-rust.node
-RUN napi build --release
+# First, build the cdylib with cargo (this produces libcorelib_rust.so)
+RUN cargo build --release
 
-# Debug: check what files were generated
-RUN ls -la target/release/ && find target/release -name "*.so" -o -name "*.node" -o -name "*.dylib" 2>/dev/null || true
+# Copy the cdylib to the expected .node filename
+RUN cp target/release/libcorelib_rust.so target/release/corelib-rust.node
 
 # Build CLI binaries with clap feature
 RUN cargo build --release --features clap --bin yahoo_streamer --bin alpaca_streamer
