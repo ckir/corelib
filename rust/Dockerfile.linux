@@ -21,7 +21,6 @@ WORKDIR /app
 
 # Copy Cargo files first for better caching
 COPY rust/Cargo.toml rust/Cargo.lock ./rust/
-COPY rust/build.rs ./rust/
 
 # Copy source code
 COPY rust/src ./rust/src
