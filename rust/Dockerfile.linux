@@ -7,8 +7,8 @@
 # ---------------------------------------------------------
 # STAGE 1: Build environment with all dependencies
 # ---------------------------------------------------------
-# Use Rust 1.85+ which supports edition 2024 (required by redb 4.1.0)
-FROM rust:1.85-slim-bookworm AS builder
+# Use Rust 1.90+ which supports edition 2024 and required dependencies (redb 4.1.0 needs 1.89, napi needs 1.88)
+FROM rust:1.90-slim-bookworm AS builder
 
 # Install system dependencies for OpenSSL, pkg-config, Node.js, and napi-rs
 RUN apt-get update && apt-get install -y --no-install-recommends \
