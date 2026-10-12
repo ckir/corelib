@@ -1,5 +1,17 @@
 # Corelib Monorepo
 
+[![CI/CD Pipeline](https://github.com/ckir/corelib/actions/workflows/pipeline.yml/badge.svg)](https://github.com/ckir/corelib/actions/workflows/pipeline.yml)
+[![npm version](https://img.shields.io/npm/v/@ckirg/corelib.svg?label=@ckirg/corelib)](https://www.npmjs.com/package/@ckirg/corelib)
+[![npm version](https://img.shields.io/npm/v/@ckirg/corelib-markets.svg?label=@ckirg/corelib-markets)](https://www.npmjs.com/package/@ckirg/corelib-markets)
+[![npm version](https://img.shields.io/npm/v/@ckirg/corelib-cloud.svg?label=@ckirg/corelib-cloud)](https://www.npmjs.com/package/@ckirg/corelib-cloud)
+[![License](https://img.shields.io/github/license/ckir/corelib.svg)](https://github.com/ckir/corelib/blob/main/LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
+[![Rust](https://img.shields.io/badge/Rust-1.82+-orange.svg)](https://www.rust-lang.org/)
+[![pnpm](https://img.shields.io/badge/pnpm-11.5+-yellow.svg)](https://pnpm.io/)
+[![Node.js](https://img.shields.io/badge/Node.js-24+-green.svg)](https://nodejs.org/)
+[![Bun](https://img.shields.io/badge/Bun-1.1+-yellow.svg)](https://bun.sh/)
+[![Deno](https://img.shields.io/badge/Deno-2.0+-black.svg)](https://deno.land/)
+
 A high-performance, resilient, and multi-runtime monorepo for TypeScript and Rust. This workspace provides foundational utilities, cloud extensions, and financial market tooling designed for **Node.js, Bun, and Deno**.
 
 ## 🚀 Overview
