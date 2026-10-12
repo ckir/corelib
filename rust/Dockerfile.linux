@@ -66,5 +66,6 @@ FROM alpine AS artifacts
 
 # Copy the built artifacts
 COPY --from=build-release /app/rust/target/release/corelib-rust.node /corelib-rust.node
+COPY --from=build-release /app/rust/target/release/corelib-rust.node /app/rust/corelib-rust.node
 COPY --from=build-release /app/rust/target/release/yahoo_streamer /yahoo_streamer
 COPY --from=build-release /app/rust/target/release/alpaca_streamer /alpaca_streamer
