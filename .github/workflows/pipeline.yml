@@ -58,6 +58,9 @@ jobs:
           node-version: "24"
           cache: "pnpm"
 
+      - name: Approve lefthook build script
+        run: pnpm approve-builds lefthook
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -91,6 +94,9 @@ jobs:
         with:
           node-version: "24"
           cache: "pnpm"
+
+      - name: Approve lefthook build script
+        run: pnpm approve-builds lefthook
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -144,6 +150,9 @@ jobs:
         with:
           node-version: "24"
           cache: "pnpm"
+
+      - name: Approve lefthook build script
+        run: pnpm approve-builds lefthook
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -229,6 +238,9 @@ jobs:
         with:
           node-version: "24"
           cache: "pnpm"
+
+      - name: Approve lefthook build script
+        run: pnpm approve-builds lefthook
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
