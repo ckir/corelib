@@ -14,7 +14,7 @@
         "tsx": "catalog:",
         "typescript": "catalog:",
         "vitest": "catalog:",
-        "ws": "^8.18.2"
+        "ws": "^8.22.0"
     },
     "scripts": {
         "build-all": "pnpm -r build",
