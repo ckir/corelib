@@ -18,11 +18,6 @@ export interface CoreFFI {
 	AlpacaStreaming?: AlpacaStreamingConstructor;
 	YahooStreaming?: YahooStreamingConstructor;
 	FinnhubStreaming?: FinnhubStreamingConstructor;
-
-	// Retrieve modules
-	ky?: KyFFI;
-	unlimited?: UnlimitedFFI;
-	proxied?: ProxiedFFI;
 }
 
 /**
@@ -122,46 +117,6 @@ export interface FinnhubStreamingFFI {
 	setMarketCallback?: (callback: (json: string) => void) => void;
 }
 
-/**
- * Ky HTTP client FFI interface
- * Mirrors rust/src/retrieve/ky.rs
- */
-export interface KyFFI {
-	request: (options: KyRequestOptions) => Promise<KyResponse>;
-}
-
-/**
- * Unlimited HTTP client FFI interface
- * Mirrors rust/src/retrieve/unlimited.rs
- */
-export interface UnlimitedFFI {
-	endPoint: (
-		url: string,
-		options: KyRequestOptions,
-	) => Promise<RequestResultFFI>;
-	endPoints: (
-		urls: string[],
-		options: KyRequestOptions,
-	) => Promise<RequestResultFFI[]>;
-}
-
-/**
- * Proxied HTTP client FFI interface
- * Mirrors rust/src/retrieve/proxied.rs
- */
-export interface ProxiedFFI {
-	endPoint: (
-		url: string,
-		proxyUrls: string[],
-		options: KyRequestOptions,
-	) => Promise<RequestResultFFI>;
-	endPoints: (
-		urls: string[],
-		proxyUrls: string[],
-		options: KyRequestOptions,
-	) => Promise<RequestResultFFI[]>;
-}
-
 // =============================================
 // Config Types
 // =============================================
@@ -186,32 +141,6 @@ export interface FinnhubConfig {
 	dbPath?: string;
 	silenceSeconds?: number;
 	symbols?: string[];
-}
-
-export interface KyRequestOptions {
-	method?: string;
-	headers?: Record<string, string>;
-	body?: string | Uint8Array;
-	timeout?: number;
-	retry?: {
-		limit?: number;
-		methods?: string[];
-		backoffLimit?: number;
-	};
-}
-
-export interface KyResponse {
-	status: number;
-	statusText: string;
-	headers: Record<string, string>;
-	body: string | Uint8Array;
-	ok: boolean;
-}
-
-export interface RequestResultFFI {
-	status: "success" | "error";
-	value?: KyResponse;
-	reason?: string | Record<string, unknown>;
 }
 
 // =============================================
