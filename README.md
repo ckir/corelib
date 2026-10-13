@@ -43,6 +43,9 @@ graph TD
     E -->|"WS: Alpaca / Finnhub / Yahoo"| F[Live Market Feeds]
 ```
 
+> Full detail: [ARCHITECTURE.md](./ARCHITECTURE.md) — package map, runtime matrix, FFI
+> surface, proxy semantics, CI/CD stages.
+
 ---
 
 ## 📂 Project Structure & Packages
