@@ -56,71 +56,11 @@ updates:
       - dependency-name: "napi-derive"
         update-types: ["version-update:semver-major"]
 
-  # ---------------------------------------------------------
-  # PNPM WORKSPACE DEPENDENCIES (per-package)
-  # ---------------------------------------------------------
-  - package-ecosystem: "npm"
-    directory: "/ts-core"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "06:30"
-      timezone: "UTC"
-    labels:
-      - "dependencies"
-      - "npm"
-      - "ts-core"
-    groups:
-      minor-and-patch:
-        patterns: ["*"]
-        update-types: ["minor", "patch"]
-    ignore:
-      - dependency-name: "pino"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "ky"
-        update-types: ["version-update:semver-major"]
-
-  - package-ecosystem: "npm"
-    directory: "/ts-markets"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "07:00"
-      timezone: "UTC"
-    labels:
-      - "dependencies"
-      - "npm"
-      - "ts-markets"
-    groups:
-      minor-and-patch:
-        patterns: ["*"]
-        update-types: ["minor", "patch"]
-    ignore:
-      - dependency-name: "@gadicc/yahoo-finance2"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "luxon"
-        update-types: ["version-update:semver-major"]
-
-  - package-ecosystem: "npm"
-    directory: "/ts-cloud"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "07:30"
-      timezone: "UTC"
-    labels:
-      - "dependencies"
-      - "npm"
-      - "ts-cloud"
-    groups:
-      minor-and-patch:
-        patterns: ["*"]
-        update-types: ["minor", "patch"]
-    ignore:
-      - dependency-name: "hono"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "@cloudflare/workers-types"
-        update-types: ["version-update:semver-major"]
+  # NOTE: no per-package npm scopes (/ts-core, /ts-markets, /ts-cloud).
+  # pnpm workspaces share a single root pnpm-lock.yaml; per-package entries
+  # update ts-*/package.json without the lockfile, so CI's frozen install
+  # fails with ERR_PNPM_OUTDATED_LOCKFILE. The root "/" scope above covers
+  # all workspace packages including the lockfile.
 
   # ---------------------------------------------------------
   # GITHUB ACTIONS
