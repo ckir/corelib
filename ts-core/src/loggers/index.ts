@@ -14,7 +14,7 @@ declare global {
 const runtime = detectRuntime();
 
 async function loadLogger() {
-	let impl: any;
+	let impl: { default: StrictLogger | (() => StrictLogger) };
 
 	switch (runtime) {
 		case "cloudflare":

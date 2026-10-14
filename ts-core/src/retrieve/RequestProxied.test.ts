@@ -206,19 +206,16 @@ describe("RequestProxied (Exhaustive)", () => {
 	});
 
 	describe("suffix validation", () => {
-		it.each([
-			"https://evil/",
-			"//evil",
-			"\\\\evil",
-			"/\\evil",
-			" //evil",
-		])("endPoint rejects suffix %j without sending a request", async (suffix) => {
-			const r = await proxied.endPoint("https://t.com", suffix, {
-				headers: { authorization: "secret" },
-			});
-			expect(r.status).toBe("error");
-			expect(mockEndPoint).not.toHaveBeenCalled();
-		});
+		it.each(["https://evil/", "//evil", "\\\\evil", "/\\evil", " //evil"])(
+			"endPoint rejects suffix %j without sending a request",
+			async (suffix) => {
+				const r = await proxied.endPoint("https://t.com", suffix, {
+					headers: { authorization: "secret" },
+				});
+				expect(r.status).toBe("error");
+				expect(mockEndPoint).not.toHaveBeenCalled();
+			},
+		);
 
 		it("endPoints rejects a hostile suffix for every url", async () => {
 			const r = await proxied.endPoints(["https://a", "https://b"], "//evil");
@@ -370,5 +367,26 @@ describe("RequestProxied (Exhaustive)", () => {
 				expect((result.reason as any).message).toBe("No active proxies left");
 			}
 		});
+	});
+});
+
+describe("RequestProxied eviction mid-call", () => {
+	it("tries every proxy active at call start even when earlier ones get evicted during the call", async () => {
+		const mockEndPoint = unlimitedEndPoint as any;
+		mockEndPoint.mockReset();
+		mockEndPoint.mockResolvedValue({
+			status: "error",
+			reason: { ok: false, status: 502, statusText: "Bad Gateway", body: "" },
+		});
+		const proxied = new RequestProxied([PROXY1, PROXY2, PROXY3]);
+		// Two calls bring every proxy to a streak of 2 (nothing evicted yet).
+		await proxied.endPoint("https://t.com");
+		await proxied.endPoint("https://t.com");
+		expect((proxied as any).activeProxies.length).toBe(3);
+		mockEndPoint.mockClear();
+		// Third call evicts each proxy as it fails; all three must still be tried.
+		await proxied.endPoint("https://t.com");
+		expect(mockEndPoint).toHaveBeenCalledTimes(3);
+		expect((proxied as any).activeProxies.length).toBe(0);
 	});
 });

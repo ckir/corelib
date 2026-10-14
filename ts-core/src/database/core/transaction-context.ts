@@ -44,24 +44,35 @@ interface TransactionContext {
 	driver: DbDriver;
 	/** Flight-recorder id for the transaction; stamped on every query run within it. */
 	txId: number;
+	/** The database instance that opened this transaction (identity-compared). */
+	owner?: object;
 }
 
 // Global storage singleton (dynamically initialized)
 export const transactionStorage =
 	await loadAsyncLocalStorage<TransactionContext>();
 
+/** Returns the store only if it belongs to `owner` (or no owner is requested). */
+function storeFor(owner?: object): TransactionContext | undefined {
+	const store = transactionStorage?.getStore();
+	if (owner !== undefined && store?.owner !== owner) return undefined;
+	return store;
+}
+
 /**
  * Gets the active transaction driver from context.
+ * When `owner` is given, only a transaction opened by that instance is returned.
  */
-export function getActiveTransaction(): DbDriver | undefined {
-	return transactionStorage?.getStore()?.driver;
+export function getActiveTransaction(owner?: object): DbDriver | undefined {
+	return storeFor(owner)?.driver;
 }
 
 /**
  * Gets the active transaction's flight-recorder id, or undefined outside a transaction.
+ * When `owner` is given, only a transaction opened by that instance is considered.
  */
-export function getActiveTxId(): number | undefined {
-	return transactionStorage?.getStore()?.txId;
+export function getActiveTxId(owner?: object): number | undefined {
+	return storeFor(owner)?.txId;
 }
 
 /**
@@ -72,9 +83,10 @@ export async function runInTransaction<T>(
 	driver: DbDriver,
 	txId: number,
 	callback: () => Promise<T>,
+	owner?: object,
 ): Promise<T> {
 	if (!transactionStorage) {
 		return callback();
 	}
-	return transactionStorage.run({ driver, txId }, callback);
+	return transactionStorage.run({ driver, txId, owner }, callback);
 }

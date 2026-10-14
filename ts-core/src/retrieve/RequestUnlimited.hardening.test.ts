@@ -91,13 +91,16 @@ describe("RequestUnlimited hardening", () => {
 		["undefined", undefined],
 		["null", null],
 		["a string", "boom"],
-	])("returns status:error (never throws) when fetch rejects with %s", async (_n, rejection) => {
-		const result = await endPoint("https://api.test.com/ok", {
-			retry: { limit: 0 },
-			fetch: () => Promise.reject(rejection),
-		});
-		expect(result.status).toBe("error");
-	});
+	])(
+		"returns status:error (never throws) when fetch rejects with %s",
+		async (_n, rejection) => {
+			const result = await endPoint("https://api.test.com/ok", {
+				retry: { limit: 0 },
+				fetch: () => Promise.reject(rejection),
+			});
+			expect(result.status).toBe("error");
+		},
+	);
 
 	it("does not leak query secrets in the HTTP Error warn log", async () => {
 		const result = await endPoint(

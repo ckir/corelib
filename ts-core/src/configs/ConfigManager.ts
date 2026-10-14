@@ -121,6 +121,11 @@ export function resolveAppName(
 	return pathMod.basename(cwd);
 }
 
+declare global {
+	/** Live config object bound once by ConfigManager. */
+	var sysconfig: Record<string, unknown> | undefined;
+}
+
 /**
  * ConfigManager handles the lifecycle of the application's configuration.
  * It manages globalThis.sysconfig and provides an event-driven interface
@@ -170,7 +175,7 @@ export class ConfigManager extends EventEmitter {
 
 		// Bind the live config object ONCE. Its reference never changes for the
 		// life of the process; all mutation is in place (finding -09).
-		(globalThis as any).sysconfig = this._config;
+		globalThis.sysconfig = this._config;
 	}
 
 	/**
@@ -425,12 +430,13 @@ export class ConfigManager extends EventEmitter {
 	private async fetchExternalConfig(
 		source: string,
 	): Promise<Record<string, unknown>> {
+		const isRemote = /^https?:\/\//i.test(source);
 		ConfigManager._logger.trace("external config", {
-			source: source.startsWith("http") ? "http" : "file",
+			source: isRemote ? "http" : "file",
 		});
 		let content: string;
 
-		if (source.startsWith("http")) {
+		if (isRemote) {
 			const { endPoint } = await import("../retrieve/RequestUnlimited");
 			const result = await endPoint<string>(source);
 			if (result.status === "error") {
@@ -649,7 +655,7 @@ export class ConfigManager extends EventEmitter {
 	/**
 	 * Parses values from Env/CLI, automatically handling JSON strings for arrays/objects.
 	 */
-	private parseValue(val: any): any {
+	private parseValue(val: unknown): unknown {
 		if (typeof val !== "string") return val;
 
 		if (

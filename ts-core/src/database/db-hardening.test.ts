@@ -101,19 +101,19 @@ describe.each([
 	const sensitiveLogs = () =>
 		JSON.stringify([...logger.error.mock.calls, ...logger.warn.mock.calls]);
 
-	it.each([
-		"result",
-		"throw",
-	] as const)("does not put SQL literals in error/warn logs (%s failure)", async (mode) => {
-		h.failMode = mode;
-		const db = await open();
-		const r = await db.query(`SELECT FAIL_ME '${SECRET}'`);
-		expect(r.status).toBe("error");
-		expect(logger.error).toHaveBeenCalled();
-		expect(sensitiveLogs()).not.toContain(SECRET);
-		// trace-level 'query: exec' is the one place SQL may appear.
-		expect(JSON.stringify(logger.trace.mock.calls)).toContain(SECRET);
-	});
+	it.each(["result", "throw"] as const)(
+		"does not put SQL literals in error/warn logs (%s failure)",
+		async (mode) => {
+			h.failMode = mode;
+			const db = await open();
+			const r = await db.query(`SELECT FAIL_ME '${SECRET}'`);
+			expect(r.status).toBe("error");
+			expect(logger.error).toHaveBeenCalled();
+			expect(sensitiveLogs()).not.toContain(SECRET);
+			// trace-level 'query: exec' is the one place SQL may appear.
+			expect(JSON.stringify(logger.trace.mock.calls)).toContain(SECRET);
+		},
+	);
 
 	it("keeps message text but drops SQL from the rollback warn log", async () => {
 		const db = await open();

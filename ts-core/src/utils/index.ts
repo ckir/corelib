@@ -43,8 +43,11 @@ export const getRequire = () => {
 		}
 
 		// 2. Fallback to global require (CommonJS or some Deno modes)
-		if (!_require && typeof (globalThis as any).require === "function") {
-			_require = (globalThis as any).require;
+		if (
+			!_require &&
+			typeof (globalThis as { require?: unknown }).require === "function"
+		) {
+			_require = (globalThis as { require: unknown }).require;
 		}
 
 		// 3. Fallback to a throwing function if nothing worked

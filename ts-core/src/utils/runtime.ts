@@ -18,6 +18,14 @@ export type Runtime =
 	| "aws-lambda" // AWS Lambda
 	| "gcp-cloudrun"; // Google Cloud Run
 
+/** Optional Cloudflare-ish globals probed during detection. */
+type MaybeCfGlobals = Partial<
+	Record<"cloudflare" | "caches" | "WebSocketPair" | "__CFW__", unknown>
+>;
+
+/** Deno namespace as seen by detection (version may be a polyfill stub). */
+type MaybeDeno = { version?: { deno?: string } };
+
 let _cachedRuntime: Runtime | undefined;
 
 function computeRuntime(): Runtime {
@@ -47,10 +55,10 @@ function computeRuntime(): Runtime {
 	try {
 		if (
 			(typeof globalThis !== "undefined" &&
-				(!!(globalThis as any).cloudflare ||
-					!!(globalThis as any).caches ||
-					!!(globalThis as any).WebSocketPair ||
-					!!(globalThis as any).__CFW__)) ||
+				(!!(globalThis as MaybeCfGlobals).cloudflare ||
+					!!(globalThis as MaybeCfGlobals).caches ||
+					!!(globalThis as MaybeCfGlobals).WebSocketPair ||
+					!!(globalThis as MaybeCfGlobals).__CFW__)) ||
 			(typeof process !== "undefined" &&
 				process.env &&
 				process.env.PLATFORM === "cloudflare")
@@ -95,8 +103,8 @@ function computeRuntime(): Runtime {
 	// Deno (Strict check to avoid polyfill false positives)
 	if (
 		typeof Deno !== "undefined" &&
-		(Deno as any).version &&
-		(Deno as any).version.deno
+		(Deno as MaybeDeno).version &&
+		(Deno as MaybeDeno).version?.deno
 	) {
 		return "deno";
 	}

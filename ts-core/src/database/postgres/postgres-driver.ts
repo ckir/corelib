@@ -4,6 +4,9 @@ import { type DatabaseResult, wrapError, wrapSuccess } from "../core/result";
 import type { QueryParams, QueryResponse } from "../core/types";
 import type { PostgresConfig } from "./postgres-config";
 
+/** Parameter list type accepted by postgres.js `unsafe()`. */
+type UnsafeParams = NonNullable<Parameters<Sql["unsafe"]>[1]>;
+
 export class PostgresDriver implements DbDriver {
 	// Typed after dynamic import; null until connect() is called
 	private client: Sql | ReservedSql | null = null;
@@ -73,7 +76,7 @@ export class PostgresDriver implements DbDriver {
 			// postgres.js ParameterOrJSON[] is incompatible with unknown[], cast required
 			const queryParams = (
 				Array.isArray(params) ? params : params ? Object.values(params) : []
-			) as any[];
+			) as UnsafeParams;
 			const client = this.client;
 			if (!client) throw new Error("Not connected");
 			const res = await client.unsafe(sql, queryParams);
@@ -101,7 +104,7 @@ export class PostgresDriver implements DbDriver {
 								: params
 									? Object.values(params)
 									: []
-						) as any[];
+						) as UnsafeParams;
 						const prepClient = this.client;
 						if (!prepClient) throw new Error("Not connected");
 						const res = await prepClient.unsafe(sql, queryParams);
@@ -149,7 +152,7 @@ export class PostgresDriver implements DbDriver {
 			// postgres.js ParameterOrJSON[] is incompatible with unknown[], cast required
 			const queryParams = (
 				Array.isArray(params) ? params : params ? Object.values(params) : []
-			) as any[];
+			) as UnsafeParams;
 			const client = this.client;
 			if (!client) throw new Error("Not connected");
 			for await (const row of client.unsafe(sql, queryParams).cursor()) {

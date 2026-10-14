@@ -33,13 +33,13 @@ export class SqliteDb {
 		params?: QueryParams,
 	): Promise<DatabaseResult<QueryResponse<T>>> {
 		const qid = nextCid();
-		const txDriver = getActiveTransaction();
+		const txDriver = getActiveTransaction(this);
 		const activeDriver = txDriver || this.driver;
 		const startedAt = performance.now();
 		// Flight-recorder correlation: traceId follows one logical op across queries
 		// (app-provided via getTraceId); txId groups queries within the current transaction.
 		const traceId = this.config.getTraceId?.();
-		const txId = getActiveTxId();
+		const txId = getActiveTxId(this);
 		const corr = {
 			...(traceId != null ? { traceId } : {}),
 			...(txId != null ? { txId } : {}),
@@ -135,7 +135,9 @@ export class SqliteDb {
 	async transaction<T>(
 		callback: () => Promise<DatabaseResult<T>>,
 	): Promise<DatabaseResult<T>> {
-		const existingDriver = getActiveTransaction() as SqliteDriver | undefined;
+		const existingDriver = getActiveTransaction(this) as
+			| SqliteDriver
+			| undefined;
 		const driver = existingDriver || this.driver;
 		const isNested = !!existingDriver;
 		const txId = nextCid();
@@ -156,30 +158,35 @@ export class SqliteDb {
 				await driver.beginTransaction();
 			}
 
-			return await runInTransaction(driver, txId, async () => {
-				const result = await callback();
+			return await runInTransaction(
+				driver,
+				txId,
+				async () => {
+					const result = await callback();
 
-				if (result.status === "success") {
-					if (isNested) {
-						await driver.query(`RELEASE SAVEPOINT ${savepointName}`);
+					if (result.status === "success") {
+						if (isNested) {
+							await driver.query(`RELEASE SAVEPOINT ${savepointName}`);
+						} else {
+							await driver.commitTransaction();
+						}
+						this.config.logger?.trace("tx: commit", { txId, isNested });
 					} else {
-						await driver.commitTransaction();
+						this.config.logger?.warn("Transaction rollback initiated", {
+							txId,
+							reason: safeDbError(result.reason),
+							isNested,
+						});
+						if (isNested) {
+							await driver.query(`ROLLBACK TO SAVEPOINT ${savepointName}`);
+						} else {
+							await driver.rollbackTransaction();
+						}
 					}
-					this.config.logger?.trace("tx: commit", { txId, isNested });
-				} else {
-					this.config.logger?.warn("Transaction rollback initiated", {
-						txId,
-						reason: safeDbError(result.reason),
-						isNested,
-					});
-					if (isNested) {
-						await driver.query(`ROLLBACK TO SAVEPOINT ${savepointName}`);
-					} else {
-						await driver.rollbackTransaction();
-					}
-				}
-				return result;
-			});
+					return result;
+				},
+				this,
+			);
 		} catch (e) {
 			this.config.logger?.error("Transaction failed due to exception", {
 				error: safeDbError(e),

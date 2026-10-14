@@ -9,7 +9,7 @@
  * Line 1: Ciphertext (Base64)
  * Password: CORELIB_AES_PASSWORD (Hex)
  */
-export async function decryptConfig(encryptedData: string): Promise<any> {
+export async function decryptConfig(encryptedData: string): Promise<unknown> {
 	const { getEnv } = await import("../utils");
 	const crypto = (await import("node:crypto")).default;
 	const password = getEnv("CORELIB_AES_PASSWORD");

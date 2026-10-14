@@ -37,8 +37,11 @@ const getRequire = () => {
 		}
 
 		// 2. Fallback to global require (CommonJS or some Deno modes)
-		if (!_require && typeof (globalThis as any).require === "function") {
-			_require = (globalThis as any).require;
+		if (
+			!_require &&
+			typeof (globalThis as { require?: unknown }).require === "function"
+		) {
+			_require = (globalThis as unknown as { require: RequireFn }).require;
 		}
 
 		// 3. Fallback to a throwing function if nothing worked
@@ -135,9 +138,22 @@ function fromNodeLike(runtime: "node" | "bun") {
  * Collects system information in Deno.
  * @returns {object} System information object.
  */
+/** Loosely-typed view of the Deno namespace fields we probe. */
+type DenoLike = {
+	systemMemoryInfo?: () => { total?: number };
+	build?: { os?: string; arch?: string };
+	pid?: number;
+	ppid?: number;
+	cwd?: () => string;
+	osRelease?: () => string;
+	loadavg?: () => number[];
+	env?: { toObject?: () => Record<string, string> };
+};
+
 function fromDeno() {
-	const DenoAny = typeof Deno !== "undefined" ? (Deno as any) : null;
-	const mem =
+	const DenoAny =
+		typeof Deno !== "undefined" ? (Deno as unknown as DenoLike) : null;
+	const mem: { total?: number } =
 		DenoAny && typeof DenoAny.systemMemoryInfo === "function"
 			? DenoAny.systemMemoryInfo()
 			: {};
@@ -158,7 +174,7 @@ function fromDeno() {
 			heapUsed: null,
 			external: null,
 		},
-		env: redactEnv(DenoAny?.env?.toObject() ?? {}),
+		env: redactEnv(DenoAny?.env?.toObject?.() ?? {}),
 	};
 }
 

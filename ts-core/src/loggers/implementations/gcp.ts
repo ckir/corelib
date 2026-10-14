@@ -4,13 +4,22 @@ import * as gcpConfig from "@google-cloud/pino-logging-gcp-config";
 import pino from "pino";
 import { type StrictLogger, StrictLoggerWrapper } from "../common";
 
+type GcpConfigFactory = (...args: unknown[]) => pino.LoggerOptions;
+type GcpConfigShape = {
+	createGcpLoggingPinoConfig?: GcpConfigFactory;
+	default?: GcpConfigFactory & {
+		createGcpLoggingPinoConfig?: GcpConfigFactory;
+	};
+};
+
 export default function createGcpLogger(): StrictLogger {
 	try {
 		// Dynamically access the config factory to handle both ESM and CJS shapes
+		const gcpShape = gcpConfig as unknown as GcpConfigShape;
 		const configFactory =
-			(gcpConfig as any).createGcpLoggingPinoConfig ||
-			(gcpConfig as any).default?.createGcpLoggingPinoConfig ||
-			(gcpConfig as any).default;
+			gcpShape.createGcpLoggingPinoConfig ||
+			gcpShape.default?.createGcpLoggingPinoConfig ||
+			gcpShape.default;
 
 		if (typeof configFactory !== "function") {
 			throw new Error(

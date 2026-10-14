@@ -173,8 +173,13 @@ export class RequestProxied {
 			};
 		}
 
-		let attempts = 0;
-		const _startIndex = this.currentIndex;
+		// Snapshot (rotated to the current index) so proxies evicted mid-call do not
+		// shrink the loop: every proxy active at call start is tried once.
+		const start = this.currentIndex % this.activeProxies.length;
+		const toTry = [
+			...this.activeProxies.slice(start),
+			...this.activeProxies.slice(0, start),
+		];
 		const targetStr =
 			typeof url === "string"
 				? url
@@ -182,13 +187,13 @@ export class RequestProxied {
 					? url.toString()
 					: url.url;
 
-		while (attempts < this.activeProxies.length) {
-			const proxyBase =
-				this.activeProxies[this.currentIndex % this.activeProxies.length];
+		for (const proxyBase of toTry) {
+			if (!this.activeProxies.includes(proxyBase)) continue;
 			const proxyUrl = this.buildProxyUrl(proxyBase, suffix, targetStr);
 
 			// Advance rotation on EVERY attempt (success or failure) as requested
-			this.currentIndex = (this.currentIndex + 1) % this.activeProxies.length;
+			this.currentIndex =
+				(this.activeProxies.indexOf(proxyBase) + 1) % this.activeProxies.length;
 
 			const result = await unlimitedEndPoint<T>(proxyUrl, options);
 
@@ -205,7 +210,6 @@ export class RequestProxied {
 
 			// Failure path
 			this.trackFailure(proxyBase);
-			attempts++;
 		}
 
 		// All proxies failed

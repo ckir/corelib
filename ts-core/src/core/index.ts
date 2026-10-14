@@ -62,7 +62,7 @@ async function loadFFI(): Promise<CoreFFI | null> {
 	const binaryName = "corelib-rust.node";
 	const pathsToTry: string[] = [];
 
-	let path: any;
+	let path: typeof import("node:path") | undefined;
 	try {
 		path = getRequire()("node:path");
 	} catch {
