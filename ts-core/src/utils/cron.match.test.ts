@@ -74,7 +74,7 @@ describe("includeExcludeCron (real croner)", () => {
 		const handler = vi.fn(() => {
 			calls++;
 			if (calls === 1) throw new Error("sync boom");
-			return Promise.reject(new Error("async boom")) as unknown as void;
+			return Promise.reject(new Error("async boom")) as unknown as undefined;
 		});
 		const job = includeExcludeCron(
 			["* * * * * *"],
