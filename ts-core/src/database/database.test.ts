@@ -59,6 +59,8 @@ vi.mock("./postgres/postgres-driver.js", () => {
 					close: vi.fn().mockResolvedValue(undefined),
 				}),
 			);
+			reserve = vi.fn().mockImplementation(async () => this);
+			release = vi.fn().mockResolvedValue(undefined);
 			beginTransaction = vi.fn().mockResolvedValue(undefined);
 			commitTransaction = vi.fn().mockResolvedValue(undefined);
 			rollbackTransaction = vi.fn().mockResolvedValue(undefined);

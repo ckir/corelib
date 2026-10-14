@@ -120,13 +120,16 @@ export class PostgresDb {
 		callback: () => Promise<DatabaseResult<T>>,
 	): Promise<DatabaseResult<T>> {
 		const existingDriver = getActiveTransaction() as PostgresDriver | undefined;
-		const driver = existingDriver || this.driver;
+		let driver = existingDriver || this.driver;
 		const isNested = !!existingDriver;
 		const txId = nextCid();
 		const savepointName = `sp_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
 		this.config.logger?.trace("tx: begin", { txId, isNested });
 
 		try {
+			// A top-level transaction owns one reserved connection so BEGIN, its statements and
+			// COMMIT/ROLLBACK cannot be spread across the pool.
+			if (!isNested) driver = await this.driver.reserve();
 			await driver.connect();
 			if (isNested) {
 				const spResult = await driver.query(`SAVEPOINT ${savepointName}`);
@@ -181,8 +184,12 @@ export class PostgresDb {
 			}
 			return wrapError(e);
 		} finally {
-			if (!isNested && this.config.mode === "stateless") {
-				await driver.disconnect();
+			if (!isNested) {
+				// Idempotent: commit/rollback already released it on the normal paths.
+				await driver.release();
+				if (this.config.mode === "stateless") {
+					await this.driver.disconnect();
+				}
 			}
 		}
 	}

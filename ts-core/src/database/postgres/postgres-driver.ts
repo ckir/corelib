@@ -1,4 +1,4 @@
-import type { Sql } from "postgres";
+import type { ReservedSql, Sql } from "postgres";
 import type { DbDriver, PreparedDriverStatement } from "../core/driver";
 import { type DatabaseResult, wrapError, wrapSuccess } from "../core/result";
 import type { QueryParams, QueryResponse } from "../core/types";
@@ -6,9 +6,38 @@ import type { PostgresConfig } from "./postgres-config";
 
 export class PostgresDriver implements DbDriver {
 	// Typed after dynamic import; null until connect() is called
-	private client: Sql | null = null;
+	private client: Sql | ReservedSql | null = null;
+	// Set only on a transaction-scoped driver (see reserve()); returns the connection to the pool.
+	private releaseConnection: (() => void) | null = null;
 
-	constructor(private config: PostgresConfig) {}
+	constructor(
+		private config: PostgresConfig,
+		reserved?: ReservedSql,
+	) {
+		if (reserved) {
+			this.client = reserved;
+			this.releaseConnection = () => reserved.release();
+		}
+	}
+
+	/**
+	 * Reserves one pooled connection and returns a driver bound to it.
+	 * BEGIN, every statement in the transaction, and COMMIT/ROLLBACK all run on that
+	 * single connection; the pool would otherwise spread them across connections.
+	 * The connection is returned to the pool on commit, rollback or release().
+	 */
+	async reserve(): Promise<PostgresDriver> {
+		await this.connect();
+		const pool = this.client as Sql;
+		return new PostgresDriver(this.config, await pool.reserve());
+	}
+
+	/** Returns a reserved connection to the pool. Idempotent; no-op on a pool driver. */
+	async release(): Promise<void> {
+		const release = this.releaseConnection;
+		this.releaseConnection = null;
+		release?.();
+	}
 
 	async connect(): Promise<void> {
 		if (this.client) return;
@@ -23,8 +52,13 @@ export class PostgresDriver implements DbDriver {
 	}
 
 	async disconnect(): Promise<void> {
+		if (this.releaseConnection) {
+			await this.release();
+			return;
+		}
 		if (this.client) {
-			await this.client.end();
+			// Only a pool driver reaches here, so the client is a full Sql instance.
+			await (this.client as Sql).end();
 			this.client = null;
 		}
 	}
@@ -92,10 +126,18 @@ export class PostgresDriver implements DbDriver {
 		await this.client?.unsafe("BEGIN");
 	}
 	async commitTransaction(): Promise<void> {
-		await this.client?.unsafe("COMMIT");
+		try {
+			await this.client?.unsafe("COMMIT");
+		} finally {
+			await this.release();
+		}
 	}
 	async rollbackTransaction(): Promise<void> {
-		await this.client?.unsafe("ROLLBACK");
+		try {
+			await this.client?.unsafe("ROLLBACK");
+		} finally {
+			await this.release();
+		}
 	}
 
 	async stream<T>(
