@@ -12,12 +12,20 @@ const encoder = new TextEncoder();
 
 /** Compares two strings in constant time by comparing their SHA-256 digests. */
 async function safeEqual(a: string, b: string): Promise<boolean> {
-	const [x, y] = await Promise.all([
+	const [dx, dy] = await Promise.all([
 		crypto.subtle.digest("SHA-256", encoder.encode(a)),
 		crypto.subtle.digest("SHA-256", encoder.encode(b)),
-	]).then(([dx, dy]) => [new Uint8Array(dx), new Uint8Array(dy)]);
+	]);
+	const x = new Uint8Array(dx);
+	const y = new Uint8Array(dy);
 	let diff = 0;
-	for (let i = 0; i < x.length; i++) diff |= x[i] ^ y[i];
+	for (let i = 0; i < x.length; i++) {
+		const xi = x[i];
+		const yi = y[i];
+		// Unreachable (both digests are 32 bytes); fail closed if it ever happens.
+		if (xi === undefined || yi === undefined) return false;
+		diff |= xi ^ yi;
+	}
 	return diff === 0;
 }
 

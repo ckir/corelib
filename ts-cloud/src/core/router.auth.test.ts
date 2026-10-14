@@ -53,7 +53,7 @@ describe("router authentication", () => {
 				{
 					method,
 					headers: { "content-type": "application/json" },
-					body: body ? JSON.stringify(body) : undefined,
+					...(body ? { body: JSON.stringify(body) } : {}),
 				},
 				env,
 			);

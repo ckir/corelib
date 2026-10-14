@@ -18,14 +18,30 @@ export interface ProxyTargetOptions {
 const INTERNAL_NAME =
 	/(^|\.)(localhost|local|internal|localdomain|lan|home\.arpa)$/;
 
-function ipv4Octets(host: string): number[] | null {
+type Ipv4 = readonly [number, number, number, number];
+type Ipv6 = readonly [
+	number,
+	number,
+	number,
+	number,
+	number,
+	number,
+	number,
+	number,
+];
+
+function ipv4Octets(host: string): Ipv4 | null {
 	const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
 	if (!m) return null;
-	const octets = m.slice(1).map(Number);
+	const [, a, b, c, d] = m;
+	// Unreachable (the regex has four groups); a missing group is treated as not an address.
+	if (a === undefined || b === undefined || c === undefined || d === undefined)
+		return null;
+	const octets: Ipv4 = [Number(a), Number(b), Number(c), Number(d)];
 	return octets.every((o) => o <= 255) ? octets : null;
 }
 
-function isBlockedIpv4([a, b]: number[]): boolean {
+function isBlockedIpv4([a, b]: Ipv4): boolean {
 	return (
 		a === 0 || // "this network", 0.0.0.0
 		a === 10 ||
@@ -41,16 +57,17 @@ function isBlockedIpv4([a, b]: number[]): boolean {
 }
 
 /** Expands an IPv6 literal (no brackets, no zone) to eight 16-bit groups, or null if malformed. */
-function ipv6Groups(host: string): number[] | null {
+function ipv6Groups(host: string): Ipv6 | null {
 	if (!/^[0-9a-f:.]+$/i.test(host) || !host.includes(":")) return null;
 	let text = host;
 	// Trailing dotted-quad (::ffff:1.2.3.4) -> two hex groups
 	const tail = /:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(text);
-	if (tail) {
-		const o = ipv4Octets(tail[1]);
+	const tailV4 = tail?.[1];
+	if (tailV4 !== undefined) {
+		const o = ipv4Octets(tailV4);
 		if (!o) return null;
 		text =
-			text.slice(0, -tail[1].length) +
+			text.slice(0, -tailV4.length) +
 			`${((o[0] << 8) | o[1]).toString(16)}:${((o[2] << 8) | o[3]).toString(16)}`;
 	}
 	const halves = text.split("::");
@@ -67,11 +84,25 @@ function ipv6Groups(host: string): number[] | null {
 	const nums = groups.map((g) =>
 		/^[0-9a-f]{1,4}$/i.test(g) ? Number.parseInt(g, 16) : Number.NaN,
 	);
-	return nums.length === 8 && nums.every((n) => !Number.isNaN(n)) ? nums : null;
+	const [n0, n1, n2, n3, n4, n5, n6, n7, ...extra] = nums;
+	if (
+		n0 === undefined ||
+		n1 === undefined ||
+		n2 === undefined ||
+		n3 === undefined ||
+		n4 === undefined ||
+		n5 === undefined ||
+		n6 === undefined ||
+		n7 === undefined ||
+		extra.length > 0 ||
+		nums.some((n) => Number.isNaN(n))
+	)
+		return null;
+	return [n0, n1, n2, n3, n4, n5, n6, n7];
 }
 
-function isBlockedIpv6(g: number[]): boolean {
-	const embeddedV4 = [g[6] >> 8, g[6] & 0xff, g[7] >> 8, g[7] & 0xff];
+function isBlockedIpv6(g: Ipv6): boolean {
+	const embeddedV4: Ipv4 = [g[6] >> 8, g[6] & 0xff, g[7] >> 8, g[7] & 0xff];
 	const firstSixZero = g.slice(0, 6).every((x) => x === 0);
 	return (
 		g.every((x) => x === 0) || // ::
