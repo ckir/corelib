@@ -79,7 +79,7 @@ npm install @ckirg/corelib @ckirg/corelib-markets
 ### 🦀 The Native Rust Binary
 `@ckirg/corelib` ships a `postinstall` that downloads the correct prebuilt Rust binary (`corelib-rust-*.node`) for your OS/arch from the matching GitHub Release.
 
-- **Supported targets:** `linux-x64`, `win32-x64`, `darwin-x64`, `darwin-arm64`. There is **no `linux-arm64`** build — Linux deployments must be x64 (e.g. not AWS Graviton / Ampere) until an arm64 binary is shipped.
+- **Supported targets:** `linux-x64`, `linux-arm64`, `win32-x64`, `darwin-x64`, `darwin-arm64`. The `linux-arm64` module (AWS Graviton, Ampere, Raspberry Pi) is built against glibc 2.34 and so also loads on AWS Lambda; it ships from v0.3.1 on.
 - **Bun consumers:** Bun blocks dependency `postinstall` scripts by default. Add corelib to `trustedDependencies` in your `package.json`, or the binary is never fetched and the FFI fails at runtime:
   ```json
   "trustedDependencies": ["@ckirg/corelib"]

@@ -8,8 +8,9 @@
 # then loads it in the real Lambda image before it hands you the zip.
 #
 # Usage: scripts/package-lambda.sh
-# Needs: docker, pnpm, zip. First run downloads two images and compiles the crate (~2 min); later
-# runs reuse the cargo cache in the docker volume `corelib-lambda-cargo`.
+# Needs: docker, pnpm, zip. The native build is scripts/build-rust-al2023.sh, which enforces glibc <= 2.34.
+# First run downloads two images and compiles the crate (~2 min); later runs reuse the cargo cache in
+# the docker volume `corelib-lambda-cargo`.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -19,48 +20,18 @@ for tool in docker pnpm zip; do
 	command -v "$tool" >/dev/null || { echo "package-lambda: '$tool' not found" >&2; exit 1; }
 done
 
-TOOLCHAIN="$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)"
-[ -n "$TOOLCHAIN" ] || { echo "package-lambda: no channel in rust-toolchain.toml" >&2; exit 1; }
-MAX_GLIBC="2.34"
-BUILD_IMAGE="amazonlinux:2023"
 RUN_IMAGE="public.ecr.aws/lambda/nodejs:24"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
-mkdir -p "$WORK/src/rust" "$WORK/out"
 
 echo "==> Building the TypeScript bundles"
 pnpm --filter ./ts-core build
 pnpm --filter ./ts-markets build
 pnpm --filter ./ts-cloud build
 
-echo "==> Building corelib-rust.node in $BUILD_IMAGE (Rust $TOOLCHAIN)"
-cp -r rust/Cargo.toml rust/Cargo.lock rust/build.rs rust/package.json rust/src "$WORK/src/rust/"
-cat >"$WORK/build.sh" <<EOF
-set -euo pipefail
-export CARGO_HOME=/cache/cargo RUSTUP_HOME=/cache/rustup CARGO_TARGET_DIR=/cache/target
-dnf install -y -q gcc gcc-c++ make pkgconf-pkg-config openssl-devel ca-certificates curl-minimal >/dev/null
-if [ ! -x /cache/cargo/bin/rustup ]; then
-	curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain $TOOLCHAIN >/dev/null 2>&1
-fi
-. /cache/cargo/env
-rustup toolchain install $TOOLCHAIN --profile minimal >/dev/null 2>&1
-cd /work/src/rust
-cargo +$TOOLCHAIN build --release --locked
-cp /cache/target/release/libcorelib_rust.so /work/out/corelib-rust.node
-EOF
-docker run --rm -v "$WORK:/work" -v corelib-lambda-cargo:/cache -w /work "$BUILD_IMAGE" bash /work/build.sh
-
-echo "==> Checking the binary needs glibc <= $MAX_GLIBC"
-docker run --rm -v "$WORK/out:/out:ro" "$BUILD_IMAGE" bash -c \
-	"dnf install -y -q binutils >/dev/null && objdump -T /out/corelib-rust.node | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1" \
-	>"$WORK/glibc.txt"
-NEEDED="$(sed 's/GLIBC_//' "$WORK/glibc.txt")"
-if [ "$(printf '%s\n%s\n' "$NEEDED" "$MAX_GLIBC" | sort -V | tail -1)" != "$MAX_GLIBC" ]; then
-	echo "package-lambda: binary needs glibc $NEEDED, Lambda has $MAX_GLIBC" >&2
-	exit 1
-fi
-echo "    needs glibc $NEEDED"
+mkdir -p "$WORK/out"
+"$ROOT/scripts/build-rust-al2023.sh" "$WORK/out"
 
 echo "==> Staging the package"
 PKG="$WORK/pkg"

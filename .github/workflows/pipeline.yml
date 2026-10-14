@@ -232,7 +232,7 @@ jobs:
   #    check-version -> build-ts + build-rust -> verify-assets -> release -> publish-npm
   # Rehearsal (no publishing) runs on pull requests that touch release-relevant paths, weekly,
   # and on manual dispatch, so the release path is exercised long before a tag is pushed.
-  # Assets: 3 TS tarballs, 4 native modules (.node), 3 CLI binaries x 4 targets.
+  # Assets: 3 TS tarballs, 5 native modules (.node), 3 CLI binaries x 5 targets.
   # The Rust toolchain comes from rust-toolchain.toml via ./.github/actions/setup-rust.
   # ---------------------------------------------------------
   changes:
@@ -330,6 +330,14 @@ jobs:
             bin_yahoo: yahoo_streamer-linux-x64
             bin_polling: nasdaq_polling-linux-x64
             bin_alpaca: alpaca_streamer-linux-x64
+          # Built in amazonlinux:2023 (glibc 2.34) instead of on the runner: a binary linked on the
+          # runner's glibc 2.39 would not load on AWS Lambda/Graviton or older distros.
+          - os: ubuntu-24.04-arm
+            artifact_name: corelib-rust-linux-arm64.node
+            bin_yahoo: yahoo_streamer-linux-arm64
+            bin_polling: nasdaq_polling-linux-arm64
+            bin_alpaca: alpaca_streamer-linux-arm64
+            glibc_container: true
           # macos-latest is Apple Silicon; the x64 build needs an Intel runner or it would
           # silently ship an arm64 binary under an x64 name.
           - os: macos-15-intel
@@ -357,19 +365,32 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      - name: Build native module and CLI binaries in amazonlinux:2023 (glibc 2.34)
+        if: ${{ matrix.glibc_container }}
+        run: |
+          scripts/build-rust-al2023.sh dist-rust --bins
+          mv dist-rust/corelib-rust.node ${{ matrix.artifact_name }}
+          mv dist-rust/yahoo_streamer ${{ matrix.bin_yahoo }}
+          mv dist-rust/nasdaq_polling ${{ matrix.bin_polling }}
+          mv dist-rust/alpaca_streamer ${{ matrix.bin_alpaca }}
       - name: Setup Rust (pinned)
+        if: ${{ !matrix.glibc_container }}
         uses: ./.github/actions/setup-rust
       - name: Install dependencies
+        if: ${{ !matrix.glibc_container }}
         run: pnpm install --frozen-lockfile
       - name: Build Rust FFI
+        if: ${{ !matrix.glibc_container }}
         run: |
           cd rust
           pnpm exec napi build --release
       - name: Build CLI binaries
+        if: ${{ !matrix.glibc_container }}
         run: |
           cd rust
           cargo build --release --bins --features clap
       - name: Rename artifacts
+        if: ${{ !matrix.glibc_container }}
         shell: bash
         run: |
           mv rust/corelib-rust.node ${{ matrix.artifact_name }}
@@ -407,7 +428,7 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
-      - name: Check the 19 expected assets and tarball versions
+      - name: Check the 23 expected assets and tarball versions
         shell: bash
         run: |
           set -euo pipefail
@@ -415,7 +436,7 @@ jobs:
           missing=0
           expect() { if [[ -s "artifacts/$1" ]]; then echo "ok  $1"; else echo "::error::missing or empty: $1"; missing=1; fi; }
           for pkg in corelib corelib-markets corelib-cloud; do expect "ckirg-$pkg-$VERSION.tgz"; done
-          for t in linux-x64 darwin-x64 darwin-arm64 win32-x64; do
+          for t in linux-x64 linux-arm64 darwin-x64 darwin-arm64 win32-x64; do
             expect "corelib-rust-$t.node"
             for b in yahoo_streamer nasdaq_polling alpaca_streamer; do
               ext=""; [[ "$t" == win32-x64 ]] && ext=".exe"
