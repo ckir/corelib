@@ -117,7 +117,8 @@ describe("ConfigManager — concurrency layer (Epic-1 Task 4)", () => {
 			// The seeded default for "markets" must be defined (it's in ConfigManager.json).
 			expect(value).toBeDefined();
 		} finally {
-			process.env.NODE_ENV = originalNodeEnv as string;
+			if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+			else process.env.NODE_ENV = originalNodeEnv;
 			warnSpy.mockRestore();
 		}
 	});
@@ -139,7 +140,8 @@ describe("ConfigManager — concurrency layer (Epic-1 Task 4)", () => {
 			// Value is still returned even without warning.
 			expect(value).toBeDefined();
 		} finally {
-			process.env.NODE_ENV = originalNodeEnv as string;
+			if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+			else process.env.NODE_ENV = originalNodeEnv;
 			warnSpy.mockRestore();
 		}
 	});
