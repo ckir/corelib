@@ -39,7 +39,7 @@ describe("ConfigManager CLI-override bootstrap contract", () => {
 		// Trap process.exit so a library-triggered exit surfaces as a test failure
 		// instead of tearing down the worker. Records whether/with-what it fired.
 		const realExit = process.exit;
-		let exitCalledWith: number | string | null | undefined = undefined;
+		let exitCalledWith: number | string | null | undefined;
 		// @ts-expect-error overriding for the duration of the assertion
 		process.exit = (code?: number | string | null) => {
 			exitCalledWith = code;

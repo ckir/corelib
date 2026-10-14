@@ -23,17 +23,19 @@ import { describe, expect, it } from "vitest";
 import { coreFFI } from "../../ts-core/dist/index.js";
 
 describe("correlation-id FFI context (design probe)", () => {
-  it("PROBE_CONFIRMED correlation-id-absent: no trace_id seam across the #[napi] boundary", () => {
-    const noop = () => {};
-    const s = new coreFFI.AlpacaStreaming(noop, noop, noop, noop);
+	it("PROBE_CONFIRMED correlation-id-absent: no trace_id seam across the #[napi] boundary", () => {
+		const noop = () => {};
+		const s = new coreFFI.AlpacaStreaming(noop, noop, noop, noop);
 
-    // There is no API to thread a correlation/trace id: no constructor arg, no init field, and no
-    // dedicated setter. A `trace_id` passed in the init config is silently dropped by napi
-    // deserialization (AlpacaConfig has no such field). This asserts the DESIGN GAP, not a fault.
-    const hasTraceSeam =
-      typeof s.setTraceId === "function" || typeof s.withTraceId === "function";
+		// There is no API to thread a correlation/trace id: no constructor arg, no init field, and no
+		// dedicated setter. A `trace_id` passed in the init config is silently dropped by napi
+		// deserialization (AlpacaConfig has no such field). This asserts the DESIGN GAP, not a fault.
+		const hasTraceSeam =
+			typeof s.setTraceId === "function" || typeof s.withTraceId === "function";
 
-    console.log(`PROBE_CONFIRMED correlation-id-absent trace_seam=${hasTraceSeam}`);
-    expect(hasTraceSeam).toBe(false); // confirms absence — backlog the explicit-context design
-  });
+		console.log(
+			`PROBE_CONFIRMED correlation-id-absent trace_seam=${hasTraceSeam}`,
+		);
+		expect(hasTraceSeam).toBe(false); // confirms absence — backlog the explicit-context design
+	});
 });

@@ -22,72 +22,88 @@ const SECRET_VALUE = "SUPERSECRETxyz123ABC"; // the canary; must never appear in
 const SECRET_HEADER = `Bearer ${SECRET_VALUE}`;
 
 function captureLogger() {
-  const calls: unknown[] = [];
-  const rec =
-    (lvl: string) =>
-    (...args: unknown[]) => {
-      calls.push({ lvl, args });
-    };
-  const logger = {
-    info: vi.fn(rec("info")),
-    warn: vi.fn(rec("warn")),
-    error: vi.fn(rec("error")),
-    debug: vi.fn(rec("debug")),
-    child: vi.fn().mockReturnThis(),
-    bindings: vi.fn().mockReturnValue({}),
-  };
-  return { logger, calls };
+	const calls: unknown[] = [];
+	const rec =
+		(lvl: string) =>
+		(...args: unknown[]) => {
+			calls.push({ lvl, args });
+		};
+	const logger = {
+		info: vi.fn(rec("info")),
+		warn: vi.fn(rec("warn")),
+		error: vi.fn(rec("error")),
+		debug: vi.fn(rec("debug")),
+		child: vi.fn().mockReturnThis(),
+		bindings: vi.fn().mockReturnValue({}),
+	};
+	return { logger, calls };
 }
 
 // Hostile paths — must not crash the router (each should resolve to a 404/handled Response).
 const HOSTILE_PATHS = [
-  "/api/v1/'; DROP TABLE users;--",
-  "/api/v1/../../../../etc/passwd",
-  "/api/v1/%3Cscript%3Ealert(1)%3C%2Fscript%3E",
-  "/api/v1/%00%0a%0d",
-  `/api/v1/${"A".repeat(20000)}`, // oversized path
-  "/health", // a valid route, with secrets planted below
+	"/api/v1/'; DROP TABLE users;--",
+	"/api/v1/../../../../etc/passwd",
+	"/api/v1/%3Cscript%3Ealert(1)%3C%2Fscript%3E",
+	"/api/v1/%00%0a%0d",
+	`/api/v1/${"A".repeat(20000)}`, // oversized path
+	"/health", // a valid route, with secrets planted below
 ];
 
 describe("router input safety (Cluster 5 security probe)", () => {
-  it("malformed/injection inputs never crash and never leak request secrets", async () => {
-    const { logger, calls } = captureLogger();
-    const app = createRouter(logger as unknown as Parameters<typeof createRouter>[0]);
-    let confirmed = false;
+	it("malformed/injection inputs never crash and never leak request secrets", async () => {
+		const { logger, calls } = captureLogger();
+		const app = createRouter(
+			logger as unknown as Parameters<typeof createRouter>[0],
+		);
+		let confirmed = false;
 
-    for (const path of HOSTILE_PATHS) {
-      let res: Response;
-      try {
-        // Plant the secret in a header, the query string, and a JSON body — the places real secrets live.
-        res = await app.request(`${path}?token=${encodeURIComponent(SECRET_VALUE)}`, {
-          method: "POST",
-          headers: { authorization: SECRET_HEADER, "x-api-key": SECRET_VALUE, "content-type": "application/json" },
-          body: JSON.stringify({ secret_key: SECRET_VALUE, nested: { token: SECRET_VALUE } }),
-        });
-      } catch (e) {
-        confirmed = true;
-        console.log(`PROBE_CONFIRMED router-input-safety crash_on=${path} err=${String(e)}`);
-        continue;
-      }
-      expect(res).toBeInstanceOf(Response); // (a) no crash — always a Response
-      const bodyText = await res.text();
-      if (bodyText.includes(SECRET_VALUE)) {
-        confirmed = true;
-        console.log(`PROBE_CONFIRMED router-input-safety secret_in_response path=${path} status=${res.status}`);
-      }
-    }
+		for (const path of HOSTILE_PATHS) {
+			let res: Response;
+			try {
+				// Plant the secret in a header, the query string, and a JSON body — the places real secrets live.
+				res = await app.request(
+					`${path}?token=${encodeURIComponent(SECRET_VALUE)}`,
+					{
+						method: "POST",
+						headers: {
+							authorization: SECRET_HEADER,
+							"x-api-key": SECRET_VALUE,
+							"content-type": "application/json",
+						},
+						body: JSON.stringify({
+							secret_key: SECRET_VALUE,
+							nested: { token: SECRET_VALUE },
+						}),
+					},
+				);
+			} catch (e) {
+				confirmed = true;
+				console.log(
+					`PROBE_CONFIRMED router-input-safety crash_on=${path} err=${String(e)}`,
+				);
+				continue;
+			}
+			expect(res).toBeInstanceOf(Response); // (a) no crash — always a Response
+			const bodyText = await res.text();
+			if (bodyText.includes(SECRET_VALUE)) {
+				confirmed = true;
+				console.log(
+					`PROBE_CONFIRMED router-input-safety secret_in_response path=${path} status=${res.status}`,
+				);
+			}
+		}
 
-    // (b) the raw secret value must appear in NO captured log argument.
-    const loggedJson = JSON.stringify(calls);
-    if (loggedJson.includes(SECRET_VALUE)) {
-      confirmed = true;
-      console.log("PROBE_CONFIRMED router-input-safety secret_in_logs");
-    }
+		// (b) the raw secret value must appear in NO captured log argument.
+		const loggedJson = JSON.stringify(calls);
+		if (loggedJson.includes(SECRET_VALUE)) {
+			confirmed = true;
+			console.log("PROBE_CONFIRMED router-input-safety secret_in_logs");
+		}
 
-    if (!confirmed) {
-      console.log("PROBE_CLEAN router-input-safety no-crash no-secret-leak");
-    }
-    // Security invariant is a HARD gate: assert no crash and no secret leak.
-    expect(confirmed).toBe(false);
-  });
+		if (!confirmed) {
+			console.log("PROBE_CLEAN router-input-safety no-crash no-secret-leak");
+		}
+		// Security invariant is a HARD gate: assert no crash and no secret leak.
+		expect(confirmed).toBe(false);
+	});
 });

@@ -40,8 +40,8 @@
 // =============================================
 
 import { spawn, spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -88,15 +88,11 @@ function killTree(pid: number | undefined): void {
 
 function runChild(): Promise<ChildResult> {
 	return new Promise((resolveResult) => {
-		const child = spawn(
-			process.execPath,
-			["--expose-gc", CHILD_REL],
-			{
-				cwd: REPO_ROOT,
-				env: { ...process.env },
-				stdio: ["ignore", "pipe", "pipe"],
-			},
-		);
+		const child = spawn(process.execPath, ["--expose-gc", CHILD_REL], {
+			cwd: REPO_ROOT,
+			env: { ...process.env },
+			stdio: ["ignore", "pipe", "pipe"],
+		});
 
 		let stdoutBuf = "";
 		let stderrBuf = "";
@@ -121,23 +117,35 @@ function runChild(): Promise<ChildResult> {
 
 			for (const line of stdoutBuf.split("\n")) {
 				const t = line.trim();
-				let m: RegExpMatchArray | null;
-				if ((m = t.match(/^BASELINE_RSS=(\d+)/))) {
-					baselineRss = Number(m[1]);
-				} else if ((m = t.match(/^BASELINE_HEAP=(\d+)/))) {
-					baselineHeap = Number(m[1]);
-				} else if ((m = t.match(/^TERMINAL_RSS=(\d+)/))) {
-					terminalRss = Number(m[1]);
-				} else if ((m = t.match(/^TERMINAL_HEAP=(\d+)/))) {
-					terminalHeap = Number(m[1]);
-				} else if ((m = t.match(/^SENT=(\d+)/))) {
-					sent = Number(m[1]);
-				} else if ((m = t.match(/^RECEIVED=(\d+)/))) {
-					received = Number(m[1]);
-				} else if ((m = t.match(/^STREAM_READY=(\d+)/))) {
-					streamReady = Number(m[1]) === 1;
-				} else if ((m = t.match(/^CHILD_ERROR (.+)/))) {
-					childError = m[1];
+				const kv = /^([A-Z_]+)=(\d+)/.exec(t);
+				if (kv) {
+					const n = Number(kv[2]);
+					switch (kv[1]) {
+						case "BASELINE_RSS":
+							baselineRss = n;
+							break;
+						case "BASELINE_HEAP":
+							baselineHeap = n;
+							break;
+						case "TERMINAL_RSS":
+							terminalRss = n;
+							break;
+						case "TERMINAL_HEAP":
+							terminalHeap = n;
+							break;
+						case "SENT":
+							sent = n;
+							break;
+						case "RECEIVED":
+							received = n;
+							break;
+						case "STREAM_READY":
+							streamReady = n === 1;
+							break;
+					}
+				} else {
+					const err = /^CHILD_ERROR (.+)/.exec(t);
+					if (err) childError = err[1];
 				}
 			}
 
@@ -195,7 +203,7 @@ describe("Transport backpressure — real streamer at loopback, starved pump (Cl
 			// Native (off-V8-heap) growth: isolates TSFN-queue / socket-buffer signal
 			// from probe's own V8 churn. Formula mirrors tsfn-backpressure.probe.test.ts.
 			const nativeGrowthMb =
-				((r.terminalRss - r.terminalHeap) - (r.baselineRss - r.baselineHeap)) /
+				(r.terminalRss - r.terminalHeap - (r.baselineRss - r.baselineHeap)) /
 				(1024 * 1024);
 
 			// V8 heap growth: probe's own object churn — reported but not gated.
@@ -203,19 +211,17 @@ describe("Transport backpressure — real streamer at loopback, starved pump (Cl
 
 			// Drop percentage: fraction of sent frames that never reached on_pricing.
 			// High drop_pct + low native growth = NonBlocking is working correctly.
-			const dropPct =
-				r.sent > 0 ? (1 - r.received / r.sent) * 100 : 0;
+			const dropPct = r.sent > 0 ? (1 - r.received / r.sent) * 100 : 0;
 
 			// Machine-readable finding line for the adjudicator / CI log.
 			// PROBE_CONFIRMED only if native growth > 5 MB (unbounded buffering signal).
 			// If STREAM_READY=0, classify as PROBE_PARTIAL (environment limitation: no
 			// TSFN pressure possible, measurement is a harness-health / crash-guard only).
-			const classification =
-				!r.streamReady
-					? "PROBE_PARTIAL"
-					: nativeGrowthMb > 5
-						? "PROBE_CONFIRMED"
-						: "PROBE_CLEAN";
+			const classification = !r.streamReady
+				? "PROBE_PARTIAL"
+				: nativeGrowthMb > 5
+					? "PROBE_CONFIRMED"
+					: "PROBE_CLEAN";
 
 			// eslint-disable-next-line no-console
 			console.log(
@@ -224,19 +230,24 @@ describe("Transport backpressure — real streamer at loopback, starved pump (Cl
 			// eslint-disable-next-line no-console
 			console.log(
 				`[Cluster-1 2.2] exit=${r.exitCode} signal=${r.signal} childError=${r.childError} ` +
-				`baseline_rss=${r.baselineRss} baseline_heap=${r.baselineHeap} ` +
-				`terminal_rss=${r.terminalRss} terminal_heap=${r.terminalHeap} ` +
-				`v8_growth_mb=${v8GrowthMb.toFixed(2)} stderr=${r.stderr.slice(-200)}`,
+					`baseline_rss=${r.baselineRss} baseline_heap=${r.baselineHeap} ` +
+					`terminal_rss=${r.terminalRss} terminal_heap=${r.terminalHeap} ` +
+					`v8_growth_mb=${v8GrowthMb.toFixed(2)} stderr=${r.stderr.slice(-200)}`,
 			);
 
 			// ORACLE: the probe must complete without crash/hang.
 			// We do NOT assert clean-vs-confirmed vs partial — that is the measurement finding.
-			expect(r.childError, `child reported CHILD_ERROR: ${r.childError}`).toBeNull();
+			expect(
+				r.childError,
+				`child reported CHILD_ERROR: ${r.childError}`,
+			).toBeNull();
 			expect(
 				r.exitCode,
 				`expected clean exit 0, got ${r.exitCode} signal=${r.signal} stderr=${r.stderr.slice(-200)}`,
 			).toBe(0);
-			expect(r.sent, "flood must have sent at least one frame").toBeGreaterThan(0);
+			expect(r.sent, "flood must have sent at least one frame").toBeGreaterThan(
+				0,
+			);
 		},
 		CEILING_MS + 10_000,
 	);

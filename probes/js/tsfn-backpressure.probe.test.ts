@@ -32,8 +32,8 @@
 // =============================================
 
 import { spawn, spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -79,15 +79,11 @@ function killTree(pid: number | undefined): void {
 
 function runChild(): Promise<ChildResult> {
 	return new Promise((resolveResult) => {
-		const child = spawn(
-			process.execPath,
-			["--expose-gc", CHILD_REL],
-			{
-				cwd: REPO_ROOT,
-				env: { ...process.env, CORELIB_LOADGEN: "1" },
-				stdio: ["ignore", "pipe", "pipe"],
-			},
-		);
+		const child = spawn(process.execPath, ["--expose-gc", CHILD_REL], {
+			cwd: REPO_ROOT,
+			env: { ...process.env, CORELIB_LOADGEN: "1" },
+			stdio: ["ignore", "pipe", "pipe"],
+		});
 
 		let stdoutBuf = "";
 		let stderrBuf = "";
@@ -112,23 +108,35 @@ function runChild(): Promise<ChildResult> {
 
 			for (const line of stdoutBuf.split("\n")) {
 				const t = line.trim();
-				let m: RegExpMatchArray | null;
-				if ((m = t.match(/^BASELINE_RSS=(\d+)/))) {
-					baselineRss = Number(m[1]);
-				} else if ((m = t.match(/^BASELINE_HEAP=(\d+)/))) {
-					baselineHeap = Number(m[1]);
-				} else if ((m = t.match(/^TERMINAL_RSS=(\d+)/))) {
-					terminalRss = Number(m[1]);
-				} else if ((m = t.match(/^TERMINAL_HEAP=(\d+)/))) {
-					terminalHeap = Number(m[1]);
-				} else if ((m = t.match(/^PEAK_RSS_DURING=(\d+)/))) {
-					peakRssDuring = Number(m[1]);
-				} else if ((m = t.match(/^RECEIVED=(\d+)/))) {
-					received = Number(m[1]);
-				} else if ((m = t.match(/^MAXSEQ=(\d+)/))) {
-					maxSeq = Number(m[1]);
-				} else if ((m = t.match(/^CHILD_ERROR (.+)/))) {
-					childError = m[1];
+				const kv = /^([A-Z_]+)=(\d+)/.exec(t);
+				if (kv) {
+					const n = Number(kv[2]);
+					switch (kv[1]) {
+						case "BASELINE_RSS":
+							baselineRss = n;
+							break;
+						case "BASELINE_HEAP":
+							baselineHeap = n;
+							break;
+						case "TERMINAL_RSS":
+							terminalRss = n;
+							break;
+						case "TERMINAL_HEAP":
+							terminalHeap = n;
+							break;
+						case "PEAK_RSS_DURING":
+							peakRssDuring = n;
+							break;
+						case "RECEIVED":
+							received = n;
+							break;
+						case "MAXSEQ":
+							maxSeq = n;
+							break;
+					}
+				} else {
+					const err = /^CHILD_ERROR (.+)/.exec(t);
+					if (err) childError = err[1];
 				}
 			}
 
@@ -186,12 +194,15 @@ describe("TSFN queue backpressure under blocked event loop (process-isolated)", 
 
 			const peakGrowthMB = (r.peakRssDuring - r.baselineRss) / (1024 * 1024);
 			// Native (off-V8-heap) growth: isolates TSFN-queue signal from probe's own V8 churn.
-			const nativeGrowthMb = ((r.terminalRss - r.terminalHeap) - (r.baselineRss - r.baselineHeap)) / (1024 * 1024);
+			const nativeGrowthMb =
+				(r.terminalRss - r.terminalHeap - (r.baselineRss - r.baselineHeap)) /
+				(1024 * 1024);
 			// V8 heap growth: probe's own JSON.parse/napiLatencyAck churn — reported but not gated.
 			const v8GrowthMb = (r.terminalHeap - r.baselineHeap) / (1024 * 1024);
 
 			// Machine-readable finding line for the adjudicator / CI log.
-			const classification = nativeGrowthMb > 5 ? "PROBE_CONFIRMED" : "PROBE_CLEAN";
+			const classification =
+				nativeGrowthMb > 5 ? "PROBE_CONFIRMED" : "PROBE_CLEAN";
 			// eslint-disable-next-line no-console
 			console.log(
 				`${classification} tsfn-queue native_growth_mb=${nativeGrowthMb.toFixed(2)} v8_growth_mb=${v8GrowthMb.toFixed(2)} received=${r.received}`,
@@ -203,9 +214,18 @@ describe("TSFN queue backpressure under blocked event loop (process-isolated)", 
 
 			// ORACLE: the probe must complete without crash/hang.
 			// We do NOT assert clean-vs-confirmed — that is recorded as a finding.
-			expect(r.childError, `child reported CHILD_ERROR: ${r.childError}`).toBeNull();
-			expect(r.exitCode, `expected clean exit 0, got ${r.exitCode} signal=${r.signal} stderr=${r.stderr.slice(-200)}`).toBe(0);
-			expect(r.received, "load generator must have delivered at least one tick").toBeGreaterThan(0);
+			expect(
+				r.childError,
+				`child reported CHILD_ERROR: ${r.childError}`,
+			).toBeNull();
+			expect(
+				r.exitCode,
+				`expected clean exit 0, got ${r.exitCode} signal=${r.signal} stderr=${r.stderr.slice(-200)}`,
+			).toBe(0);
+			expect(
+				r.received,
+				"load generator must have delivered at least one tick",
+			).toBeGreaterThan(0);
 		},
 		CEILING_MS + 10_000,
 	);

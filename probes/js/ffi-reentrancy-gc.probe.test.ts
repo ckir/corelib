@@ -39,9 +39,9 @@
 // =============================================
 
 import { spawn, spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import { dirname, resolve, join } from "node:path";
 import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -92,17 +92,16 @@ function runChild(): Promise<Result> {
 	return new Promise((resolveResult) => {
 		// UNIQUE redb path per spawn — the host reads `ALPACA_DB`; a shared/orphaned
 		// path would abort with DatabaseAlreadyOpen and masquerade as a fault.
-		const dbPath = join(tmpdir(), `audit-b2b-${process.pid}-${Date.now()}.redb`);
-
-		const child = spawn(
-			process.execPath,
-			["--expose-gc", CHILD_REL],
-			{
-				cwd: REPO_ROOT,
-				env: { ...process.env, ALPACA_DB: dbPath },
-				stdio: ["ignore", "pipe", "pipe"],
-			},
+		const dbPath = join(
+			tmpdir(),
+			`audit-b2b-${process.pid}-${Date.now()}.redb`,
 		);
+
+		const child = spawn(process.execPath, ["--expose-gc", CHILD_REL], {
+			cwd: REPO_ROOT,
+			env: { ...process.env, ALPACA_DB: dbPath },
+			stdio: ["ignore", "pipe", "pipe"],
+		});
 
 		let lastHeartbeat = 0;
 		let delivered = 0;
@@ -122,7 +121,12 @@ function runChild(): Promise<Result> {
 		let stallTimer: NodeJS.Timeout | undefined;
 		let ceilingTimer: NodeJS.Timeout | undefined;
 
-		const finish = (r: Omit<Result, "lastHeartbeat" | "delivered" | "reachedReady" | "doneSeen">) => {
+		const finish = (
+			r: Omit<
+				Result,
+				"lastHeartbeat" | "delivered" | "reachedReady" | "doneSeen"
+			>,
+		) => {
 			if (settled) return;
 			settled = true;
 			if (stallTimer) clearInterval(stallTimer);
@@ -173,18 +177,22 @@ function runChild(): Promise<Result> {
 		child.stdout.on("data", (chunk: string) => {
 			stdoutTail = (stdoutTail + chunk).slice(-500);
 			lineBuf += chunk;
-			let idx: number;
-			while ((idx = lineBuf.indexOf("\n")) >= 0) {
+			for (
+				let idx = lineBuf.indexOf("\n");
+				idx >= 0;
+				idx = lineBuf.indexOf("\n")
+			) {
 				const line = lineBuf.slice(0, idx).trim();
 				lineBuf = lineBuf.slice(idx + 1);
 				if (line.length === 0) continue;
-				let m: RegExpMatchArray | null;
-				if ((m = line.match(/^HEARTBEAT (\d+)/))) {
-					lastHeartbeat = Number(m[1]);
+				const heartbeat = /^HEARTBEAT (\d+)/.exec(line);
+				const deliveredLine = /^DELIVERED (\d+)/.exec(line);
+				if (heartbeat) {
+					lastHeartbeat = Number(heartbeat[1]);
 					lastBeatAt = Date.now();
 					sawFirstBeat = true;
-				} else if ((m = line.match(/^DELIVERED (\d+)/))) {
-					delivered = Number(m[1]);
+				} else if (deliveredLine) {
+					delivered = Number(deliveredLine[1]);
 				} else if (line.startsWith("READY ")) {
 					reachedReady = true;
 				} else if (line.startsWith("DONE ")) {
@@ -280,7 +288,10 @@ describe("FFI reconnect-under-GC TSFN re-entrancy / deadlock (process-isolated)"
 			// reproduction; let the assertion fail loudly so the run is a durable
 			// repro. 'harness-error' means the spawn args are wrong (fix & re-run).
 			expect(r.classification, r.detail).toBe("good");
-			expect(r.lastHeartbeat, "expected a rising heartbeat (forward progress)").toBeGreaterThan(0);
+			expect(
+				r.lastHeartbeat,
+				"expected a rising heartbeat (forward progress)",
+			).toBeGreaterThan(0);
 		},
 		CEILING_MS + 10_000,
 	);

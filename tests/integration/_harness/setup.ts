@@ -4,10 +4,10 @@ import { cleanupAll } from "./temp";
 
 beforeAll(() => beginItest());
 afterEach(() => {
-  assertNoMisses(); // any unmatched replay request fails the test loudly
-  resetItest();
+	assertNoMisses(); // any unmatched replay request fails the test loudly
+	resetItest();
 });
 afterAll(async () => {
-  await endItest();
-  await cleanupAll();
+	await endItest();
+	await cleanupAll();
 });

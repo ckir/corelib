@@ -37,8 +37,8 @@
 // =============================================
 
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -94,9 +94,10 @@ function classify(id: string): Outcome {
 		return { kind: "hang", detail: `timeout; stdout=${stdout}` };
 	}
 
-	const panicked = /thread '.*' panicked|called `Option::unwrap\(\)`|called `Result::unwrap\(\)`/.test(
-		stderr,
-	);
+	const panicked =
+		/thread '.*' panicked|called `Option::unwrap\(\)`|called `Result::unwrap\(\)`/.test(
+			stderr,
+		);
 	// Process-aborting panic across FFI: abnormal exit and/or a Rust panic line,
 	// and the child never reached its CASE...OK/CAUGHT print (exit 0).
 	const abnormal =
