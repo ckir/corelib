@@ -1,0 +1,7 @@
+# Pins the Rust toolchain for local builds and CI so a new stable release cannot break clippy/CI
+# without a code change. Keep in step with `rust:1.99-*` in rust/Dockerfile.linux. To upgrade: change
+# `channel` here and in the Dockerfile together, run clippy + tests, commit.
+[toolchain]
+channel = "1.99.0"
+components = ["clippy", "rustfmt"]
+profile = "minimal"

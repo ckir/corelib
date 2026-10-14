@@ -1,0 +1,32 @@
+[
+  {
+    "name": "node",
+    "why": "Runs every TS package, tests and scripts; CI uses Node 24 (see .nvmrc).",
+    "install": "nvm install (reads .nvmrc), or https://nodejs.org",
+    "in_path": "node"
+  },
+  {
+    "name": "pnpm",
+    "why": "The only package manager for this monorepo (AGENTS.md); version pinned in package.json packageManager.",
+    "install": "corepack enable && corepack prepare pnpm@11.5.2 --activate",
+    "in_path": "pnpm"
+  },
+  {
+    "name": "rustup",
+    "why": "Installs the Rust toolchain pinned in rust-toolchain.toml for the rust/ N-API crate (cargo, clippy, rustfmt).",
+    "install": "https://rustup.rs",
+    "in_path": "rustup"
+  },
+  {
+    "name": "cargo-deny",
+    "why": "Supply-chain gate for rust/ (advisories, licenses, bans, sources per rust/deny.toml); runs in CI audit.yml.",
+    "install": "cargo install cargo-deny --locked",
+    "in_path": "cargo-deny"
+  },
+  {
+    "name": "docker",
+    "why": "Builds the Linux FFI binary exactly as CI does (rust/Dockerfile.linux).",
+    "install": "https://docs.docker.com/engine/install/",
+    "in_path": "docker"
+  }
+]

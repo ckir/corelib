@@ -10,7 +10,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with: { ref: "${{ inputs.commit }}" }
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install pinned Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
       - uses: pnpm/action-setup@v5
         with: { version: 11.5.2 }
       - uses: actions/setup-node@v6

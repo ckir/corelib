@@ -61,6 +61,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Pinned in rust-toolchain.toml; installed explicitly so CI does not depend on rustup auto-install.
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install
+
       - name: Clean Cargo target directory
         run: cargo clean --manifest-path rust/Cargo.toml
 
@@ -111,6 +115,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install
 
       - name: Build all packages (required for workspace resolution)
         run: pnpm build-all
@@ -300,11 +307,14 @@ jobs:
           retention-days: 30
 
       # --- RUST FFI BUILDS ---
-      - name: Setup Rust
+      # Toolchain version comes from rust-toolchain.toml (single source of truth, see that file).
+      - name: Setup Rust (pinned)
         if: matrix.target != 'ts-packages'
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target == 'rust-darwin-arm64' && 'aarch64-apple-darwin' || '' }}
+        run: rustup toolchain install
+
+      - name: Add Apple Silicon target
+        if: matrix.target == 'rust-darwin-arm64'
+        run: rustup target add aarch64-apple-darwin
 
       - name: Cache cargo
         if: matrix.target != 'ts-packages'
