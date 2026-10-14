@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createRouter } from "./router";
 
 describe("Router", () => {
@@ -97,5 +97,73 @@ describe("Router platform option", () => {
 
 	it("defaults to aws-lambda", async () => {
 		expect(await platformOf(createRouter())).toBe("aws-lambda");
+	});
+});
+
+describe("Router logging hygiene", () => {
+	const makeLogger = () => ({
+		trace: vi.fn(),
+		info: vi.fn(),
+		warn: vi.fn(),
+		error: vi.fn(),
+		debug: vi.fn(),
+		child: vi.fn().mockReturnThis(),
+		bindings: vi.fn().mockReturnValue({}),
+	});
+
+	afterEach(() => {
+		vi.unstubAllEnvs();
+	});
+
+	it("dev debug log carries only the Turso host, never userinfo or query", async () => {
+		vi.stubEnv("MODE", "development");
+		const logger = makeLogger();
+		const app = createRouter(logger as any);
+		await app.request(
+			"/health",
+			{},
+			{
+				CORELIB_TURSO_URL: "libsql://user:pw@host.turso.io?authToken=SECRET",
+			},
+		);
+
+		const call = logger.debug.mock.calls.find((c) => c[0] === "DEV ENV");
+		expect(call).toBeDefined();
+		const serialized = JSON.stringify(call?.[1]);
+		expect(serialized).toContain("host.turso.io");
+		expect(serialized).not.toContain("pw");
+		expect(serialized).not.toContain("SECRET");
+		expect(serialized).not.toContain("user");
+	});
+
+	it("dev debug log reports 'invalid' for an unparseable Turso URL", async () => {
+		vi.stubEnv("MODE", "development");
+		const logger = makeLogger();
+		const app = createRouter(logger as any);
+		await app.request("/health", {}, { CORELIB_TURSO_URL: "not a url pw" });
+
+		const call = logger.debug.mock.calls.find((c) => c[0] === "DEV ENV");
+		expect(JSON.stringify(call?.[1])).toContain("invalid");
+		expect(JSON.stringify(call?.[1])).not.toContain("pw");
+	});
+
+	it("onError passes the Error object itself, with no stack string key", async () => {
+		const logger = makeLogger();
+		const app = createRouter(logger as any);
+		const boom = new Error("boom");
+		app.get("/boom", () => {
+			throw boom;
+		});
+
+		const res = await app.request("/boom");
+		expect(res.status).toBe(500);
+
+		const call = logger.error.mock.calls.find(
+			(c) => c[0] === "Unhandled Router Error",
+		);
+		expect(call).toBeDefined();
+		expect(call?.[1].error).toBe(boom);
+		expect(call?.[1]).not.toHaveProperty("stack");
+		expect(call?.[1].path).toBe("/boom");
 	});
 });

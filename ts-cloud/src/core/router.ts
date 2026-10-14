@@ -25,6 +25,19 @@ export interface RouterOptions {
 }
 
 /**
+ * Reduces a database URL to its host for logging (never userinfo, path or query,
+ * which may carry credentials). Returns "invalid" when unparseable, "unset" when empty.
+ */
+const hostOf = (raw: string): string => {
+	if (!raw) return "unset";
+	try {
+		return new URL(raw).host || "invalid";
+	} catch {
+		return "invalid";
+	}
+};
+
+/**
  * Factory function to create and configure the main Hono application.
  * This setup includes health checks and versioned routing for corelib modules.
  * @param {StrictLogger} [logger] Optional logger instance to use for request logging.
@@ -46,7 +59,7 @@ export const createRouter = (
 		}
 
 		// Ensure c.env exists (Hono Context.env can be undefined in Node if not passed)
-		(c as any).env = c.env || {};
+		c.env = c.env || ({} as AppEnv["Bindings"]);
 
 		// Inject process.env into c.env if not already there
 		c.env.CORELIB_TURSO_URL =
@@ -57,7 +70,7 @@ export const createRouter = (
 
 		if (process.env.MODE === "development") {
 			logger?.debug("DEV ENV", {
-				url: c.env.CORELIB_TURSO_URL,
+				host: hostOf(c.env.CORELIB_TURSO_URL),
 				token: c.env.CORELIB_TURSO_TOKEN ? "present" : "missing",
 			});
 		}
@@ -177,8 +190,7 @@ export const createRouter = (
 		const logger = c.get("logger");
 		logger?.error("Unhandled Router Error", {
 			rid: c.get("rid"),
-			error: err.message,
-			stack: err.stack,
+			error: err,
 			path: c.req.path,
 		});
 

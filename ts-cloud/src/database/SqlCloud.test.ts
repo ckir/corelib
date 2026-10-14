@@ -120,24 +120,30 @@ describe("SqlCloud Router", () => {
 		["number sql", { sql: 5 }],
 		["object sql", { sql: { a: 1 } }],
 		["blank sql", { sql: "   " }],
-	])("should return 400 for %s and not create a database", async (_n, payload) => {
-		vi.mocked(createDatabase).mockClear();
-		const res = await performPost(payload);
-		expect(res.status).toBe(400);
-		expect(createDatabase).not.toHaveBeenCalled();
-	});
+	])(
+		"should return 400 for %s and not create a database",
+		async (_n, payload) => {
+			vi.mocked(createDatabase).mockClear();
+			const res = await performPost(payload);
+			expect(res.status).toBe(400);
+			expect(createDatabase).not.toHaveBeenCalled();
+		},
+	);
 
 	it.each([
 		["string params", "x"],
 		["number params", 3],
-	])("should return 400 for %s and not create a database", async (_n, params) => {
-		vi.mocked(createDatabase).mockClear();
-		const res = await performPost({ sql: "SELECT 1", params });
-		expect(res.status).toBe(400);
-		const body = (await res.json()) as any;
-		expect(body.reason.message).toContain("Invalid params");
-		expect(createDatabase).not.toHaveBeenCalled();
-	});
+	])(
+		"should return 400 for %s and not create a database",
+		async (_n, params) => {
+			vi.mocked(createDatabase).mockClear();
+			const res = await performPost({ sql: "SELECT 1", params });
+			expect(res.status).toBe(400);
+			const body = (await res.json()) as any;
+			expect(body.reason.message).toContain("Invalid params");
+			expect(createDatabase).not.toHaveBeenCalled();
+		},
+	);
 
 	it("should accept array and plain-object params", async () => {
 		const mockDb = {

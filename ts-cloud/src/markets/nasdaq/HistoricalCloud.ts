@@ -7,6 +7,7 @@
 import { Historical } from "@ckirg/corelib-markets";
 import { type Context, Hono } from "hono";
 import { serializeError } from "serialize-error";
+import { errorStatus } from "../../core/http-status";
 import { rejectOversizedBulk } from "../../core/limits";
 import type { AppEnv } from "../../core/types";
 
@@ -87,7 +88,7 @@ historicalRouter.post("/", async (c: Context<AppEnv>): Promise<Response> => {
 			}
 
 			// Return the full error object if the fetch failed
-			return c.json(result, 500);
+			return c.json(result, errorStatus(result.reason));
 		}
 
 		return c.json(

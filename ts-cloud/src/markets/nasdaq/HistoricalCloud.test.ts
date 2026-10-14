@@ -190,4 +190,34 @@ describe("HistoricalCloud Router", () => {
 			expect(Historical.getData).toHaveBeenCalledTimes(20);
 		});
 	});
+
+	it("should preserve a valid upstream status on single-request failure", async () => {
+		vi.mocked(Historical.getData).mockResolvedValueOnce({
+			status: "error",
+			reason: { status: 429, message: "Too Many Requests" },
+		} as any);
+
+		const res = await historicalRouter.request("/", {
+			method: "POST",
+			body: JSON.stringify({ symbol: "AAPL", options: mockOptions }),
+			headers: { "Content-Type": "application/json" },
+		});
+
+		expect(res.status).toBe(429);
+	});
+
+	it("should default single-request failure without a status to 500", async () => {
+		vi.mocked(Historical.getData).mockResolvedValueOnce({
+			status: "error",
+			reason: { message: "boom" },
+		} as any);
+
+		const res = await historicalRouter.request("/", {
+			method: "POST",
+			body: JSON.stringify({ symbol: "AAPL", options: mockOptions }),
+			headers: { "Content-Type": "application/json" },
+		});
+
+		expect(res.status).toBe(500);
+	});
 });

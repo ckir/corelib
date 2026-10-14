@@ -107,6 +107,21 @@ describe("RequestUnlimitedCloud (kyRouter)", () => {
 			expect(Array.isArray(json)).toBe(true);
 			expect(json).toHaveLength(2);
 		});
+
+		it("should not throw when a bulk entry has a 204 upstream", async () => {
+			const noContent = {
+				status: "success",
+				value: { status: 204, body: null },
+			};
+			vi.mocked(endPoint).mockResolvedValueOnce(noContent as any);
+
+			const res = await performPost({
+				endPoints: [{ url: "https://example.com/no-content" }],
+			});
+
+			expect(res.status).toBe(200);
+			expect(await res.json()).toEqual([noContent]);
+		});
 	});
 
 	describe("Validation & Error Handling", () => {

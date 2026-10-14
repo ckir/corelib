@@ -45,19 +45,22 @@ describe("router authentication", () => {
 		["POST", "/api/v1/markets/nasdaq", { url: "https://api.nasdaq.com/x" }],
 		["GET", "/api/v1/markets/nasdaq/status", undefined],
 		["GET", "/api/v1/tests/logger", undefined],
-	] as const)("%s %s without a token is 401 and does nothing", async (method, path, body) => {
-		const res = await createRouter().request(
-			path,
-			{
-				method,
-				headers: { "content-type": "application/json" },
-				body: body ? JSON.stringify(body) : undefined,
-			},
-			env,
-		);
-		expect(res.status).toBe(401);
-		expect(endPoint).not.toHaveBeenCalled();
-	});
+	] as const)(
+		"%s %s without a token is 401 and does nothing",
+		async (method, path, body) => {
+			const res = await createRouter().request(
+				path,
+				{
+					method,
+					headers: { "content-type": "application/json" },
+					body: body ? JSON.stringify(body) : undefined,
+				},
+				env,
+			);
+			expect(res.status).toBe(401);
+			expect(endPoint).not.toHaveBeenCalled();
+		},
+	);
 
 	it("rejects a wrong token", async () => {
 		const res = await post(
