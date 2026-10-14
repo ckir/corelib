@@ -25,6 +25,7 @@
         "typecheck-all": "pnpm -r typecheck",
         "lint-all": "pnpm -r lint",
         "lint:strict": "biome ci ts-core ts-markets ts-cloud",
+        "audit:prod": "pnpm audit --prod --audit-level high",
         "check:browser-bundle": "node scripts/check-browser-bundle.mjs",
         "deps:check": "depcruise --config .dependency-cruiser.cjs ts-core/src ts-markets/src ts-cloud/src",
         "lint:rust": "cargo clippy --manifest-path rust/Cargo.toml --all-targets -- -D warnings",

@@ -37,7 +37,7 @@
         "@libsql/client": "^0.18.0",
         "confbox": "^0.3.1",
         "croner": "^10.0.1",
-        "deepmerge-ts": "^7.1.5",
+        "deepmerge-ts": "^8.0.2",
         "ky": "^2.2.0",
         "luxon": "^3.7.2",
         "pino": "^10.4.0",

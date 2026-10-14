@@ -1,0 +1,73 @@
+# =============================================
+# FILE: .github/workflows/audit.yml
+# PURPOSE: Dependency security gates, kept out of the build pipeline because advisories appear
+# without any code change: runs on dependency edits and weekly.
+#   npm-audit  — production dependencies, high/critical (pnpm audit:prod)
+#   cargo-deny — RustSec advisories, licenses, bans and sources for rust/ (rust/deny.toml)
+# =============================================
+
+name: Security audit
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+      - "ts-*/package.json"
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
+      - "rust/deny.toml"
+      - ".github/workflows/audit.yml"
+  pull_request:
+    paths:
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+      - "ts-*/package.json"
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
+      - "rust/deny.toml"
+      - ".github/workflows/audit.yml"
+  schedule:
+    - cron: "17 5 * * 1" # Mondays 05:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PNPM_VERSION: "11.5.2"
+
+jobs:
+  npm-audit:
+    name: npm audit (prod, high+)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      # pnpm audit reads pnpm-lock.yaml (plus the overrides in pnpm-workspace.yaml); no install needed.
+      - name: Audit production dependencies
+        run: pnpm audit:prod
+
+  cargo-deny:
+    name: cargo-deny (advisories, licenses, bans, sources)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: rust/Cargo.toml
+          command: check

@@ -18,6 +18,15 @@ catalog:
   "@vitest/coverage-v8": "^4.1.11"
   "tsup": "^8.5.1"
 
+# Patched floors for transitive dependencies of @jsr/gadicc__yahoo-finance2 (its optional MCP server tree:
+# express, ajv, ...). Each is held inside its current major line; remove an entry once
+# yahoo-finance2 itself ships a patched dependency. Gated by `pnpm audit:prod` in CI.
+overrides:
+  "proxy-addr": "^2.0.8"
+  "fast-uri": "^3.1.7"
+  "ip-address": "^10.3.1"
+  "@modelcontextprotocol/sdk": "^1.31.0"
+
 allowBuilds:
   esbuild: true
   lefthook: true
