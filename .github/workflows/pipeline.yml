@@ -358,10 +358,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
+      # The container leg needs neither pnpm nor node (and setup-node's pnpm cache would fail to save).
       - uses: pnpm/action-setup@v5
+        if: ${{ !matrix.glibc_container }}
         with:
           version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v6
+        if: ${{ !matrix.glibc_container }}
         with:
           node-version: 24
           cache: pnpm
