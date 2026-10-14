@@ -167,25 +167,60 @@ export interface LogRecord {
 	extras?: Record<string, unknown>;
 }
 
+// The pricing payload interfaces below must equal the typings napi generates for the Rust structs
+// (rust/index.d.ts); ffi-types.test.ts enforces that at typecheck time.
+
+/** Alpaca pricing payload (trade, quote or bar) as emitted by the native streamer. */
 export interface AlpacaPricingData {
+	/** Ticker symbol, e.g. "AAPL". */
 	symbol: string;
+	/** Kind of update: "quote", "trade" or "bar". */
+	messageType: string;
+	/** Last trade price, bar close, or bid price for quotes. */
 	price: number;
-	size?: number;
-	timestamp: number;
-	exchange?: string;
-	conditions?: number[];
-	tape?: string;
+	bidPrice: number;
+	askPrice: number;
+	volume: number;
+	/** Exchange timestamp as provided by Alpaca. */
+	timestamp: string;
 }
 
+/** Yahoo pricing payload (the native struct is exported by napi as `JsPricingData`). */
 export interface YahooPricingData {
-	symbol: string;
+	id: string;
 	price: number;
-	change?: number;
-	changePercent?: number;
-	timestamp: number;
-	dayHigh?: number;
-	dayLow?: number;
-	volume?: number;
+	/** Unix milliseconds. */
+	time: number;
+	currency: string;
+	exchange: string;
+	quoteType: number;
+	marketHours: number;
+	changePercent: number;
+	dayVolume: number;
+	dayHigh: number;
+	dayLow: number;
+	change: number;
+	shortName: string;
+	expireDate: number;
+	openPrice: number;
+	previousClose: number;
+	strikePrice: number;
+	underlyingSymbol: string;
+	openInterest: number;
+	optionType: number;
+	miniOption: number;
+	lastSize: number;
+	bidPrice: number;
+	bidSize: number;
+	askPrice: number;
+	askSize: number;
+	priceHint: number;
+	vol24Hr: number;
+	volAllCurrencies: number;
+	fromCurrency: string;
+	lastMarket: string;
+	circulatingSupply: number;
+	marketCap: number;
 }
 
 /**
