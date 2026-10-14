@@ -9,6 +9,7 @@ import { endPoint, type RequestResult } from "@ckirg/corelib";
 import { type Context, Hono } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { AppEnv } from "../core/types";
+import { checkProxyTarget } from "../core/url-guard";
 
 /**
  * Hono router for generic HTTP proxying via RequestUnlimited.
@@ -62,13 +63,20 @@ kyRouter.post("/", async (c: Context<AppEnv>): Promise<Response> => {
 		if (Array.isArray(body.endPoints)) {
 			const results: RequestResult[] = await Promise.all(
 				body.endPoints.map(async (ep: { url: string; options?: any }) => {
-					if (ep.url) {
-						return await endPoint(ep.url, ep.options || {});
+					if (!ep.url) {
+						return {
+							status: "error",
+							reason: { message: "Missing URL in bulk request" },
+						};
 					}
-					return {
-						status: "error",
-						reason: { message: "Missing URL in bulk request" },
-					};
+					const blocked = checkProxyTarget(ep.url);
+					if (blocked) {
+						return {
+							status: "error",
+							reason: { message: blocked, status: 400 },
+						};
+					}
+					return await endPoint(ep.url, ep.options || {});
 				}),
 			);
 			return c.json(results, 200);
@@ -76,6 +84,10 @@ kyRouter.post("/", async (c: Context<AppEnv>): Promise<Response> => {
 
 		// Scenario 2: Single Endpoint
 		if (typeof body.url === "string") {
+			const blocked = checkProxyTarget(body.url);
+			if (blocked) {
+				return c.json({ status: "error", reason: { message: blocked } }, 400);
+			}
 			const result = await endPoint(body.url, body.options || {});
 			if (result.status === "success") {
 				const finalStatus = toContentfulStatus(result.value.status);
@@ -126,6 +138,11 @@ kyRouter.get("/", async (c: Context<AppEnv>): Promise<Response> => {
 				},
 				400,
 			);
+		}
+
+		const blocked = checkProxyTarget(url);
+		if (blocked) {
+			return c.json({ status: "error", reason: { message: blocked } }, 400);
 		}
 
 		const result = await endPoint(url, {});

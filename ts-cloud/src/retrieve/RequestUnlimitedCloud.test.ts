@@ -96,7 +96,10 @@ describe("RequestUnlimitedCloud (kyRouter)", () => {
 				.mockResolvedValueOnce(mockResults[1] as any);
 
 			const res = await performPost({
-				endPoints: [{ url: "a" }, { url: "b" }],
+				endPoints: [
+					{ url: "https://example.com/a" },
+					{ url: "https://example.com/b" },
+				],
 			});
 
 			const json = (await res.json()) as RequestResult<unknown>[];

@@ -11,12 +11,16 @@ import { type Context, Hono } from "hono";
 import type { Options as KyOptions } from "ky";
 import { serializeError } from "serialize-error";
 import type { AppEnv } from "../../core/types";
+import { checkProxyTarget } from "../../core/url-guard";
 
 /**
  * Hono router for Nasdaq API proxying.
  * Mounted at /api/v1/markets/nasdaq in the main application.
  */
 export const nasdaqRouter = new Hono<AppEnv>();
+
+/** This proxy exists for Nasdaq's unofficial API; it must not relay requests to other hosts. */
+const NASDAQ_ONLY = { allowedHostSuffixes: ["nasdaq.com"] };
 
 /**
  * Middleware to inject a child logger for Nasdaq operations.
@@ -78,6 +82,10 @@ nasdaqRouter.post("/", async (c: Context<AppEnv>): Promise<Response> => {
 
 		// Path 1: Single URL request
 		if (url && typeof url === "string") {
+			const blocked = checkProxyTarget(url, NASDAQ_ONLY);
+			if (blocked) {
+				return c.json({ status: "error", reason: { message: blocked } }, 400);
+			}
 			const headers = { ...getNasdaqHeaders(url), ...(options?.headers ?? {}) };
 			const result = await endPoint(url, { ...options, headers });
 
@@ -93,6 +101,13 @@ nasdaqRouter.post("/", async (c: Context<AppEnv>): Promise<Response> => {
 		if (Array.isArray(endPoints)) {
 			const results = await Promise.all(
 				endPoints.map(async (ep: { url: string; options?: KyOptions }) => {
+					const blocked = checkProxyTarget(ep?.url, NASDAQ_ONLY);
+					if (blocked) {
+						return {
+							status: "error",
+							reason: { message: blocked, status: 400 },
+						};
+					}
 					const headers = {
 						...getNasdaqHeaders(ep.url),
 						...(ep.options?.headers ?? {}),
@@ -150,6 +165,11 @@ nasdaqRouter.get("/", async (c: Context<AppEnv>): Promise<Response> => {
 				},
 				400,
 			);
+		}
+
+		const blocked = checkProxyTarget(url, NASDAQ_ONLY);
+		if (blocked) {
+			return c.json({ status: "error", reason: { message: blocked } }, 400);
 		}
 
 		const headers = getNasdaqHeaders(url);

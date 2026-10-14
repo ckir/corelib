@@ -64,6 +64,8 @@ curl -H "Authorization: Bearer $CORELIB_API_TOKEN" https://your-service-url/api/
 - Set `CORELIB_API_TOKEN` as a binding/secret on every platform (`wrangler secret put CORELIB_API_TOKEN`, the `ApiToken` parameter in `sam-corelib/template.yaml`, or an env var on Cloud Run).
 - **Fail-closed:** if no token is configured the service answers `503` to protected routes; a missing or wrong token answers `401`.
 - The examples below omit the `Authorization` header for brevity; add it to each call.
+- **Proxy targets are restricted.** `/api/v1/ky` only fetches `http(s)` URLs without credentials, and refuses loopback, private, link-local (cloud metadata) and `.local`/`.internal` hosts with `400`. `/api/v1/markets/nasdaq` only fetches `nasdaq.com` hosts.
+- Known limits: the guard checks the URL text only. A public hostname that resolves to a private address, and redirects to one, are not detected on the edge, so keep the token secret.
 - AWS: CORS on the Function URL is limited to the `AllowedOrigin` parameter.
 
 ## Usage Examples

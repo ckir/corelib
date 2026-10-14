@@ -72,8 +72,11 @@ describe("ApiNasdaqUnlimitedCloud (Edge)", () => {
 			method: "POST",
 			body: JSON.stringify({
 				endPoints: [
-					{ url: "url1", options: { timeout: 1000 } },
-					{ url: "url2" },
+					{
+						url: "https://api.nasdaq.com/api/quote/AAPL/info",
+						options: { timeout: 1000 },
+					},
+					{ url: "https://api.nasdaq.com/api/quote/MSFT/info" },
 				],
 			}),
 			headers: { "Content-Type": "application/json" },
