@@ -129,4 +129,53 @@ describe("RequestUnlimitedCloud (kyRouter)", () => {
 			expect(mockLogger.error).toHaveBeenCalled();
 		});
 	});
+
+	describe("Bulk limit", () => {
+		const entries = (n: number) =>
+			Array.from({ length: n }, (_, i) => ({
+				url: `https://example.com/${i}`,
+			}));
+
+		it("should reject more than 20 endPoints with 400 before any fetch", async () => {
+			vi.mocked(endPoint).mockClear();
+			const res = await performPost({ endPoints: entries(21) });
+			expect(res.status).toBe(400);
+			expect(await res.json()).toEqual({
+				status: "error",
+				reason: { message: "Too many endPoints (max 20)" },
+			});
+			expect(endPoint).not.toHaveBeenCalled();
+		});
+
+		it("should accept exactly 20 endPoints", async () => {
+			vi.mocked(endPoint).mockClear();
+			vi.mocked(endPoint).mockResolvedValue({
+				status: "success",
+				value: { status: 200, body: {} },
+			} as any);
+			const res = await performPost({ endPoints: entries(20) });
+			expect(res.status).toBe(200);
+			expect(endPoint).toHaveBeenCalledTimes(20);
+		});
+	});
+
+	describe("Error status mapping", () => {
+		it("should map an error reason with status 304 to a valid status", async () => {
+			vi.mocked(endPoint).mockResolvedValueOnce({
+				status: "error",
+				reason: { message: "not modified", status: 304 },
+			} as any);
+			const res = await performPost({ url: "https://example.com" });
+			expect(res.status).toBe(500);
+		});
+
+		it("should keep a valid error status from the reason", async () => {
+			vi.mocked(endPoint).mockResolvedValueOnce({
+				status: "error",
+				reason: { message: "nope", status: 404 },
+			} as any);
+			const res = await performPost({ url: "https://example.com" });
+			expect(res.status).toBe(404);
+		});
+	});
 });

@@ -4,18 +4,8 @@ import { serializeError } from "serialize-error";
 import { createRouter } from "../../core/router";
 
 const serverLogger = logger.child({ section: "Server" });
-const app = createRouter(serverLogger);
+const app = createRouter(serverLogger, { platform: "cloudrun" });
 
-app.use("*", async (c, next) => {
-	const logger = c.get("logger");
-	logger?.info(`Incoming request: ${c.req.method} ${c.req.url}`);
-
-	(c as any).env = c.env || {};
-	c.env.CORELIB_TURSO_URL = process.env.CORELIB_TURSO_URL || "";
-	c.env.CORELIB_TURSO_TOKEN = process.env.CORELIB_TURSO_TOKEN || "";
-	c.env.PLATFORM = "cloudrun";
-	await next();
-});
 const port = Number(process.env.PORT) || 3000;
 const hostname = "0.0.0.0";
 
@@ -25,7 +15,10 @@ try {
 	serve(
 		{
 			fetch: (req) => {
-				serverLogger.info(`Incoming: ${req.method} ${req.url}`);
+				serverLogger.info("Incoming request", {
+					method: req.method,
+					path: new URL(req.url).pathname,
+				});
 				return app.fetch(req, process.env);
 			},
 			hostname,

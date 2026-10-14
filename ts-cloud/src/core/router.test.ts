@@ -79,3 +79,23 @@ describe("Router", () => {
 		expect(res.status).toBe(404);
 	});
 });
+
+describe("Router platform option", () => {
+	const platformOf = async (app: ReturnType<typeof createRouter>) => {
+		const res = await app.request("/health");
+		return ((await res.json()) as { platform: string }).platform;
+	};
+
+	it("reports the platform passed via options", async () => {
+		expect(
+			await platformOf(createRouter(undefined, { platform: "cloudflare" })),
+		).toBe("cloudflare");
+		expect(
+			await platformOf(createRouter(undefined, { platform: "cloudrun" })),
+		).toBe("cloudrun");
+	});
+
+	it("defaults to aws-lambda", async () => {
+		expect(await platformOf(createRouter())).toBe("aws-lambda");
+	});
+});

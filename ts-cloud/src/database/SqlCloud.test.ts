@@ -66,6 +66,7 @@ describe("SqlCloud Router", () => {
 				status: "success",
 				value: [{ result: 2 }],
 			}),
+			disconnect: vi.fn().mockResolvedValue(undefined),
 		};
 		vi.mocked(createDatabase).mockResolvedValue(mockDb as any);
 
@@ -102,6 +103,7 @@ describe("SqlCloud Router", () => {
 	it("should return 500 if database query fails", async () => {
 		const mockDb = {
 			query: vi.fn().mockRejectedValue(new Error("DB Error")),
+			disconnect: vi.fn().mockResolvedValue(undefined),
 		};
 		vi.mocked(createDatabase).mockResolvedValue(mockDb as any);
 
@@ -112,5 +114,72 @@ describe("SqlCloud Router", () => {
 		expect(body.status).toBe("error");
 		expect(body.reason.message).toBe("Internal SQL Error");
 		expect(mockLogger.error).toHaveBeenCalled();
+	});
+
+	it.each([
+		["number sql", { sql: 5 }],
+		["object sql", { sql: { a: 1 } }],
+		["blank sql", { sql: "   " }],
+	])("should return 400 for %s and not create a database", async (_n, payload) => {
+		vi.mocked(createDatabase).mockClear();
+		const res = await performPost(payload);
+		expect(res.status).toBe(400);
+		expect(createDatabase).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["string params", "x"],
+		["number params", 3],
+	])("should return 400 for %s and not create a database", async (_n, params) => {
+		vi.mocked(createDatabase).mockClear();
+		const res = await performPost({ sql: "SELECT 1", params });
+		expect(res.status).toBe(400);
+		const body = (await res.json()) as any;
+		expect(body.reason.message).toContain("Invalid params");
+		expect(createDatabase).not.toHaveBeenCalled();
+	});
+
+	it("should accept array and plain-object params", async () => {
+		const mockDb = {
+			query: vi.fn().mockResolvedValue({ status: "success", value: [] }),
+			disconnect: vi.fn().mockResolvedValue(undefined),
+		};
+		vi.mocked(createDatabase).mockResolvedValue(mockDb as any);
+		expect((await performPost({ sql: "S", params: [1] })).status).toBe(200);
+		expect((await performPost({ sql: "S", params: { a: 1 } })).status).toBe(
+			200,
+		);
+		expect((await performPost({ sql: "S" })).status).toBe(200);
+	});
+
+	it("should disconnect after a successful query", async () => {
+		const mockDb = {
+			query: vi.fn().mockResolvedValue({ status: "success", value: [] }),
+			disconnect: vi.fn().mockResolvedValue(undefined),
+		};
+		vi.mocked(createDatabase).mockResolvedValue(mockDb as any);
+		await performPost({ sql: "SELECT 1" });
+		expect(mockDb.disconnect).toHaveBeenCalledTimes(1);
+	});
+
+	it("should disconnect after a failed query", async () => {
+		const mockDb = {
+			query: vi.fn().mockRejectedValue(new Error("boom")),
+			disconnect: vi.fn().mockResolvedValue(undefined),
+		};
+		vi.mocked(createDatabase).mockResolvedValue(mockDb as any);
+		const res = await performPost({ sql: "SELECT 1" });
+		expect(res.status).toBe(500);
+		expect(mockDb.disconnect).toHaveBeenCalledTimes(1);
+	});
+
+	it("should not mask the result when disconnect itself fails", async () => {
+		const mockDb = {
+			query: vi.fn().mockResolvedValue({ status: "success", value: [] }),
+			disconnect: vi.fn().mockRejectedValue(new Error("close failed")),
+		};
+		vi.mocked(createDatabase).mockResolvedValue(mockDb as any);
+		const res = await performPost({ sql: "SELECT 1" });
+		expect(res.status).toBe(200);
 	});
 });

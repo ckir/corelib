@@ -7,7 +7,9 @@
 
 import { endPoint, type RequestResult } from "@ckirg/corelib";
 import { type Context, Hono } from "hono";
-import type { ContentfulStatusCode } from "hono/utils/http-status";
+import type { Options as KyOptions } from "ky";
+import { errorStatus, toContentfulStatus } from "../core/http-status";
+import { rejectOversizedBulk } from "../core/limits";
 import type { AppEnv } from "../core/types";
 import { checkProxyTarget } from "../core/url-guard";
 
@@ -30,20 +32,6 @@ kyRouter.use("*", async (c, next) => {
 });
 
 /**
- * Maps an arbitrary status code to a Hono-compatible ContentfulStatusCode.
- */
-function toContentfulStatus(code: number): ContentfulStatusCode {
-	const isNonContentful =
-		(code >= 100 && code < 200) || [204, 205, 304].includes(code);
-
-	if (isNonContentful || code < 100 || code > 599) {
-		return 200;
-	}
-
-	return code as ContentfulStatusCode;
-}
-
-/**
  * POST /
  * Receives a request containing parameters for RequestUnlimited.
  * Supports both single 'url' and bulk 'endPoints' arrays.
@@ -61,8 +49,10 @@ kyRouter.post("/", async (c: Context<AppEnv>): Promise<Response> => {
 
 		// Scenario 1: Multiple Endpoints (Bulk)
 		if (Array.isArray(body.endPoints)) {
+			const tooMany = rejectOversizedBulk(c, body.endPoints);
+			if (tooMany) return tooMany;
 			const results: RequestResult[] = await Promise.all(
-				body.endPoints.map(async (ep: { url: string; options?: any }) => {
+				body.endPoints.map(async (ep: { url: string; options?: KyOptions }) => {
 					if (!ep.url) {
 						return {
 							status: "error",
@@ -93,7 +83,7 @@ kyRouter.post("/", async (c: Context<AppEnv>): Promise<Response> => {
 				const finalStatus = toContentfulStatus(result.value.status);
 				return c.json(result.value.body, finalStatus);
 			}
-			return c.json(result, (result.reason as any)?.status || 500);
+			return c.json(result, errorStatus(result.reason));
 		}
 
 		return c.json(
@@ -151,7 +141,7 @@ kyRouter.get("/", async (c: Context<AppEnv>): Promise<Response> => {
 			const finalStatus = toContentfulStatus(result.value.status);
 			return c.json(result.value.body, finalStatus);
 		}
-		return c.json(result, (result.reason as any)?.status || 500);
+		return c.json(result, errorStatus(result.reason));
 	} catch (error) {
 		c.get("logger")?.error(
 			"RequestUnlimitedCloud: Internal execution error (GET)",

@@ -17,12 +17,24 @@ import { runInRequest } from "./request-context";
 import type { AppEnv } from "./types";
 
 /**
+ * Options for {@link createRouter}.
+ */
+export interface RouterOptions {
+	/** Platform identifier reported on /health (e.g. 'cloudflare', 'cloudrun'). Defaults to 'aws-lambda'. */
+	platform?: string;
+}
+
+/**
  * Factory function to create and configure the main Hono application.
  * This setup includes health checks and versioned routing for corelib modules.
  * @param {StrictLogger} [logger] Optional logger instance to use for request logging.
+ * @param {RouterOptions} [options] Optional platform setup applied by the root middleware.
  * @returns {Hono<AppEnv>} The configured Hono application instance.
  */
-export const createRouter = (logger?: StrictLogger): Hono<AppEnv> => {
+export const createRouter = (
+	logger?: StrictLogger,
+	options: RouterOptions = {},
+): Hono<AppEnv> => {
 	const app = new Hono<AppEnv>({ strict: false });
 
 	/**
@@ -41,7 +53,7 @@ export const createRouter = (logger?: StrictLogger): Hono<AppEnv> => {
 			c.env.CORELIB_TURSO_URL || process.env.CORELIB_TURSO_URL || "";
 		c.env.CORELIB_TURSO_TOKEN =
 			c.env.CORELIB_TURSO_TOKEN || process.env.CORELIB_TURSO_TOKEN || "";
-		c.env.PLATFORM = c.env.PLATFORM || "aws-lambda";
+		c.env.PLATFORM = options.platform || c.env.PLATFORM || "aws-lambda";
 
 		if (process.env.MODE === "development") {
 			logger?.debug("DEV ENV", {

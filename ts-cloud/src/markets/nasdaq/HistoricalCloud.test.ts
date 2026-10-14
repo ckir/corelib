@@ -154,4 +154,40 @@ describe("HistoricalCloud Router", () => {
 		const body = (await res.json()) as any;
 		expect(body.reason.message).toBe("Internal Edge Proxy Error");
 	});
+
+	describe("Bulk limit", () => {
+		const post = (n: number) =>
+			historicalRouter.request("/", {
+				method: "POST",
+				body: JSON.stringify({
+					requests: Array.from({ length: n }, () => ({
+						symbol: "AAPL",
+						options: mockOptions,
+					})),
+				}),
+				headers: { "Content-Type": "application/json" },
+			});
+
+		it("should reject more than 20 requests with 400 before any fetch", async () => {
+			vi.mocked(Historical.getData).mockClear();
+			const res = await post(21);
+			expect(res.status).toBe(400);
+			expect(await res.json()).toEqual({
+				status: "error",
+				reason: { message: "Too many endPoints (max 20)" },
+			});
+			expect(Historical.getData).not.toHaveBeenCalled();
+		});
+
+		it("should accept exactly 20 requests", async () => {
+			vi.mocked(Historical.getData).mockClear();
+			vi.mocked(Historical.getData).mockResolvedValue({
+				status: "success",
+				value: mockQuotes,
+			} as any);
+			const res = await post(20);
+			expect(res.status).toBe(200);
+			expect(Historical.getData).toHaveBeenCalledTimes(20);
+		});
+	});
 });

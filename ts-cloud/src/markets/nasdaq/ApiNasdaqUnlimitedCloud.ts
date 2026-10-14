@@ -10,6 +10,8 @@ import { getNasdaqHeaders, getSymbolsTop100 } from "@ckirg/corelib-markets";
 import { type Context, Hono } from "hono";
 import type { Options as KyOptions } from "ky";
 import { serializeError } from "serialize-error";
+import { errorStatus, toContentfulStatus } from "../../core/http-status";
+import { rejectOversizedBulk } from "../../core/limits";
 import type { AppEnv } from "../../core/types";
 import { checkProxyTarget } from "../../core/url-guard";
 
@@ -91,14 +93,19 @@ nasdaqRouter.post("/", async (c: Context<AppEnv>): Promise<Response> => {
 
 			if (result.status === "success") {
 				// Transparently return the Nasdaq response
-				return c.json(result.value.body, result.value.status as any);
+				return c.json(
+					result.value.body,
+					toContentfulStatus(result.value.status),
+				);
 			}
 			// Return the transport error directly
-			return c.json(result, (result.reason as any)?.status || 500);
+			return c.json(result, errorStatus(result.reason));
 		}
 
 		// Path 2: Bulk endPoints request
 		if (Array.isArray(endPoints)) {
+			const tooMany = rejectOversizedBulk(c, endPoints);
+			if (tooMany) return tooMany;
 			const results = await Promise.all(
 				endPoints.map(async (ep: { url: string; options?: KyOptions }) => {
 					const blocked = checkProxyTarget(ep?.url, NASDAQ_ONLY);
@@ -176,9 +183,9 @@ nasdaqRouter.get("/", async (c: Context<AppEnv>): Promise<Response> => {
 		const result = await endPoint(url, { headers });
 
 		if (result.status === "success") {
-			return c.json(result.value.body, result.value.status as any);
+			return c.json(result.value.body, toContentfulStatus(result.value.status));
 		}
-		return c.json(result, (result.reason as any)?.status || 500);
+		return c.json(result, errorStatus(result.reason));
 	} catch (error) {
 		c.get("logger")?.error(
 			"ApiNasdaqUnlimitedCloud: Internal execution error (GET)",

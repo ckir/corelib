@@ -7,6 +7,7 @@
 import { Historical } from "@ckirg/corelib-markets";
 import { type Context, Hono } from "hono";
 import { serializeError } from "serialize-error";
+import { rejectOversizedBulk } from "../../core/limits";
 import type { AppEnv } from "../../core/types";
 
 /**
@@ -57,6 +58,8 @@ historicalRouter.post("/", async (c: Context<AppEnv>): Promise<Response> => {
 
 		// Scenario 1: Multiple Requests (Bulk)
 		if (Array.isArray(body.requests)) {
+			const tooMany = rejectOversizedBulk(c, body.requests);
+			if (tooMany) return tooMany;
 			const results: HistoricalResult[] = await Promise.all(
 				body.requests.map(async (req: HistoricalRequest) => {
 					if (req.symbol && req.options) {

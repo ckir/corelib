@@ -9,6 +9,7 @@ describe("createEdgeLogger", () => {
 	});
 
 	afterEach(() => {
+		vi.unstubAllEnvs();
 		consoleSpy.mockRestore();
 	});
 
@@ -29,6 +30,7 @@ describe("createEdgeLogger", () => {
 	});
 
 	it("should support different log levels", () => {
+		vi.stubEnv("LOG_LEVEL", "trace");
 		const logger = createEdgeLogger();
 		const levels = [
 			"trace",
@@ -65,9 +67,48 @@ describe("createEdgeLogger", () => {
 		expect(logger.bindings()).toEqual(bindings);
 	});
 
-	it("should have a silent method that does nothing", () => {
+	it("should drop everything after silent()", () => {
 		const logger = createEdgeLogger();
-		expect(() => logger.silent()).not.toThrow();
+		logger.silent();
+		logger.fatal("nope");
+		expect(consoleSpy).not.toHaveBeenCalled();
+		expect(logger.level).toBe("silent");
+	});
+
+	it("honours LOG_LEVEL=warn: info/debug emit nothing, warn emits", () => {
+		vi.stubEnv("LOG_LEVEL", "warn");
+		const logger = createEdgeLogger();
+		logger.debug("d");
+		logger.info("i");
+		expect(consoleSpy).not.toHaveBeenCalled();
+		logger.warn("w");
+		expect(consoleSpy).toHaveBeenCalledTimes(1);
+		expect(logger.level).toBe("warn");
+	});
+
+	it("defaults to info (drops trace/debug) and ignores unknown LOG_LEVEL", () => {
+		vi.stubEnv("LOG_LEVEL", "bogus");
+		const logger = createEdgeLogger();
+		logger.trace("t");
+		logger.debug("d");
+		expect(consoleSpy).not.toHaveBeenCalled();
+		logger.info("i");
+		expect(consoleSpy).toHaveBeenCalledTimes(1);
+	});
+
+	it("children inherit the parent level", () => {
+		vi.stubEnv("LOG_LEVEL", "error");
+		const child = createEdgeLogger().child({ a: 1 });
+		child.warn("w");
+		expect(consoleSpy).not.toHaveBeenCalled();
+	});
+
+	it("setTelemetry('on') adds telemetry; invalid mode throws", () => {
+		const logger = createEdgeLogger();
+		logger.setTelemetry("on");
+		logger.info("t");
+		expect(JSON.parse(consoleSpy.mock.calls[0][0]).telemetry).toBeDefined();
+		expect(() => logger.setTelemetry("x" as never)).toThrow();
 	});
 
 	it("should have a flush method that calls the callback", () => {
