@@ -7,7 +7,6 @@
 
 import { EventEmitter } from "node:events";
 import {
-	type AlpacaStreamingConstructor,
 	type AlpacaStreamingFFI,
 	coreFFI,
 	getMode,
@@ -20,10 +19,9 @@ import {
 	createNativeCallbacks,
 } from "../nativeCallbacks.js";
 import { StreamHealthTracker } from "../StreamHealthTracker.js";
+import type { AlpacaPricingData } from "../types.js";
 
-const RustAlpaca = coreFFI?.AlpacaStreaming as
-	| AlpacaStreamingConstructor
-	| undefined;
+const RustAlpaca = coreFFI?.AlpacaStreaming;
 const CHANNELS = ["quotes", "trades", "bars"] as const;
 const alpacaStreamingLogger = logger.child({ section: "AlpacaStreaming" });
 
@@ -54,7 +52,11 @@ export class AlpacaStreaming extends EventEmitter {
 			);
 		}
 
-		const cb = createNativeCallbacks(this, this.health, alpacaStreamingLogger);
+		const cb = createNativeCallbacks<AlpacaPricingData>(
+			this,
+			this.health,
+			alpacaStreamingLogger,
+		);
 		try {
 			this.rust = new RustAlpaca(
 				cb.onLog,
