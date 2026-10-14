@@ -574,10 +574,21 @@ export class MarketSymbols {
 			ts: now,
 		}));
 
-		await this.db.transaction(async () => {
+		const refreshTx = await this.db.transaction(async () => {
 			if (!this.db) throw new Error("Database lost during transaction");
 
-			await this.db.query("UPDATE nasdaq_symbols SET active = false");
+			// db.query reports failures as { status: "error" } instead of throwing, and the transaction
+			// commits whenever this callback returns success. Return the first failure so the whole
+			// refresh (including the deactivation below) rolls back.
+			const deactivated = await this.db.query(
+				"UPDATE nasdaq_symbols SET active = false",
+			);
+			if (deactivated.status === "error") {
+				return {
+					status: "error" as const,
+					reason: deactivated.reason,
+				} as DatabaseResult<null>;
+			}
 
 			// Batch inserts to stay within SQLite parameter limits (max 999)
 			// We have 6 fields per row, so ~150 rows per batch
@@ -595,7 +606,7 @@ export class MarketSymbols {
 					r.ts,
 				]);
 
-				await this.db.query(
+				const inserted = await this.db.query(
 					`INSERT INTO nasdaq_symbols (symbol, type, class, name, ts, active)
 					 VALUES ${placeholders}
 					 ON CONFLICT(symbol) DO UPDATE SET
@@ -606,6 +617,12 @@ export class MarketSymbols {
 						active = true`,
 					params,
 				);
+				if (inserted.status === "error") {
+					return {
+						status: "error" as const,
+						reason: inserted.reason,
+					} as DatabaseResult<null>;
+				}
 			}
 
 			return {
@@ -613,6 +630,15 @@ export class MarketSymbols {
 				value: null,
 			} as DatabaseResult<null>;
 		});
+
+		if (refreshTx.status === "error") {
+			throw new Error(
+				"Symbol refresh failed; the transaction was rolled back",
+				{
+					cause: refreshTx.reason,
+				},
+			);
+		}
 	}
 
 	/**

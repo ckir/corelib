@@ -79,6 +79,8 @@ describe("MarketSymbols - Integrated Suite", () => {
 		vi.clearAllMocks();
 		// clearAllMocks keeps implementations; don't let one test's directory download leak into the next.
 		vi.mocked(corelib.endPoints).mockReset();
+		// Database.transaction always resolves to a DatabaseResult; the refresh now reads it.
+		mockDbTransaction.mockResolvedValue({ status: "success", value: null });
 		vi.mocked(corelib.createDatabase).mockResolvedValue(mockDb as any);
 		vi.mocked(corelib.detectRuntime).mockReturnValue("node");
 

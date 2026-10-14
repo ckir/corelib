@@ -292,4 +292,43 @@ describe("NasdaqPolling", () => {
 			expect(mockApiInstance.getNasdaqQuote).toHaveBeenCalledTimes(2);
 		});
 	});
+
+	describe("stop() and restart while a poll is in flight", () => {
+		it("does not emit data from a poll that was still in flight when stop() was called", async () => {
+			let resolveQuote: (v: unknown) => void = () => {};
+			mockApiInstance.getNasdaqQuote.mockImplementation(
+				() =>
+					new Promise((r) => {
+						resolveQuote = r;
+					}),
+			);
+			const onData = vi.fn();
+			poller.on("data", onData);
+			poller.subscribe(["AAPL"]);
+			poller.start();
+			await vi.advanceTimersByTimeAsync(0); // the poll is now awaiting its quote
+
+			poller.stop();
+			resolveQuote([{ status: "success", value: { symbol: "AAPL" } }]);
+			await vi.advanceTimersByTimeAsync(0);
+
+			expect(onData).not.toHaveBeenCalled();
+		});
+
+		it("runs the initial poll of a restarted session although the old poll is still in flight", async () => {
+			mockApiInstance.getNasdaqQuote.mockImplementation(
+				() => new Promise(() => {}),
+			);
+			poller.subscribe(["AAPL"]);
+			poller.start();
+			await vi.advanceTimersByTimeAsync(0);
+			expect(mockApiInstance.getNasdaqQuote).toHaveBeenCalledTimes(1);
+
+			poller.stop();
+			poller.start();
+			await vi.advanceTimersByTimeAsync(0);
+
+			expect(mockApiInstance.getNasdaqQuote).toHaveBeenCalledTimes(2);
+		});
+	});
 });

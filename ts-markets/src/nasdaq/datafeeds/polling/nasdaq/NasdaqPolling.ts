@@ -20,7 +20,10 @@ export class NasdaqPolling extends EventEmitter {
 	private apiInterval: number;
 	private proxies: string[];
 	private nasdaqQuotes: ApiNasdaqQuotes;
-	private inFlight = false;
+	/** Bumped by stop() (a session boundary); a poll resumed from an older generation must not emit. */
+	private generation = 0;
+	/** Generation of the poll currently awaiting its quotes, or null. */
+	private inFlightGeneration: number | null = null;
 
 	/**
 	 * @param apiInterval - Polling interval in milliseconds (defaults to 10000ms/10s).
@@ -54,7 +57,11 @@ export class NasdaqPolling extends EventEmitter {
 		);
 		this.apiInterval = value;
 		if (this.intervalId !== null) {
+			// Rescheduling the timer is not a new session: keep the generation so a poll that is
+			// still in flight stays valid and the restart does not fire an overlapping request.
+			const generation = this.generation;
 			this.stop();
+			this.generation = generation;
 			this.start();
 		}
 	}
@@ -116,6 +123,7 @@ export class NasdaqPolling extends EventEmitter {
 		if (this.intervalId !== null) {
 			clearInterval(this.intervalId);
 			this.intervalId = null;
+			this.generation++; // any poll still in flight is now stale and stays silent
 			nasdaqPollingLogger.info("Nasdaq polling stopped.");
 			this.emit("status", "stopped");
 		}
@@ -135,17 +143,20 @@ export class NasdaqPolling extends EventEmitter {
 	 * overlap and deliver out-of-order data). Never rejects.
 	 */
 	private runPoll(): void {
-		if (this.inFlight) {
+		const generation = this.generation;
+		if (this.inFlightGeneration === generation) {
 			nasdaqPollingLogger.debug("Previous poll still in flight; skipping tick");
 			return;
 		}
-		this.inFlight = true;
-		this.poll()
+		this.inFlightGeneration = generation;
+		this.poll(generation)
 			.catch((error: unknown) => {
 				nasdaqPollingLogger.error("Unhandled poll failure", { error });
 			})
 			.finally(() => {
-				this.inFlight = false;
+				if (this.inFlightGeneration === generation) {
+					this.inFlightGeneration = null;
+				}
 			});
 	}
 
@@ -162,7 +173,7 @@ export class NasdaqPolling extends EventEmitter {
 	/**
 	 * Internal logic to fetch data from ApiNasdaqQuotes and emit results.
 	 */
-	private async poll(): Promise<void> {
+	private async poll(generation: number = this.generation): Promise<void> {
 		if (this.subscriptions.size === 0) {
 			return;
 		}
@@ -179,6 +190,10 @@ export class NasdaqPolling extends EventEmitter {
 		try {
 			// Fetch quotes via ApiNasdaqQuotes
 			const results = await this.nasdaqQuotes.getNasdaqQuote(symbolList);
+			if (generation !== this.generation) {
+				nasdaqPollingLogger.trace("poll: stale, discarded", { cid });
+				return;
+			}
 
 			const validResults: unknown[] = [];
 
@@ -234,7 +249,7 @@ export class NasdaqPolling extends EventEmitter {
 				cid,
 				error: serialized,
 			});
-			this.emitError(serialized);
+			if (generation === this.generation) this.emitError(serialized);
 		}
 	}
 }
