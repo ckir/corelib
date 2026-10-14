@@ -7,6 +7,12 @@ license = "MIT"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+# Debug leftovers must not reach main; `cargo clippy -- -D warnings` (CI, pre-commit) already fails on the rest.
+[lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+
 [dependencies]
 napi = { version = "3.9.0", features = ["napi9", "tokio_rt"] }
 napi-derive = "3.5.6"

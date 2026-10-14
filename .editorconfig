@@ -1,0 +1,25 @@
+# Mirrors what the formatters already enforce (Biome: tabs for TS; rustfmt: 4 spaces). LF is enforced by .gitattributes.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+[*.{ts,tsx,js,mjs,cjs}]
+indent_style = tab
+
+[biome.json]
+indent_style = tab
+
+[package.json]
+indent_size = 4
+
+[*.{rs,py}]
+indent_size = 4
+
+[*.md]
+trim_trailing_whitespace = false
