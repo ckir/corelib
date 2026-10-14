@@ -80,7 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Pre-seed persisted subscriptions (the driver resumes these from redb on connect).
     if !symbols.is_empty() {
-        host.subscribe(symbols.clone()).await;
+        host.subscribe(symbols.clone()).await?;
     }
 
     let driver = YahooDriver {
@@ -111,7 +111,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             CoreEvent::Status(s) => eprintln!("[EVENT] {s:?}"),
             _ => {}
         },
-    );
+    )?;
 
     if symbols.is_empty() {
         eprintln!(

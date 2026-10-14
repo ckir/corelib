@@ -1,6 +1,9 @@
 use crate::markets::nasdaq::datafeeds::streaming::core::driver::{
     AttemptOutcome, ProviderDriver, SubRequest,
 };
+use crate::markets::nasdaq::datafeeds::streaming::core::handshake::{
+    connect_with_stop, next_text_with_stop, HandshakeError, HANDSHAKE_TIMEOUT,
+};
 use crate::markets::nasdaq::datafeeds::streaming::core::schema::{
     AlpacaQuoteExtras, AlpacaTradeExtras, MarketEvent, ProviderKind, ProviderStatus, Quote,
     QuoteExtras, Trade, TradeExtras,
@@ -14,11 +17,28 @@ use futures_util::{SinkExt, StreamExt};
 use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio_tungstenite::tungstenite::Message;
 
 const DEFAULT_ALPACA_WS_URL: &str = "wss://stream.data.alpaca.markets/v2/iex";
 const PING_INTERVAL: u64 = 30;
 const ALPACA_CHANNELS: [&str; 3] = ["trades", "quotes", "bars"];
+
+/// True iff `frame` is a JSON array containing an object `{"T": t, "msg": msg}`.
+fn frame_has(frame: &str, t: &str, msg: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(frame)
+        .ok()
+        .and_then(|v| v.as_array().cloned())
+        .is_some_and(|a| a.iter().any(|f| f["T"] == t && f["msg"] == msg))
+}
+
+/// The `msg` of the first `{"T":"error"}` object in a JSON-array frame, if any.
+fn frame_error_msg(frame: &str) -> Option<String> {
+    let v = serde_json::from_str::<serde_json::Value>(frame).ok()?;
+    v.as_array()?
+        .iter()
+        .find(|f| f["T"] == "error")
+        .map(|f| f["msg"].as_str().unwrap_or("auth error").to_string())
+}
 
 fn f(o: &serde_json::Value, k: &str) -> f64 {
     o.get(k).and_then(|v| v.as_f64()).unwrap_or(0.0)
@@ -213,32 +233,34 @@ impl ProviderDriver for AlpacaDriver {
                 .base_url
                 .clone()
                 .unwrap_or_else(|| DEFAULT_ALPACA_WS_URL.to_string());
-            let (mut ws, _) = match connect_async(&url).await {
+            let mut ws = match connect_with_stop(&url, stop_rx, HANDSHAKE_TIMEOUT).await {
                 // REDACTION: `error` is a tungstenite transport/handshake error (DNS/TLS/HTTP
                 // status) — client-side, no provider secret. The auth payload is never logged.
-                Err(e) => {
+                Err(HandshakeError::Stopped) => return AttemptOutcome::Stopped,
+                Err(HandshakeError::Timeout) => {
+                    tracing::warn!(target: "corelib_rust::stream", provider = "alpaca", "ws connect timed out");
+                    return AttemptOutcome::NeverConnected;
+                }
+                Err(HandshakeError::Failed(e)) => {
                     tracing::warn!(target: "corelib_rust::stream", provider = "alpaca", error = %e, "ws connect failed");
                     return AttemptOutcome::NeverConnected;
                 }
-                Ok(v) => v,
+                Ok(ws) => ws,
             };
-            // {"T":"success","msg":"connected"}
-            if let Some(Ok(Message::Text(m))) = ws.next().await {
-                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&m) {
-                    let ok = v
-                        .as_array()
-                        .and_then(|a| a.first())
-                        .map(|f| f["T"] == "success" && f["msg"] == "connected")
-                        .unwrap_or(false);
-                    if !ok {
+            // Greeting: ONLY an explicit {"T":"success","msg":"connected"} proceeds.
+            match next_text_with_stop(&mut ws, stop_rx, HANDSHAKE_TIMEOUT).await {
+                Ok(m) => {
+                    if !frame_has(&m, "success", "connected") {
                         // REDACTION: never log `m` (a server-controlled frame) — category only.
                         tracing::warn!(target: "corelib_rust::stream", provider = "alpaca", "unexpected connect frame");
                         return AttemptOutcome::NeverConnected;
                     }
                 }
-            } else {
-                tracing::warn!(target: "corelib_rust::stream", provider = "alpaca", "no connect frame");
-                return AttemptOutcome::NeverConnected;
+                Err(HandshakeError::Stopped) => return AttemptOutcome::Stopped,
+                Err(_) => {
+                    tracing::warn!(target: "corelib_rust::stream", provider = "alpaca", "no connect frame");
+                    return AttemptOutcome::NeverConnected;
+                }
             }
             // auth
             let auth = serde_json::json!({"action":"auth","key":self.key_id,"secret":self.secret_key})
@@ -248,32 +270,31 @@ impl ProviderDriver for AlpacaDriver {
                 tracing::warn!(target: "corelib_rust::stream", provider = "alpaca", "auth send failed");
                 return AttemptOutcome::NeverConnected;
             }
-            if let Some(Ok(Message::Text(m))) = ws.next().await {
-                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&m) {
-                    if let Some(f) = v.as_array().and_then(|a| a.first()) {
-                        if f["T"] == "error" {
-                            let msg = f["msg"].as_str().unwrap_or("auth error").to_string();
-                            // REDACTION: the server's `msg` reaches JS via Status::Error; the ring
-                            // records only the category (msg may echo server-controlled text).
-                            tracing::warn!(target: "corelib_rust::stream", provider = "alpaca", "auth rejected");
-                            let _ = tx
-                                .send(CoreEvent::Status(ProviderStatus::Error {
-                                    provider: ProviderKind::Alpaca,
-                                    message: msg.clone(),
-                                }))
-                                .await;
-                            return AttemptOutcome::Fatal(msg);
-                        }
-                        let ok = f["T"] == "success" && f["msg"] == "authenticated";
-                        if !ok {
-                            tracing::warn!(target: "corelib_rust::stream", provider = "alpaca", "auth not confirmed");
-                            return AttemptOutcome::NeverConnected;
-                        }
+            // Auth reply: an explicit error is Fatal; ONLY an explicit "authenticated" proceeds.
+            match next_text_with_stop(&mut ws, stop_rx, HANDSHAKE_TIMEOUT).await {
+                Ok(m) => {
+                    if let Some(msg) = frame_error_msg(&m) {
+                        // REDACTION: the server's `msg` reaches JS via Status::Error; the ring
+                        // records only the category (msg may echo server-controlled text).
+                        tracing::warn!(target: "corelib_rust::stream", provider = "alpaca", "auth rejected");
+                        let _ = tx
+                            .send(CoreEvent::Status(ProviderStatus::Error {
+                                provider: ProviderKind::Alpaca,
+                                message: msg.clone(),
+                            }))
+                            .await;
+                        return AttemptOutcome::Fatal(msg);
+                    }
+                    if !frame_has(&m, "success", "authenticated") {
+                        tracing::warn!(target: "corelib_rust::stream", provider = "alpaca", "auth not confirmed");
+                        return AttemptOutcome::NeverConnected;
                     }
                 }
-            } else {
-                tracing::warn!(target: "corelib_rust::stream", provider = "alpaca", "no auth response");
-                return AttemptOutcome::NeverConnected;
+                Err(HandshakeError::Stopped) => return AttemptOutcome::Stopped,
+                Err(_) => {
+                    tracing::warn!(target: "corelib_rust::stream", provider = "alpaca", "no auth response");
+                    return AttemptOutcome::NeverConnected;
+                }
             }
 
             tracing::debug!(target: "corelib_rust::stream", provider = "alpaca", "authenticated");
@@ -659,5 +680,162 @@ mod loopback_tests {
         assert_eq!(p.message_type, "quote");
         assert_eq!(p.bid_price, 191.0);
         assert_eq!(p.ask_price, 192.0);
+    }
+}
+
+#[cfg(test)]
+mod handshake_hardening_tests {
+    use super::*;
+    use std::time::Duration;
+    use tokio::net::TcpListener;
+    use tokio_tungstenite::accept_async;
+
+    fn tmp_db() -> Arc<redb::Database> {
+        let path = std::env::temp_dir().join(format!(
+            "test_alpaca_hs_{}_{}.redb",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        Arc::new(redb::Database::create(path).unwrap())
+    }
+
+    fn driver(port: u16) -> AlpacaDriver {
+        AlpacaDriver {
+            name: "alpaca_main".into(),
+            base_url: Some(format!("ws://127.0.0.1:{port}")),
+            key_id: "k".into(),
+            secret_key: "s".into(),
+            silence_seconds: 60,
+            db: tmp_db(),
+            table: "alpaca_subscriptions",
+        }
+    }
+
+    async fn run(d: &AlpacaDriver) -> AttemptOutcome {
+        let (tx, mut rx) = mpsc::channel::<CoreEvent>(16);
+        let (_sub_tx, mut sub_rx) = mpsc::channel::<SubRequest>(1);
+        let (_stop_tx, mut stop_rx) = mpsc::channel::<()>(1);
+        tokio::spawn(async move { while rx.recv().await.is_some() {} });
+        d.connect_once(&[], &tx, &mut sub_rx, &mut stop_rx).await
+    }
+
+    /// Server: ws handshake, then send `greeting` (if any), read auth, send `auth_reply` (if any).
+    async fn serve(
+        l: TcpListener,
+        greeting: Option<&'static str>,
+        auth_reply: Option<&'static str>,
+    ) {
+        if let Ok((s, _)) = l.accept().await {
+            let mut ws = accept_async(s).await.unwrap();
+            if let Some(g) = greeting {
+                ws.send(Message::Text(g.into())).await.unwrap();
+                if let Some(a) = auth_reply {
+                    let _ = ws.next().await;
+                    ws.send(Message::Text(a.into())).await.unwrap();
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+    }
+
+    async fn outcome_for(
+        greeting: Option<&'static str>,
+        auth: Option<&'static str>,
+    ) -> AttemptOutcome {
+        let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = l.local_addr().unwrap().port();
+        tokio::spawn(serve(l, greeting, auth));
+        tokio::time::timeout(Duration::from_secs(5), run(&driver(port)))
+            .await
+            .expect("driver hung")
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn black_holed_connect_returns_never_connected_after_handshake_timeout() {
+        // Accepts TCP at the kernel level but never completes the ws upgrade.
+        let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = l.local_addr().unwrap().port();
+        let start = tokio::time::Instant::now();
+        let out = run(&driver(port)).await;
+        assert_eq!(out, AttemptOutcome::NeverConnected);
+        assert!(start.elapsed() >= HANDSHAKE_TIMEOUT && start.elapsed() < HANDSHAKE_TIMEOUT * 2);
+        drop(l);
+    }
+
+    #[tokio::test]
+    async fn black_holed_connect_returns_promptly_on_stop() {
+        let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = l.local_addr().unwrap().port();
+        let d = driver(port);
+        let (tx, _rx) = mpsc::channel::<CoreEvent>(16);
+        let (_sub_tx, mut sub_rx) = mpsc::channel::<SubRequest>(1);
+        let (stop_tx, mut stop_rx) = mpsc::channel::<()>(1);
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            let _ = stop_tx.send(()).await;
+        });
+        let t = std::time::Instant::now();
+        let out = d.connect_once(&[], &tx, &mut sub_rx, &mut stop_rx).await;
+        assert_eq!(out, AttemptOutcome::Stopped);
+        assert!(t.elapsed() < Duration::from_secs(5));
+        drop(l);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn silent_greeting_times_out() {
+        // ws upgrade succeeds, then the server never sends the greeting.
+        let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = l.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let (s, _) = l.accept().await.unwrap();
+            let _ws = accept_async(s).await.unwrap();
+            tokio::time::sleep(Duration::from_secs(3600)).await;
+        });
+        assert_eq!(run(&driver(port)).await, AttemptOutcome::NeverConnected);
+    }
+
+    #[tokio::test]
+    async fn garbage_greeting_is_never_connected() {
+        assert_eq!(
+            outcome_for(Some("not json at all"), None).await,
+            AttemptOutcome::NeverConnected
+        );
+    }
+
+    #[tokio::test]
+    async fn empty_array_greeting_is_never_connected() {
+        assert_eq!(
+            outcome_for(Some("[]"), None).await,
+            AttemptOutcome::NeverConnected
+        );
+    }
+
+    #[tokio::test]
+    async fn garbage_auth_reply_is_never_connected() {
+        let out = outcome_for(
+            Some(r#"[{"T":"success","msg":"connected"}]"#),
+            Some("garbage"),
+        )
+        .await;
+        assert_eq!(out, AttemptOutcome::NeverConnected);
+    }
+
+    #[tokio::test]
+    async fn empty_array_auth_reply_is_never_connected() {
+        let out = outcome_for(Some(r#"[{"T":"success","msg":"connected"}]"#), Some("[]")).await;
+        assert_eq!(out, AttemptOutcome::NeverConnected);
+    }
+
+    #[tokio::test]
+    async fn unexpected_success_msg_auth_reply_is_never_connected() {
+        let out = outcome_for(
+            Some(r#"[{"T":"success","msg":"connected"}]"#),
+            Some(r#"[{"T":"success","msg":"something else"}]"#),
+        )
+        .await;
+        assert_eq!(out, AttemptOutcome::NeverConnected);
     }
 }

@@ -16,8 +16,7 @@ futures = "0.3.32"
 
 # === YAHOO STREAMING ===
 tokio = { version = "1.52.3", features = ["full"] }
-tokio-tungstenite = { version = "0.29.0", features = ["native-tls"] }
-tungstenite = "0.29.0"
+tokio-tungstenite = { version = "0.29.0", features = ["rustls-tls-webpki-roots"] }
 redb = "4.1.0"
 base64 = "0.22.1"
 futures-util = "0.3.32"
@@ -49,6 +48,7 @@ napi = []
 
 [dev-dependencies]
 wiremock = "0.6.5"
+tokio = { version = "1.52.3", features = ["test-util"] }
 tracing = "0.1"
 
 [build-dependencies]

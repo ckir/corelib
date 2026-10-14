@@ -38,7 +38,42 @@ static GLOBAL_CLIENT: OnceLock<Client> = OnceLock::new();
 /// Returns a reference to the global `reqwest` client, initializing it if necessary.
 fn get_default_client() -> &'static Client {
     // Return the existing client or create a new one if it's the first call
-    GLOBAL_CLIENT.get_or_init(Client::new)
+    GLOBAL_CLIENT.get_or_init(|| {
+        Client::builder()
+            .connect_timeout(DEFAULT_CONNECT_TIMEOUT)
+            .timeout(DEFAULT_TOTAL_TIMEOUT)
+            .build()
+            .unwrap_or_else(|_| Client::new())
+    })
+}
+
+/// Default TCP/TLS connect timeout of the shared client.
+const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+/// Default total (connect + headers + body) request timeout of the shared client.
+const DEFAULT_TOTAL_TIMEOUT: Duration = Duration::from_secs(30);
+/// Default cap applied to a server-supplied `Retry-After` delay.
+const DEFAULT_MAX_RETRY_AFTER: Duration = Duration::from_secs(60);
+
+/// Parse a `Retry-After` value (delta-seconds or RFC 2822 date) into a delay, then apply `max`.
+/// Returns `None` when the value is neither form (caller keeps its backoff delay).
+fn parse_retry_after(value: &str, max: Option<Duration>) -> Option<Duration> {
+    let delay = if let Ok(seconds) = value.parse::<u64>() {
+        Duration::from_secs(seconds)
+    } else if let Ok(date) = chrono::DateTime::parse_from_rfc2822(value) {
+        let now = Utc::now();
+        let date = date.with_timezone(&Utc);
+        if date > now {
+            (date - now).to_std().unwrap_or(Duration::ZERO)
+        } else {
+            Duration::ZERO
+        }
+    } else {
+        return None;
+    };
+    Some(match max {
+        Some(max) => std::cmp::min(delay, max),
+        None => delay,
+    })
 }
 
 /// Configuration options for retry logic, mirroring the `ky` 2.0.0 defaults.
@@ -52,7 +87,8 @@ pub struct RetryOptions {
     pub status_codes: Vec<StatusCode>,
     /// The list of HTTP status codes that should specifically check the `Retry-After` header.
     pub after_status_codes: Vec<StatusCode>,
-    /// An optional cap for the duration suggested by the `Retry-After` header.
+    /// An optional cap for the duration suggested by the `Retry-After` header
+    /// (defaults to 60s so a hostile/buggy header cannot stall the caller; set `None` to uncap).
     pub max_retry_after: Option<Duration>,
     /// An optional cap for the exponential backoff delay.
     pub backoff_limit: Option<Duration>,
@@ -85,8 +121,8 @@ impl Default for RetryOptions {
                 StatusCode::TOO_MANY_REQUESTS,   // 429
                 StatusCode::SERVICE_UNAVAILABLE, // 503
             ],
-            max_retry_after: None, // No limit on Retry-After duration by default
-            backoff_limit: None,   // No limit on exponential backoff delay by default
+            max_retry_after: Some(DEFAULT_MAX_RETRY_AFTER), // cap hostile Retry-After values
+            backoff_limit: None, // No limit on exponential backoff delay by default
         }
     }
 }
@@ -309,26 +345,11 @@ impl KyRequestBuilder {
                                 response.headers().get(reqwest::header::RETRY_AFTER)
                             {
                                 if let Ok(retry_after_str) = retry_after.to_str() {
-                                    // Handle Retry-After as seconds
-                                    if let Ok(seconds) = retry_after_str.parse::<u64>() {
-                                        delay_duration = Duration::from_secs(seconds);
-                                    } else if let Ok(date) =
-                                        chrono::DateTime::parse_from_rfc2822(retry_after_str)
-                                    {
-                                        // Handle Retry-After as an RFC 2822 date
-                                        let now = Utc::now();
-                                        if date.with_timezone(&Utc) > now {
-                                            delay_duration = (date.with_timezone(&Utc) - now)
-                                                .to_std()
-                                                .unwrap_or(Duration::ZERO);
-                                        } else {
-                                            delay_duration = Duration::ZERO;
-                                        }
-                                    }
-
-                                    // Apply the optional max_retry_after cap
-                                    if let Some(max) = self.retry_options.max_retry_after {
-                                        delay_duration = std::cmp::min(delay_duration, max);
+                                    if let Some(d) = parse_retry_after(
+                                        retry_after_str,
+                                        self.retry_options.max_retry_after,
+                                    ) {
+                                        delay_duration = d;
                                     }
                                 }
                             }
@@ -424,6 +445,60 @@ mod tests {
     use serde::{Deserialize, Serialize};
     use wiremock::matchers::{body_json, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[test]
+    fn retry_after_defaults_cap_to_60s() {
+        assert_eq!(
+            RetryOptions::default().max_retry_after,
+            Some(Duration::from_secs(60))
+        );
+        let cap = RetryOptions::default().max_retry_after;
+        assert_eq!(
+            parse_retry_after("99999999999", cap),
+            Some(Duration::from_secs(60))
+        );
+        assert_eq!(parse_retry_after("5", cap), Some(Duration::from_secs(5)));
+        assert_eq!(parse_retry_after("garbage", cap), None);
+        // far-future HTTP date is capped too; explicit None keeps it overridable
+        assert_eq!(
+            parse_retry_after("Fri, 31 Dec 2100 23:59:59 +0000", cap),
+            Some(Duration::from_secs(60))
+        );
+        assert_eq!(
+            parse_retry_after("99999999999", None),
+            Some(Duration::from_secs(99999999999))
+        );
+    }
+
+    /// End to end: a huge Retry-After waits at most the (here shortened) cap, not the header value.
+    #[tokio::test]
+    async fn huge_retry_after_waits_at_most_the_cap() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/ra"))
+            .respond_with(ResponseTemplate::new(429).insert_header("Retry-After", "99999999999"))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/ra"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+        let ky = Ky::new().retry_options(RetryOptions {
+            max_retry_after: Some(Duration::from_millis(150)),
+            ..Default::default()
+        });
+        let t = std::time::Instant::now();
+        let _res = tokio::time::timeout(
+            Duration::from_secs(10),
+            ky.get(format!("{}/ra", server.uri())).send(),
+        )
+        .await
+        .expect("stalled on Retry-After")
+        .expect("request failed");
+        assert!(t.elapsed() < Duration::from_secs(5));
+    }
 
     #[derive(Serialize, Deserialize, Debug, PartialEq)]
     struct TestData {

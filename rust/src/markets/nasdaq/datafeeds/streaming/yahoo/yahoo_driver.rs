@@ -130,6 +130,9 @@ pub fn parse_yahoo_message(text: &str, source: &str) -> Option<(JsPricingData, V
 use crate::markets::nasdaq::datafeeds::streaming::core::driver::{
     AttemptOutcome, ProviderDriver, SubRequest,
 };
+use crate::markets::nasdaq::datafeeds::streaming::core::handshake::{
+    connect_with_stop, HandshakeError, HANDSHAKE_TIMEOUT,
+};
 use crate::markets::nasdaq::datafeeds::streaming::core::schema::{ProviderKind, ProviderStatus};
 use crate::markets::nasdaq::datafeeds::streaming::core::types::{CoreEvent, RawPricing};
 use futures::future::{BoxFuture, FutureExt};
@@ -137,7 +140,7 @@ use futures_util::{SinkExt, StreamExt};
 use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio_tungstenite::tungstenite::Message;
 
 const DEFAULT_YAHOO_WS_URL: &str = "wss://streamer.finance.yahoo.com/?version=2";
 const PING_INTERVAL: u64 = 30;
@@ -190,14 +193,19 @@ impl ProviderDriver for YahooDriver {
                 .base_url
                 .clone()
                 .unwrap_or_else(|| DEFAULT_YAHOO_WS_URL.to_string());
-            let (mut ws, _) = match connect_async(&url).await {
+            let mut ws = match connect_with_stop(&url, stop_rx, HANDSHAKE_TIMEOUT).await {
                 // REDACTION: tungstenite transport error (client-side); Yahoo is unauthenticated,
                 // no secret involved — only the failure category + transport error are logged.
-                Err(e) => {
+                Err(HandshakeError::Stopped) => return AttemptOutcome::Stopped,
+                Err(HandshakeError::Timeout) => {
+                    tracing::warn!(target: "corelib_rust::stream", provider = "yahoo", "ws connect timed out");
+                    return AttemptOutcome::NeverConnected;
+                }
+                Err(HandshakeError::Failed(e)) => {
                     tracing::warn!(target: "corelib_rust::stream", provider = "yahoo", error = %e, "ws connect failed");
                     return AttemptOutcome::NeverConnected;
                 }
-                Ok(v) => v,
+                Ok(ws) => ws,
             };
             tracing::debug!(target: "corelib_rust::stream", provider = "yahoo", "connected");
             let _ = tx

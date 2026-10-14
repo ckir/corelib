@@ -148,7 +148,8 @@ impl YahooStreaming {
     #[napi]
     pub async fn start(&self) -> Result<()> {
         let mut g = self.inner.lock().await;
-        if g.started {
+        // A supervisor that ended on its own (Fatal/max_retries/panic) is NOT running: restart.
+        if g.started && g.host.is_running() {
             return Ok(());
         }
         let driver = YahooDriver {
@@ -161,7 +162,7 @@ impl YahooStreaming {
         let on_pricing = Arc::clone(&self.on_pricing);
         let on_event = Arc::clone(&self.on_event);
         let on_market = self.on_market_event.clone();
-        g.host.start(
+        let started = g.host.start(
             driver,
             Vec::new(),
             ReconnectPolicy {
@@ -207,6 +208,16 @@ impl YahooStreaming {
                 _ => {}
             },
         );
+        if let Err(e) = started {
+            let _ = self.on_event.call(
+                Ok(EventRecord {
+                    r#type: "error".into(),
+                    data: Some(e.to_string()),
+                }),
+                ThreadsafeFunctionCallMode::NonBlocking,
+            );
+            return Err(napi::Error::from_reason(e.to_string()));
+        }
         let _ = self.on_log.call(
             Ok(LogRecord {
                 level: "debug".into(),
@@ -222,14 +233,26 @@ impl YahooStreaming {
     /// Subscribe to additional symbols (bare list; persisted to redb + sent live to the driver).
     #[napi]
     pub async fn subscribe(&self, symbols: Vec<String>) -> Result<()> {
-        self.inner.lock().await.host.subscribe(symbols).await;
+        self.inner
+            .lock()
+            .await
+            .host
+            .subscribe(symbols)
+            .await
+            .map_err(|e| napi::Error::from_reason(e.to_string()))?;
         Ok(())
     }
 
     /// Remove `symbols` from the persisted set (so they don't resume on restart).
     #[napi]
     pub async fn unsubscribe(&self, symbols: Vec<String>) -> Result<()> {
-        self.inner.lock().await.host.unsubscribe(symbols).await;
+        self.inner
+            .lock()
+            .await
+            .host
+            .unsubscribe(symbols)
+            .await
+            .map_err(|e| napi::Error::from_reason(e.to_string()))?;
         Ok(())
     }
 
@@ -277,7 +300,9 @@ mod facade_tests {
     #[tokio::test]
     async fn subscribe_persists_bare_keys_and_resumes() {
         let host = fresh_host();
-        host.subscribe(vec!["AAPL".into(), "BTC-USD".into()]).await;
+        host.subscribe(vec!["AAPL".into(), "BTC-USD".into()])
+            .await
+            .unwrap();
         let mut got = host.get_persisted_subscriptions();
         got.sort();
         assert_eq!(got, vec!["AAPL".to_string(), "BTC-USD".to_string()]);
@@ -286,8 +311,10 @@ mod facade_tests {
     #[tokio::test]
     async fn unsubscribe_removes_persisted_key() {
         let host = fresh_host();
-        host.subscribe(vec!["AAPL".into(), "MSFT".into()]).await;
-        host.unsubscribe(vec!["AAPL".into()]).await;
+        host.subscribe(vec!["AAPL".into(), "MSFT".into()])
+            .await
+            .unwrap();
+        host.unsubscribe(vec!["AAPL".into()]).await.unwrap();
         assert_eq!(host.get_persisted_subscriptions(), vec!["MSFT".to_string()]);
     }
 }

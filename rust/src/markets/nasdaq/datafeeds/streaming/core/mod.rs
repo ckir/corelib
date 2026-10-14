@@ -8,6 +8,7 @@
 //! are the napi adapter. The future `corelib-streaming` crate lift moves this engine set out
 //! verbatim (it already builds napi-free with `--no-default-features`).
 pub mod driver;
+pub mod handshake;
 pub mod host;
 pub mod reconnect;
 pub mod schema;

@@ -133,7 +133,13 @@ async fn main() {
 
     // Initialize the proxy client if proxies are provided
     let proxied_client = if use_proxies {
-        Some(RequestProxied::new(args.proxy.clone()))
+        match RequestProxied::new(args.proxy.clone()) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
     } else {
         None
     };

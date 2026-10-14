@@ -64,6 +64,9 @@ pub fn parse_finnhub_frame(text: &str, source: &str) -> Vec<MarketEvent> {
 use crate::markets::nasdaq::datafeeds::streaming::core::driver::{
     AttemptOutcome, ProviderDriver, SubRequest,
 };
+use crate::markets::nasdaq::datafeeds::streaming::core::handshake::{
+    connect_with_stop, HandshakeError, HANDSHAKE_TIMEOUT,
+};
 use crate::markets::nasdaq::datafeeds::streaming::core::schema::{ProviderKind, ProviderStatus};
 use crate::markets::nasdaq::datafeeds::streaming::core::types::{CoreEvent, RawPricing};
 use crate::markets::nasdaq::datafeeds::streaming::finnhub::finnhub_streamer::market_event_to_finnhub_pricing;
@@ -72,7 +75,12 @@ use futures_util::{SinkExt, StreamExt};
 use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio_tungstenite::tungstenite::Message;
+
+/// Silence threshold (no text/pong frame) and ping cadence; same values as the Alpaca/Yahoo
+/// drivers (silence default 60s, `PING_INTERVAL` 30s). Finnhub has no configurable silence field.
+const SILENCE_SECONDS: u64 = 60;
+const PING_INTERVAL: u64 = 30;
 
 const FINNHUB_WS: &str = "wss://ws.finnhub.io";
 
@@ -128,14 +136,19 @@ impl ProviderDriver for FinnhubDriver {
     ) -> BoxFuture<'a, AttemptOutcome> {
         async move {
             let url = finnhub_ws_url(self.base_url.as_deref(), &self.token);
-            let (mut ws, _) = match connect_async(&url).await {
+            let mut ws = match connect_with_stop(&url, stop_rx, HANDSHAKE_TIMEOUT).await {
                 // REDACTION: tungstenite transport error (client-side); the token lives in the
                 // URL query and is never logged (only the failure category + transport error).
-                Err(e) => {
+                Err(HandshakeError::Stopped) => return AttemptOutcome::Stopped,
+                Err(HandshakeError::Timeout) => {
+                    tracing::warn!(target: "corelib_rust::stream", provider = "finnhub", "ws connect timed out");
+                    return AttemptOutcome::NeverConnected;
+                }
+                Err(HandshakeError::Failed(e)) => {
                     tracing::warn!(target: "corelib_rust::stream", provider = "finnhub", error = %e, "ws connect failed");
                     return AttemptOutcome::NeverConnected;
                 }
-                Ok(v) => v,
+                Ok(ws) => ws,
             };
             // signal the supervisor to reset backoff
             let _ = tx.send(CoreEvent::Status(ProviderStatus::Connected { provider: ProviderKind::Finnhub })).await;
@@ -147,9 +160,15 @@ impl ProviderDriver for FinnhubDriver {
                 let m = serde_json::json!({ "type": "subscribe", "symbol": s }).to_string();
                 if ws.send(Message::Text(m.into())).await.is_err() { return AttemptOutcome::ConnectedThenDropped; }
             }
+            let mut silence = tokio::time::interval(tokio::time::Duration::from_secs(SILENCE_SECONDS));
+            let mut ping = tokio::time::interval(tokio::time::Duration::from_secs(PING_INTERVAL));
+            let _ = silence.tick().await;
+            let _ = ping.tick().await;
             loop {
                 tokio::select! {
                     _ = stop_rx.recv() => return AttemptOutcome::Stopped,
+                    _ = ping.tick() => { let _ = ws.send(Message::Ping(vec![].into())).await; }
+                    _ = silence.tick() => return AttemptOutcome::ConnectedThenDropped,
                     upd = sub_rx.recv() => {
                         match upd {
                             // Finnhub is single-channel: ignore `channel`, subscribe each new symbol.
@@ -167,6 +186,7 @@ impl ProviderDriver for FinnhubDriver {
                     }
                     msg = ws.next() => match msg {
                         Some(Ok(Message::Text(t))) => {
+                            silence.reset();
                             // dual-mode: each trade carries the raw FinnhubPricingData + the unified MarketEvent.
                             for ev in parse_finnhub_frame(&t, &self.name) {
                                 if let Some(raw) = market_event_to_finnhub_pricing(&ev) {
@@ -175,6 +195,8 @@ impl ProviderDriver for FinnhubDriver {
                             }
                         }
                         Some(Ok(Message::Ping(p))) => { let _ = ws.send(Message::Pong(p)).await; }
+                        // a Pong proves the peer is alive even when no trades are flowing
+                        Some(Ok(Message::Pong(_))) => silence.reset(),
                         Some(Ok(_)) => {}
                         Some(Err(_)) | None => return AttemptOutcome::ConnectedThenDropped,
                     }
@@ -465,5 +487,92 @@ mod resurrection_tests {
             !got.contains(&"MSFT".to_string()),
             "must NOT resurrect the unsubscribed symbol: {got:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod hardening_tests {
+    use super::*;
+    use std::time::Duration;
+    use tokio::net::TcpListener;
+    use tokio_tungstenite::accept_async;
+
+    fn driver(port: u16) -> FinnhubDriver {
+        let path = std::env::temp_dir().join(format!(
+            "test_finnhub_hard_{}_{}.redb",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        FinnhubDriver {
+            token: "tok".into(),
+            name: "finnhub_main".into(),
+            base_url: Some(format!("ws://127.0.0.1:{port}/")),
+            db: Arc::new(redb::Database::create(path).unwrap()),
+            table: "finnhub_subscriptions",
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn black_holed_connect_returns_never_connected_after_handshake_timeout() {
+        let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let d = driver(l.local_addr().unwrap().port());
+        let (tx, _rx) = mpsc::channel::<CoreEvent>(16);
+        let (_sub_tx, mut sub_rx) = mpsc::channel::<SubRequest>(1);
+        let (_stop_tx, mut stop_rx) = mpsc::channel::<()>(1);
+        let start = tokio::time::Instant::now();
+        let out = d.connect_once(&[], &tx, &mut sub_rx, &mut stop_rx).await;
+        assert_eq!(out, AttemptOutcome::NeverConnected);
+        assert!(start.elapsed() >= HANDSHAKE_TIMEOUT && start.elapsed() < HANDSHAKE_TIMEOUT * 2);
+        drop(l);
+    }
+
+    #[tokio::test]
+    async fn black_holed_connect_returns_promptly_on_stop() {
+        let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let d = driver(l.local_addr().unwrap().port());
+        let (tx, _rx) = mpsc::channel::<CoreEvent>(16);
+        let (_sub_tx, mut sub_rx) = mpsc::channel::<SubRequest>(1);
+        let (stop_tx, mut stop_rx) = mpsc::channel::<()>(1);
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            let _ = stop_tx.send(()).await;
+        });
+        let t = std::time::Instant::now();
+        let out = d.connect_once(&[], &tx, &mut sub_rx, &mut stop_rx).await;
+        assert_eq!(out, AttemptOutcome::Stopped);
+        assert!(t.elapsed() < Duration::from_secs(5));
+        drop(l);
+    }
+
+    /// Half-open: the ws upgrade succeeds, then the peer goes completely silent (no pong, no data).
+    #[tokio::test(start_paused = true)]
+    async fn silent_half_open_connection_is_dropped_by_watchdog() {
+        let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = l.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let (s, _) = l.accept().await.unwrap();
+            let _ws = accept_async(s).await.unwrap();
+            tokio::time::sleep(Duration::from_secs(36000)).await;
+        });
+        let d = driver(port);
+        let (tx, mut rx) = mpsc::channel::<CoreEvent>(16);
+        let (_sub_tx, mut sub_rx) = mpsc::channel::<SubRequest>(1);
+        let (_stop_tx, mut stop_rx) = mpsc::channel::<()>(1);
+        let start = tokio::time::Instant::now();
+        let out = tokio::time::timeout(
+            Duration::from_secs(600),
+            d.connect_once(&[], &tx, &mut sub_rx, &mut stop_rx),
+        )
+        .await
+        .expect("watchdog never fired");
+        assert_eq!(out, AttemptOutcome::ConnectedThenDropped);
+        assert!(start.elapsed() >= Duration::from_secs(SILENCE_SECONDS));
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(CoreEvent::Status(ProviderStatus::Connected { .. }))
+        ));
     }
 }

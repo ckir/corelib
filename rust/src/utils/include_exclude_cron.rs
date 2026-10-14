@@ -53,13 +53,14 @@ impl CronJobHandle {
 /// # Returns
 /// A `CronJobHandle` used to manage the lifecycle of the job.
 ///
-/// # Panics
-/// Panics if any of the provided cron expressions are syntactically invalid.
+/// # Errors
+/// Returns `Err` (never panics) if any of the provided cron expressions is syntactically invalid.
+/// A handler that panics is caught and logged; the schedule keeps running.
 pub fn include_exclude_cron<F>(
     include_exprs: Vec<String>,
     exclude_exprs: Vec<String>,
     handler: F,
-) -> CronJobHandle
+) -> Result<CronJobHandle, String>
 where
     F: Fn() + Send + Sync + 'static,
 {
@@ -69,14 +70,20 @@ where
     // Pre-parse all "include" cron expressions into Schedule objects
     let include_schedules: Vec<Schedule> = include_exprs
         .into_iter()
-        .map(|expr| Schedule::from_str(&expr).expect("invalid include cron expression"))
-        .collect();
+        .map(|expr| {
+            Schedule::from_str(&expr)
+                .map_err(|e| format!("invalid include cron expression {expr:?}: {e}"))
+        })
+        .collect::<Result<_, _>>()?;
 
     // Pre-parse all "exclude" cron expressions into Schedule objects
     let exclude_schedules: Vec<Schedule> = exclude_exprs
         .into_iter()
-        .map(|expr| Schedule::from_str(&expr).expect("invalid exclude cron expression"))
-        .collect();
+        .map(|expr| {
+            Schedule::from_str(&expr)
+                .map_err(|e| format!("invalid exclude cron expression {expr:?}: {e}"))
+        })
+        .collect::<Result<_, _>>()?;
 
     // Initialize the thread-safe stop flag
     let stop_flag = Arc::new(AtomicBool::new(false));
@@ -139,7 +146,17 @@ where
 
             // If included and NOT excluded, execute the provided handler
             if !excluded {
-                (handler_clone)();
+                // A panicking handler must not kill the schedule thread silently.
+                if let Err(payload) =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (handler_clone)()))
+                {
+                    let msg = payload
+                        .downcast_ref::<&str>()
+                        .map(|s| s.to_string())
+                        .or_else(|| payload.downcast_ref::<String>().cloned())
+                        .unwrap_or_else(|| "non-string panic payload".to_string());
+                    tracing::error!(target: "corelib_rust::cron", panic = %msg, "cron handler panicked; schedule continues");
+                }
             }
 
             // Record this timestamp as the last fired second
@@ -147,7 +164,7 @@ where
         }
     });
 
-    CronJobHandle { stop_flag }
+    Ok(CronJobHandle { stop_flag })
 }
 
 // =============================================
@@ -167,7 +184,8 @@ mod tests {
 
         let handle = include_exclude_cron(vec!["* * * * * * *".to_string()], vec![], move || {
             c.fetch_add(1, Ordering::SeqCst);
-        });
+        })
+        .unwrap();
 
         thread::sleep(Duration::from_secs(4));
         handle.stop();
@@ -187,7 +205,8 @@ mod tests {
             move || {
                 c.fetch_add(1, Ordering::SeqCst);
             },
-        );
+        )
+        .unwrap();
 
         thread::sleep(Duration::from_secs(3));
         handle.stop();
@@ -203,7 +222,8 @@ mod tests {
         // Fire every 2 seconds
         let handle = include_exclude_cron(vec!["*/2 * * * * * *".to_string()], vec![], move || {
             c.fetch_add(1, Ordering::SeqCst);
-        });
+        })
+        .unwrap();
 
         thread::sleep(Duration::from_secs(6));
         handle.stop();
@@ -224,7 +244,8 @@ mod tests {
 
         let handle = include_exclude_cron(vec![], vec![], move || {
             c.fetch_add(1, Ordering::SeqCst);
-        });
+        })
+        .unwrap();
 
         thread::sleep(Duration::from_secs(3));
         handle.stop();
@@ -239,7 +260,8 @@ mod tests {
 
         let handle = include_exclude_cron(vec!["* * * * * * *".to_string()], vec![], move || {
             c.fetch_add(1, Ordering::SeqCst);
-        });
+        })
+        .unwrap();
 
         // Wait until it has fired at least once so we know it's running
         let start = std::time::Instant::now();
@@ -268,18 +290,37 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "invalid include cron expression")]
-    fn invalid_include_cron_panics() {
-        let _ = include_exclude_cron(vec!["invalid".to_string()], vec![], || {});
+    fn invalid_include_cron_returns_err() {
+        let r = include_exclude_cron(vec!["invalid".to_string()], vec![], || {});
+        assert!(r.err().unwrap().contains("invalid include cron expression"));
     }
 
     #[test]
-    #[should_panic(expected = "invalid exclude cron expression")]
-    fn invalid_exclude_cron_panics() {
-        let _ = include_exclude_cron(
+    fn invalid_exclude_cron_returns_err() {
+        let r = include_exclude_cron(
             vec!["* * * * * * *".to_string()],
             vec!["bad".to_string()],
             || {},
+        );
+        assert!(r.err().unwrap().contains("invalid exclude cron expression"));
+    }
+
+    #[test]
+    fn panicking_handler_does_not_kill_the_schedule() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let c = Arc::clone(&counter);
+        let handle = include_exclude_cron(vec!["* * * * * * *".to_string()], vec![], move || {
+            c.fetch_add(1, Ordering::SeqCst);
+            panic!("handler boom");
+        })
+        .unwrap();
+        thread::sleep(Duration::from_secs(4));
+        handle.stop();
+        // Every tick panics; the thread must have survived to tick several times.
+        assert!(
+            counter.load(Ordering::SeqCst) >= 3,
+            "schedule died after the first panic: {}",
+            counter.load(Ordering::SeqCst)
         );
     }
 }

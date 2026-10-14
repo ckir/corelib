@@ -158,7 +158,8 @@ impl AlpacaStreaming {
     #[napi]
     pub async fn start(&self) -> Result<()> {
         let mut g = self.inner.lock().await;
-        if g.started {
+        // A supervisor that ended on its own (Fatal/max_retries/panic) is NOT running: restart.
+        if g.started && g.host.is_running() {
             return Ok(());
         }
         let driver = AlpacaDriver {
@@ -190,7 +191,7 @@ impl AlpacaStreaming {
         let on_pricing = Arc::clone(&self.on_pricing);
         let on_event = Arc::clone(&self.on_event);
         let on_market = self.on_market_event.clone();
-        g.host.start(
+        let started = g.host.start(
             driver,
             Vec::new(),
             ReconnectPolicy {
@@ -236,6 +237,17 @@ impl AlpacaStreaming {
                 _ => {}
             },
         );
+        if let Err(e) = started {
+            // Surface the failure on BOTH channels: the rejected promise and the "error" event.
+            let _ = self.on_event.call(
+                Ok(EventRecord {
+                    r#type: "error".into(),
+                    data: Some(e.to_string()),
+                }),
+                ThreadsafeFunctionCallMode::NonBlocking,
+            );
+            return Err(napi::Error::from_reason(e.to_string()));
+        }
         let _ = self.on_log.call(
             Ok(LogRecord {
                 level: "debug".into(),
@@ -260,7 +272,10 @@ impl AlpacaStreaming {
         ] {
             if let Some(s) = syms {
                 if !s.is_empty() {
-                    g.host.subscribe_channel(ch, s.clone());
+                    g.host
+                        .subscribe_channel(ch, s.clone())
+                        .await
+                        .map_err(|e| napi::Error::from_reason(e.to_string()))?;
                     g.host.subscribe_channel_live(ch, s);
                 }
             }
@@ -278,7 +293,10 @@ impl AlpacaStreaming {
             ("bars", opts.bars),
         ] {
             if let Some(s) = syms {
-                g.host.unsubscribe_channel(ch, s);
+                g.host
+                    .unsubscribe_channel(ch, s)
+                    .await
+                    .map_err(|e| napi::Error::from_reason(e.to_string()))?;
             }
         }
         Ok(())
@@ -334,7 +352,9 @@ mod facade_tests {
     async fn subscribe_persists_per_channel_and_resumes() {
         // Build the host the same way the facade does and assert channel persistence/resume.
         let host = fresh_host();
-        host.subscribe_channel("trades", vec!["AAPL".into()]);
+        host.subscribe_channel("trades", vec!["AAPL".into()])
+            .await
+            .unwrap();
         assert_eq!(
             host.get_persisted_subscriptions_for_channel("trades", "quotes"),
             vec!["AAPL".to_string()]

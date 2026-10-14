@@ -242,7 +242,8 @@ impl FinnhubStreaming {
     #[napi]
     pub async fn start(&self) -> napi::Result<()> {
         let mut g = self.inner.lock().await;
-        if g.started {
+        // A supervisor that ended on its own (Fatal/max_retries/panic) is NOT running: restart.
+        if g.started && g.host.is_running() {
             return Ok(());
         }
         let _ = self.on_log.call(
@@ -265,7 +266,7 @@ impl FinnhubStreaming {
         let on_pricing = Arc::clone(&self.on_pricing);
         let on_event = Arc::clone(&self.on_event);
         let on_market_event = self.on_market_event.clone();
-        g.host.start(
+        let started = g.host.start(
             driver,
             symbols,
             ReconnectPolicy {
@@ -312,6 +313,16 @@ impl FinnhubStreaming {
                 _ => {}
             },
         );
+        if let Err(e) = started {
+            let _ = self.on_event.call(
+                Ok(EventRecord {
+                    r#type: "error".into(),
+                    data: Some(e.to_string()),
+                }),
+                ThreadsafeFunctionCallMode::NonBlocking,
+            );
+            return Err(napi::Error::from_reason(e.to_string()));
+        }
         g.started = true;
         Ok(())
     }
@@ -319,7 +330,13 @@ impl FinnhubStreaming {
     /// Subscribe to additional symbols (persisted to redb + sent live to the driver).
     #[napi]
     pub async fn subscribe(&self, symbols: Vec<String>) -> napi::Result<()> {
-        self.inner.lock().await.host.subscribe(symbols).await;
+        self.inner
+            .lock()
+            .await
+            .host
+            .subscribe(symbols)
+            .await
+            .map_err(|e| napi::Error::from_reason(e.to_string()))?;
         Ok(())
     }
 
@@ -327,7 +344,13 @@ impl FinnhubStreaming {
     /// WS-unsubscribe through the driver is deferred to Phase 2.
     #[napi]
     pub async fn unsubscribe(&self, symbols: Vec<String>) -> napi::Result<()> {
-        self.inner.lock().await.host.unsubscribe(symbols).await;
+        self.inner
+            .lock()
+            .await
+            .host
+            .unsubscribe(symbols)
+            .await
+            .map_err(|e| napi::Error::from_reason(e.to_string()))?;
         Ok(())
     }
 

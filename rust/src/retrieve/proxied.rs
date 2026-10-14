@@ -45,21 +45,40 @@ impl RequestProxied {
     /// # Arguments
     /// * `proxies` - A vector of proxy base URLs (e.g., `["https://proxy1.com", "https://proxy2.com"]`).
     ///
-    /// # Panics
-    /// Panics if the provided `proxies` vector is empty.
-    pub fn new(proxies: Vec<String>) -> Self {
+    /// # Errors
+    /// Returns `Err` if the provided `proxies` vector is empty.
+    pub fn new(proxies: Vec<String>) -> Result<Self, String> {
         // Enforce that at least one proxy is provided
         if proxies.is_empty() {
-            panic!("RequestProxied: at least one proxy URL is required");
+            return Err("RequestProxied: at least one proxy URL is required".to_string());
         }
 
-        Self {
+        Ok(Self {
             state: Arc::new(Mutex::new(ProxyState {
                 active_proxies: proxies,
                 failure_streaks: HashMap::new(),
                 current_index: 0,
             })),
+        })
+    }
+
+    /// Error response for an unusable (user-supplied) proxy base URL or suffix.
+    fn invalid_proxy_response<T>(reason: &str) -> ApiResponse<T> {
+        ApiResponse::Error {
+            reason: serde_json::json!({ "message": format!("Invalid proxy URL: {reason}") }),
         }
+    }
+
+    /// Pick the next proxy from the shared round-robin rotation (None when none are left).
+    fn next_proxy(&self) -> Option<String> {
+        let mut state = self.state.lock().unwrap();
+        if state.active_proxies.is_empty() {
+            return None;
+        }
+        let idx = state.current_index % state.active_proxies.len();
+        let proxy_base = state.active_proxies[idx].clone();
+        state.current_index = (state.current_index + 1) % state.active_proxies.len();
+        Some(proxy_base)
     }
 
     /// Builds the final proxy URL by appending the target URL as a query parameter.
@@ -71,7 +90,10 @@ impl RequestProxied {
     /// * `proxy_base` - The base URL of the proxy server.
     /// * `suffix` - An optional path segment to append to the proxy base.
     /// * `target_url` - The original URL that should be fetched via the proxy.
-    fn build_proxy_url(proxy_base: &str, suffix: &str, target_url: &str) -> String {
+    ///
+    /// # Errors
+    /// Returns `Err` (never panics) when the proxy base or suffix is not a valid URL part.
+    fn build_proxy_url(proxy_base: &str, suffix: &str, target_url: &str) -> Result<String, String> {
         // Ensure the base URL ends with a slash so the suffix is joined correctly
         let base_with_slash = if proxy_base.ends_with('/') {
             proxy_base.to_string()
@@ -80,17 +102,20 @@ impl RequestProxied {
         };
 
         // Parse the base URL into a Url object
-        let mut url_obj = Url::parse(&base_with_slash).expect("Invalid proxy base URL");
+        let mut url_obj =
+            Url::parse(&base_with_slash).map_err(|e| format!("bad proxy base: {e}"))?;
 
         // Join the suffix if it's not empty
         if !suffix.is_empty() {
-            url_obj = url_obj.join(suffix).expect("Invalid proxy suffix");
+            url_obj = url_obj
+                .join(suffix)
+                .map_err(|e| format!("bad proxy suffix: {e}"))?;
         }
 
         // Append the encoded target URL as the 'url' query parameter
         url_obj.query_pairs_mut().append_pair("url", target_url);
         // Return the final serialized URL string
-        url_obj.to_string()
+        Ok(url_obj.to_string())
     }
 
     /// Records a successful request for a proxy, resetting its failure streak.
@@ -169,23 +194,19 @@ impl RequestProxied {
         let mut attempts = 0;
 
         while attempts < max_attempts {
-            let proxy_base;
-            {
-                let mut state = self.state.lock().unwrap();
-                if state.active_proxies.is_empty() {
-                    break;
+            let Some(proxy_base) = self.next_proxy() else {
+                break;
+            };
+
+            // Construct the proxied URL; a malformed proxy counts as a failure of that proxy
+            let proxy_url = match Self::build_proxy_url(&proxy_base, suffix, url) {
+                Ok(u) => u,
+                Err(_) => {
+                    self.track_failure(&proxy_base);
+                    attempts += 1;
+                    continue; // surfaced via the final "All proxies failed" response
                 }
-
-                // Select the proxy URL using the current rotation index
-                let idx = state.current_index % state.active_proxies.len();
-                proxy_base = state.active_proxies[idx].clone();
-
-                // Advance the rotation index for the next request
-                state.current_index = (state.current_index + 1) % state.active_proxies.len();
-            }
-
-            // Construct the proxied URL
-            let proxy_url = Self::build_proxy_url(&proxy_base, suffix, url);
+            };
             // Execute the request via the unlimited module
             let result = unlimited::end_point::<T>(&proxy_url, options.clone()).await;
 
@@ -243,22 +264,46 @@ impl RequestProxied {
                 .collect();
         }
 
-        // Distribute the URLs across the available proxies
-        let proxy_urls: Vec<String> = urls
+        // Assign each URL a proxy from the shared rotation, then run all requests concurrently.
+        // Each outcome is recorded against the proxy that served it (same success/failure
+        // classification as `end_point`), so failing proxies are ejected by batch use too.
+        let jobs: Vec<(Option<String>, Result<String, String>)> = urls
             .iter()
-            .enumerate()
-            .map(|(i, target)| {
-                // Pick a proxy based on the loop index for static load balancing
-                let proxy_base = &active_proxies[i % active_proxies.len()];
-                Self::build_proxy_url(proxy_base, suffix, target)
+            .map(|target| match self.next_proxy() {
+                Some(proxy_base) => {
+                    let built = Self::build_proxy_url(&proxy_base, suffix, target);
+                    (Some(proxy_base), built)
+                }
+                None => (None, Err("no active proxies".to_string())),
             })
             .collect();
 
-        // Convert the String vector into a vector of &str for the unlimited module API
-        let proxy_urls_refs: Vec<&str> = proxy_urls.iter().map(|s| s.as_str()).collect();
+        let futures = jobs.into_iter().map(|(proxy_base, built)| {
+            let opts = options.clone();
+            async move {
+                match built {
+                    Ok(proxy_url) => (
+                        proxy_base,
+                        unlimited::end_point::<T>(&proxy_url, opts).await,
+                    ),
+                    Err(reason) => (proxy_base, Self::invalid_proxy_response::<T>(&reason)),
+                }
+            }
+        });
 
-        // Delegate concurrent execution to the unlimited module
-        unlimited::end_points::<T>(&proxy_urls_refs, options).await
+        futures::future::join_all(futures)
+            .await
+            .into_iter()
+            .map(|(proxy_base, result)| {
+                if let Some(proxy_base) = proxy_base {
+                    match result {
+                        ApiResponse::Success { .. } => self.track_success(&proxy_base),
+                        ApiResponse::Error { .. } => self.track_failure(&proxy_base),
+                    }
+                }
+                result
+            })
+            .collect()
     }
 }
 
@@ -288,9 +333,65 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "at least one proxy URL is required")]
-    fn test_constructor_throws_on_empty() {
-        RequestProxied::new(vec![]);
+    fn test_constructor_errs_on_empty() {
+        let err = RequestProxied::new(vec![]).unwrap_err();
+        assert!(err.contains("at least one proxy URL is required"));
+    }
+
+    #[tokio::test]
+    async fn test_invalid_proxy_url_does_not_panic() {
+        let proxied = RequestProxied::new(vec!["not a url".to_string()]).unwrap();
+        match proxied
+            .end_point::<TestBody>("https://t.com", "", None)
+            .await
+        {
+            ApiResponse::Error { reason } => assert_eq!(reason["message"], "All proxies failed"),
+            _ => panic!("expected error response"),
+        }
+        let results = proxied
+            .end_points::<TestBody>(&["https://t.com"], "", None)
+            .await;
+        match &results[0] {
+            ApiResponse::Error { reason } => assert!(reason["message"]
+                .as_str()
+                .unwrap()
+                .starts_with("Invalid proxy URL")),
+            _ => panic!("expected error response"),
+        }
+        assert!(RequestProxied::build_proxy_url("not a url", "", "https://t.com").is_err());
+    }
+
+    #[tokio::test]
+    async fn test_end_points_ejects_always_failing_proxy() {
+        let server_fail = MockServer::start().await;
+        let server_ok = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server_fail)
+            .await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(TestBody {
+                message: "ok".to_string(),
+            }))
+            .mount(&server_ok)
+            .await;
+
+        let proxied = RequestProxied::new(vec![server_fail.uri(), server_ok.uri()]).unwrap();
+        // 6 urls round-robin => 3 requests hit the failing proxy => removed after the batch.
+        let urls = [
+            "https://a",
+            "https://b",
+            "https://c",
+            "https://d",
+            "https://e",
+            "https://f",
+        ];
+        let results = proxied
+            .end_points::<TestBody>(&urls, "", Some(fast_fail_options()))
+            .await;
+        assert_eq!(results.len(), 6);
+        let state = proxied.state.lock().unwrap();
+        assert_eq!(state.active_proxies, vec![server_ok.uri()]);
     }
 
     #[test]
@@ -299,7 +400,8 @@ mod tests {
             "https://proxy.example.com",
             "/api/markets/nasdaq",
             "https://api.nasdaq.com/api/market-info?symbol=AAPL",
-        );
+        )
+        .unwrap();
 
         assert_eq!(
             url,
@@ -330,7 +432,8 @@ mod tests {
             .mount(&server3)
             .await;
 
-        let proxied = RequestProxied::new(vec![server1.uri(), server2.uri(), server3.uri()]);
+        let proxied =
+            RequestProxied::new(vec![server1.uri(), server2.uri(), server3.uri()]).unwrap();
 
         let target = "https://target.com";
 
@@ -377,7 +480,8 @@ mod tests {
             server_fail1.uri(),
             server_fail2.uri(),
             server_success.uri(),
-        ]);
+        ])
+        .unwrap();
 
         let result = proxied
             .end_point::<TestBody>("https://target.com", "", Some(fast_fail_options()))
@@ -410,7 +514,7 @@ mod tests {
             .mount(&server_success)
             .await;
 
-        let proxied = RequestProxied::new(vec![server_fail.uri(), server_success.uri()]);
+        let proxied = RequestProxied::new(vec![server_fail.uri(), server_success.uri()]).unwrap();
 
         // Attempt enough times to guarantee 3 failures on server_fail
         for _ in 0..5 {
@@ -439,7 +543,7 @@ mod tests {
             .mount(&server2)
             .await;
 
-        let proxied = RequestProxied::new(vec![server1.uri(), server2.uri()]);
+        let proxied = RequestProxied::new(vec![server1.uri(), server2.uri()]).unwrap();
 
         let result = proxied
             .end_point::<TestBody>("https://t.com", "", Some(fast_fail_options()))
@@ -469,7 +573,7 @@ mod tests {
             .mount(&server2)
             .await;
 
-        let proxied = RequestProxied::new(vec![server1.uri(), server2.uri()]);
+        let proxied = RequestProxied::new(vec![server1.uri(), server2.uri()]).unwrap();
 
         let urls = vec!["https://t1.com", "https://t2.com", "https://t3.com"];
 
@@ -513,7 +617,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_edge_case_no_active_proxies_left() {
-        let proxied = RequestProxied::new(vec!["http://dummy".to_string()]);
+        let proxied = RequestProxied::new(vec!["http://dummy".to_string()]).unwrap();
 
         // Manually empty active proxies
         {
