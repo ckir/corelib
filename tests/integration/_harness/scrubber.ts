@@ -34,6 +34,9 @@ function scrubHeaders(h: Record<string, string>): Record<string, string> {
 function scrubUrl(url: string): string {
 	try {
 		const u = new URL(url);
+		// Basic-auth style credentials in the authority (https://user:pass@host/) are secrets too.
+		if (u.username) u.username = encodeURIComponent(REDACTED);
+		if (u.password) u.password = encodeURIComponent(REDACTED);
 		for (const key of [...u.searchParams.keys()]) {
 			if (
 				SECRET_KEY_RE.test(key) ||
@@ -103,6 +106,10 @@ export function findUnscrubbedSecrets(f: Fixture): string[] {
 			reasons.push(`response header ${k}`);
 	try {
 		const u = new URL(f.request.url);
+		if (u.username && decodeURIComponent(u.username) !== REDACTED)
+			reasons.push("url username");
+		if (u.password && decodeURIComponent(u.password) !== REDACTED)
+			reasons.push("url password");
 		for (const key of u.searchParams.keys()) {
 			if (
 				(SECRET_KEY_RE.test(key) ||

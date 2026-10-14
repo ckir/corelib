@@ -1,6 +1,7 @@
 import { createDatabase } from "@ckirg/corelib";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
+import { runInRequest } from "../core/request-context";
 import type { AppEnv } from "../core/types";
 import { sqlRouter } from "./SqlCloud";
 
@@ -39,6 +40,20 @@ describe("SqlCloud Router", () => {
 
 		return app.request(req);
 	};
+
+	it("wires getTraceId to the active request id (and to undefined outside a request)", async () => {
+		const mockDb = {
+			query: vi.fn().mockResolvedValue({ status: "success", value: [] }),
+			disconnect: vi.fn().mockResolvedValue(undefined),
+		};
+		vi.mocked(createDatabase).mockResolvedValue(mockDb as any);
+		await performPost({ sql: "SELECT 1", params: [] });
+
+		const config = vi.mocked(createDatabase).mock.calls.at(-1)?.[0] as any;
+		expect(config.getTraceId()).toBeUndefined();
+		const inside = await runInRequest(42, async () => config.getTraceId());
+		expect(inside).toBe("42");
+	});
 
 	it("should return 400 if sql query is missing", async () => {
 		const res = await performPost({ params: [] });

@@ -13,10 +13,12 @@ vi.mock("@ckirg/corelib", () => {
 		on_log: any;
 		on_pricing: any;
 		on_event: any;
-		constructor(on_log: any, on_pricing: any, on_event: any) {
+		on_market: any;
+		constructor(on_log: any, on_pricing: any, on_event: any, on_market: any) {
 			this.on_log = on_log;
 			this.on_pricing = on_pricing;
 			this.on_event = on_event;
+			this.on_market = on_market;
 		}
 		init = vi.fn().mockResolvedValue(undefined);
 		start = vi.fn().mockImplementation(async () => {
@@ -62,6 +64,23 @@ describe("YahooStreaming (Exhaustive)", () => {
 
 		stream = new YahooStreaming();
 		mockRust = (stream as any).rust;
+	});
+
+	it("emits 'market' when the unified 4th callback fires", () => {
+		const marketSpy = vi.fn();
+		stream.on("market", marketSpy);
+
+		const payload = { type: "trade", ticker: "AAPL" };
+		mockRust.on_market(null, JSON.stringify(payload));
+
+		expect(marketSpy).toHaveBeenCalledWith(payload);
+	});
+
+	it("does not throw or emit 'market' when the callback receives invalid JSON", () => {
+		const marketSpy = vi.fn();
+		stream.on("market", marketSpy);
+		expect(() => mockRust.on_market(null, "not-valid-json")).not.toThrow();
+		expect(marketSpy).not.toHaveBeenCalled();
 	});
 
 	it("should auto-clean in development mode on constructor", () => {

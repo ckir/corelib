@@ -41,6 +41,22 @@ describe("scrubFixture", () => {
 		expect(s.request.url).toContain("q=1");
 	});
 
+	it("redacts credentials embedded in the url authority", () => {
+		const f = baseFixture({
+			request: {
+				method: "GET",
+				url: "https://alice:hunter2@x/y?q=1",
+				headers: {},
+			},
+		});
+		expect(findUnscrubbedSecrets(f)).toEqual(["url username", "url password"]);
+		const s = scrubFixture(f);
+		expect(s.request.url).not.toContain("alice");
+		expect(s.request.url).not.toContain("hunter2");
+		expect(s.request.url).toContain("q=1");
+		expect(findUnscrubbedSecrets(s)).toEqual([]);
+	});
+
 	it("recursively redacts secret-named keys in object bodies", () => {
 		const f = baseFixture({
 			response: {
