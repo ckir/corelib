@@ -127,6 +127,14 @@ than one global audit.
   suggestion, 2026-06-12.)* **→ folded into Streaming Engine Epic Phase B — this IS the cross-runtime
   interop closure. The endpoint-override prerequisite is now SATISFIED: all 3 drivers expose `base_url`.**
 
+- **Untested process-exit and entrypoint paths (agy test-audit, 2026-10-14)** — the Rust CLI binaries
+  `rust/src/bin/alpaca_streamer.rs` and `yahoo_streamer.rs` (arg parsing, missing-credential `exit(2)`;
+  `nasdaq_polling.rs` already has `Args::try_parse_from` tests), the exit codes of
+  `scripts/check-browser-bundle.mjs` (2 = entry missing, 1 = forbidden Node builtin), and the Cloud Run
+  entrypoint `ts-cloud/src/platform/cloudrun/server.ts` have no tests. *Why deferred:* thin startup glue,
+  low reachability of a silent regression; the browser-bundle check is exercised end to end by CI.
+  *Revive when:* one of them changes behaviour or a regression escapes through it.
+
 ## Tooling / dev-workflow
 
 - **CI-offload + AI auto-fix workflow — SHIPPED** (2026-06-13, merged to `main` `303dcfa`, CI-fix `bcf6b86`;
