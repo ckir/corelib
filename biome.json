@@ -19,6 +19,9 @@
 			"suspicious": {
 				"noExplicitAny": "error",
 				"noConsole": "error"
+			},
+			"style": {
+				"noNonNullAssertion": "error"
 			}
 		}
 	},
@@ -38,6 +41,9 @@
 					"suspicious": {
 						"noExplicitAny": "off",
 						"noConsole": "off"
+					},
+					"style": {
+						"noNonNullAssertion": "off"
 					}
 				}
 			}
