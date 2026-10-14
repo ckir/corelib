@@ -45,12 +45,13 @@ export class PostgresDriver implements DbDriver {
 	async connect(): Promise<void> {
 		if (this.client) return;
 		const sql = (await import("postgres")).default;
+		// Omit unset options (rather than passing explicit `undefined`) so the
+		// postgres library sees exactly the keys it saw before.
+		const { maxConnections, ssl, timeoutMs } = this.config;
 		this.client = sql(this.config.url, {
-			max: this.config.maxConnections,
-			ssl: this.config.ssl,
-			connect_timeout: this.config.timeoutMs
-				? this.config.timeoutMs / 1000
-				: undefined,
+			...(maxConnections !== undefined ? { max: maxConnections } : {}),
+			...(ssl !== undefined ? { ssl } : {}),
+			...(timeoutMs ? { connect_timeout: timeoutMs / 1000 } : {}),
 		});
 	}
 

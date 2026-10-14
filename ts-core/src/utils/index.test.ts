@@ -86,7 +86,7 @@ describe("Utils General Abstractions", () => {
 				const original = process.env.NODE_ENV;
 				process.env.NODE_ENV = "PRODUCTION";
 				expect(utils.getMode()).toBe("production");
-				process.env.NODE_ENV = original;
+				process.env.NODE_ENV = original as string;
 			}
 		});
 
@@ -98,7 +98,7 @@ describe("Utils General Abstractions", () => {
 
 				delete process.env.NODE_ENV;
 				expect(utils.getMode()).toBe("development");
-				process.env.NODE_ENV = original;
+				process.env.NODE_ENV = original as string;
 			}
 		});
 	});

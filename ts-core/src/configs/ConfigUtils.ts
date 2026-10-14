@@ -30,8 +30,9 @@ export async function decryptConfig(encryptedData: string): Promise<unknown> {
 		);
 	}
 
-	const iv = Buffer.from(lines[0], "base64");
-	const ciphertext = Buffer.from(lines[1], "base64");
+	const [ivLine = "", cipherLine = ""] = lines; // lines.length >= 2 checked above
+	const iv = Buffer.from(ivLine, "base64");
+	const ciphertext = Buffer.from(cipherLine, "base64");
 	const key = Buffer.from(password, "hex");
 
 	const decipher = crypto.createDecipheriv("aes-256-cbc", key, iv);

@@ -294,14 +294,14 @@ describe("RequestUnlimited", () => {
 			const results = await endPoints(urls);
 
 			expect(results).toHaveLength(3);
-			expect(results[0].status).toBe("success");
-			expect(results[1].status).toBe("success");
-			expect(results[2].status).toBe("error");
+			expect(results[0]!.status).toBe("success");
+			expect(results[1]!.status).toBe("success");
+			expect(results[2]!.status).toBe("error");
 
-			if (results[0].status === "success")
-				expect(results[0].value.body).toEqual({ foo: "bar" });
-			if (results[1].status === "success")
-				expect(results[1].value.body).toBe("plain text");
+			if (results[0]!.status === "success")
+				expect(results[0]!.value.body).toEqual({ foo: "bar" });
+			if (results[1]!.status === "success")
+				expect(results[1]!.value.body).toBe("plain text");
 		});
 
 		it("should handle network failures in parallel requests", async () => {
@@ -316,11 +316,11 @@ describe("RequestUnlimited", () => {
 				{ retry: { limit: 0 } },
 			);
 
-			expect(results[0].status).toBe("success");
-			expect(results[1].status).toBe("error");
-			if (results[1].status === "error") {
+			expect(results[0]!.status).toBe("success");
+			expect(results[1]!.status).toBe("error");
+			if (results[1]!.status === "error") {
 				// Fetch failure usually TypeError in Node/Browsers, but MSW/Vitest might report NetworkError
-				const errorName = (results[1].reason as any).name;
+				const errorName = (results[1]!.reason as any).name;
 				expect(["TypeError", "NetworkError"]).toContain(errorName);
 			}
 		});

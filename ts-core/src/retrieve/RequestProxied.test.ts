@@ -290,9 +290,9 @@ describe("RequestProxied (Exhaustive)", () => {
 				"https://t2.com",
 				"https://t3.com",
 			]);
-			expect(r2[0].status).toBe("error");
-			expect(r2[1].status).toBe("error");
-			expect(r2[2].status).toBe("success");
+			expect(r2[0]!.status).toBe("error");
+			expect(r2[1]!.status).toBe("error");
+			expect(r2[2]!.status).toBe("success");
 
 			// Third batch - PROXY1, PROXY2 fail twice
 			const r3 = await proxied.endPoints([
@@ -300,9 +300,9 @@ describe("RequestProxied (Exhaustive)", () => {
 				"https://t2.com",
 				"https://t3.com",
 			]);
-			expect(r3[0].status).toBe("error");
-			expect(r3[1].status).toBe("error");
-			expect(r3[2].status).toBe("success");
+			expect(r3[0]!.status).toBe("error");
+			expect(r3[1]!.status).toBe("error");
+			expect(r3[2]!.status).toBe("success");
 
 			// Fourth batch - PROXY1, PROXY2 fail third time -> should be evicted
 			const r4 = await proxied.endPoints([
@@ -310,9 +310,9 @@ describe("RequestProxied (Exhaustive)", () => {
 				"https://t2.com",
 				"https://t3.com",
 			]);
-			expect(r4[0].status).toBe("error");
-			expect(r4[1].status).toBe("error");
-			expect(r4[2].status).toBe("success");
+			expect(r4[0]!.status).toBe("error");
+			expect(r4[1]!.status).toBe("error");
+			expect(r4[2]!.status).toBe("success");
 
 			// PROXY1 and PROXY2 should now be evicted
 			expect((proxied as any).activeProxies.length).toBe(1);

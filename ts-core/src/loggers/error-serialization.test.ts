@@ -23,7 +23,7 @@ describe("logger extras error serialization (wiring)", () => {
 
 		log.error("boom", { err: new Error("kaboom") });
 
-		const payload = JSON.parse(spy.mock.calls[0][0] as string);
+		const payload = JSON.parse(spy.mock.calls[0]![0] as string);
 		expect(payload.err).toMatchObject({ message: "kaboom" });
 		spy.mockRestore();
 	});
@@ -34,7 +34,7 @@ describe("logger extras error serialization (wiring)", () => {
 		browserLogger.error("boom", { err: new Error("kaboom") });
 
 		// emit -> consoleFn(`[ERROR]`, msg, { ...ctx, ...normalizeExtras(extras) })
-		const merged = spy.mock.calls[0][2] as any;
+		const merged = spy.mock.calls[0]![2] as any;
 		expect(merged.err).toMatchObject({ message: "kaboom" });
 		spy.mockRestore();
 	});

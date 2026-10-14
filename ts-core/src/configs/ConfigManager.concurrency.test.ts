@@ -112,12 +112,12 @@ describe("ConfigManager — concurrency layer (Epic-1 Task 4)", () => {
 			// get() before initialize() → should warn AND still return a value.
 			const value = cm.get("markets");
 			expect(warnSpy).toHaveBeenCalled();
-			const warnMsg = warnSpy.mock.calls[0][0] as string;
+			const warnMsg = warnSpy.mock.calls[0]![0] as string;
 			expect(warnMsg).toContain("before initialize() resolved");
 			// The seeded default for "markets" must be defined (it's in ConfigManager.json).
 			expect(value).toBeDefined();
 		} finally {
-			process.env.NODE_ENV = originalNodeEnv;
+			process.env.NODE_ENV = originalNodeEnv as string;
 			warnSpy.mockRestore();
 		}
 	});
@@ -139,7 +139,7 @@ describe("ConfigManager — concurrency layer (Epic-1 Task 4)", () => {
 			// Value is still returned even without warning.
 			expect(value).toBeDefined();
 		} finally {
-			process.env.NODE_ENV = originalNodeEnv;
+			process.env.NODE_ENV = originalNodeEnv as string;
 			warnSpy.mockRestore();
 		}
 	});

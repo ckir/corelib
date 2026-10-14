@@ -268,9 +268,13 @@ export class ConfigManager extends EventEmitter {
 
 		for (let i = 0; i < argv.length; i++) {
 			const tok = argv[i];
+			if (tok === undefined) continue; // unreachable: i < argv.length
 			if (tok === "-C" || tok === "--config") {
-				if (i + 1 < argv.length && !argv[i + 1].startsWith("-"))
-					configPath = argv[++i];
+				const next = argv[i + 1];
+				if (next !== undefined && !next.startsWith("-")) {
+					configPath = next;
+					i++;
+				}
 				continue;
 			}
 			if (tok.startsWith("--config=")) {
@@ -284,12 +288,14 @@ export class ConfigManager extends EventEmitter {
 			// so they neither create a "" config key nor consume the next token.
 			if (key === "" || key.startsWith("=")) continue;
 			let value: string | boolean;
+			const nextTok = argv[i + 1];
 			const eq = key.indexOf("=");
 			if (eq > -1) {
 				value = key.slice(eq + 1);
 				key = key.slice(0, eq);
-			} else if (i + 1 < argv.length && !argv[i + 1].startsWith("-")) {
-				value = argv[++i];
+			} else if (nextTok !== undefined && !nextTok.startsWith("-")) {
+				value = nextTok;
+				i++;
 			} else {
 				value = true; // bare --flag → true
 			}
@@ -649,7 +655,11 @@ export class ConfigManager extends EventEmitter {
 			current = current[key] as Record<string, unknown>;
 		}
 
-		current[keys[0]] = value;
+		const last = keys[0];
+		if (last === undefined) {
+			throw new Error("ConfigManager.setPath: split produced no segments");
+		}
+		current[last] = value;
 	}
 
 	/**

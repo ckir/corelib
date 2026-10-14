@@ -89,7 +89,7 @@ describe("Database Integration Tests (Mocked Drivers)", () => {
 			const result = await db.query<{ num: number }>("SELECT 1 as num");
 			expect(result.status).toBe("success");
 			if (result.status === "success") {
-				expect(result.value.rows[0].num).toBe(1);
+				expect(result.value.rows[0]!.num).toBe(1);
 			}
 			expect(mockLogger.trace).toHaveBeenCalledWith(
 				"query: exec",
@@ -148,7 +148,7 @@ describe("Database Integration Tests (Mocked Drivers)", () => {
 			const result = await db.query<{ num: number }>("SELECT 1 as num");
 			expect(result.status).toBe("success");
 			if (result.status === "success") {
-				expect(result.value.rows[0].num).toBe(1);
+				expect(result.value.rows[0]!.num).toBe(1);
 			}
 		});
 
@@ -306,7 +306,7 @@ describe("Database Integration Tests (Mocked Drivers)", () => {
 			);
 			expect(result.status).toBe("success");
 			if (result.status === "success") {
-				expect(result.value.rows[0].id).toBe(1);
+				expect(result.value.rows[0]!.id).toBe(1);
 			}
 		});
 

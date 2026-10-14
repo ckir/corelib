@@ -267,6 +267,10 @@ export class RequestProxied {
 		for (let i = 0; i < urls.length; i++) {
 			const proxyBase = this.activeProxies[i % this.activeProxies.length];
 			const target = urls[i];
+			if (proxyBase === undefined || target === undefined) {
+				// Unreachable: i < urls.length and activeProxies is non-empty here.
+				throw new Error("RequestProxied: proxy/url index invariant broken");
+			}
 			const targetStr =
 				typeof target === "string"
 					? target
@@ -285,6 +289,7 @@ export class RequestProxied {
 		for (let i = 0; i < results.length; i++) {
 			const proxyBase = proxyAssignments[i];
 			const result = results[i];
+			if (proxyBase === undefined || result === undefined) continue; // unreachable: parallel arrays
 			if (isProxyFailure(result)) {
 				this.trackFailure(proxyBase);
 			} else {

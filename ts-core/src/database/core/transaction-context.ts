@@ -45,7 +45,7 @@ interface TransactionContext {
 	/** Flight-recorder id for the transaction; stamped on every query run within it. */
 	txId: number;
 	/** The database instance that opened this transaction (identity-compared). */
-	owner?: object;
+	owner?: object | undefined;
 }
 
 // Global storage singleton (dynamically initialized)

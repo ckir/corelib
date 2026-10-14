@@ -234,7 +234,7 @@ describe("Logger Implementation (StrictLoggerWrapper)", () => {
 			child.info("Edge test message", { edgeMode: true });
 
 			expect(consoleSpy).toHaveBeenCalledTimes(1);
-			const rawOutput = consoleSpy.mock.calls[0][0];
+			const rawOutput = consoleSpy.mock.calls[0]![0];
 			const logOutput = JSON.parse(rawOutput);
 
 			expect(logOutput.msg).toBe("Edge test message");

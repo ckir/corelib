@@ -32,7 +32,7 @@ export function safeDbError(e: unknown): SafeDbError {
 }
 
 function firstLine(text: string): string {
-	const line = text.split(/\r?\n/, 1)[0];
+	const line = text.split(/\r?\n/, 1)[0] ?? ""; // split() always yields >= 1 element
 	return line.length > MAX_MESSAGE_LENGTH
 		? `${line.slice(0, MAX_MESSAGE_LENGTH)}...`
 		: line;

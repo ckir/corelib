@@ -57,9 +57,9 @@ describe("transaction context ownership", () => {
 			await db1.query("SELECT 1");
 			return wrapSuccess(0);
 		});
-		expect(d2.log).toEqual(["BEGIN", "SELECT 2", "COMMIT", "SELECT outside"]);
-		expect(d1.log).toEqual(["BEGIN", "SELECT 1", "COMMIT"]);
-		expect(d1.log.concat(d2.log).some((q) => q.startsWith("SAVEPOINT"))).toBe(
+		expect(d2!.log).toEqual(["BEGIN", "SELECT 2", "COMMIT", "SELECT outside"]);
+		expect(d1!.log).toEqual(["BEGIN", "SELECT 1", "COMMIT"]);
+		expect(d1!.log.concat(d2!.log).some((q) => q.startsWith("SAVEPOINT"))).toBe(
 			false,
 		);
 	});

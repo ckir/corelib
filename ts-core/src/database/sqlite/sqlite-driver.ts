@@ -11,7 +11,7 @@ type LibSQLClient = {
 	): Promise<{
 		rows: unknown[];
 		rowsAffected: number;
-		lastInsertRowid?: bigint | null;
+		lastInsertRowid?: bigint | null | undefined;
 	}>;
 	close(): void | Promise<void>;
 	/** prepare() is a non-standard extension for streaming; optional since the official Client lacks it */
@@ -19,7 +19,7 @@ type LibSQLClient = {
 		execute(args: unknown[] | Record<string, unknown>): Promise<{
 			rows: unknown[];
 			rowsAffected: number;
-			lastInsertRowid?: bigint | null;
+			lastInsertRowid?: bigint | null | undefined;
 		}>;
 		raw(args: unknown[] | Record<string, unknown>): Iterable<unknown[]>;
 		close(): Promise<void>;
@@ -37,7 +37,9 @@ export class SqliteDriver implements DbDriver {
 		const { createClient } = await import("@libsql/client");
 		this.client = createClient({
 			url: this.config.url,
-			authToken: this.config.authToken,
+			...(this.config.authToken !== undefined
+				? { authToken: this.config.authToken }
+				: {}),
 		});
 		// Opt-in only (config.journalMode) so shared-library consumers are unaffected.
 		// Local SQLite files default to rollback-journal + FULL fsync (→ the 100-388ms
@@ -74,7 +76,9 @@ export class SqliteDriver implements DbDriver {
 			return wrapSuccess({
 				rows: res.rows as unknown as T[],
 				affectedRows: Number(res.rowsAffected),
-				lastInsertId: res.lastInsertRowid?.toString(),
+				...(res.lastInsertRowid != null
+					? { lastInsertId: res.lastInsertRowid.toString() }
+					: {}),
 			});
 		} catch (e) {
 			return wrapError(e);
@@ -96,7 +100,9 @@ export class SqliteDriver implements DbDriver {
 						return wrapSuccess({
 							rows: res.rows as unknown as T[],
 							affectedRows: Number(res.rowsAffected),
-							lastInsertId: res.lastInsertRowid?.toString(),
+							...(res.lastInsertRowid != null
+								? { lastInsertId: res.lastInsertRowid.toString() }
+								: {}),
 						});
 					} catch (e) {
 						return wrapError(e);
