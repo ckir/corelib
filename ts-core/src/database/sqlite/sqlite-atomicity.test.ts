@@ -11,7 +11,20 @@ import { createDatabase } from "../index.js";
 type Db = Awaited<ReturnType<typeof createDatabase>>;
 
 const dir = mkdtempSync(join(tmpdir(), "sqlite-atomicity-"));
-afterAll(() => rmSync(dir, { recursive: true, force: true }));
+// Best-effort temp cleanup: on Windows the native libsql handle can outlive disconnect() for a moment and
+// make rmSync fail with EPERM/EBUSY, which must not fail the suite (the OS reaps tmpdir).
+afterAll(() => {
+	try {
+		rmSync(dir, {
+			recursive: true,
+			force: true,
+			maxRetries: 5,
+			retryDelay: 100,
+		});
+	} catch {
+		/* temp dir cleanup only */
+	}
+});
 
 const targets: Array<[string, () => string]> = [
 	["in-memory", () => ":memory:"],
