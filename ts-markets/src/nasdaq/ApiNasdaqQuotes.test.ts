@@ -107,8 +107,8 @@ describe("ApiNasdaqQuotes", () => {
 			const results = await api.getNasdaqQuote(["AAPL", "MSFT"]);
 
 			expect(results).toHaveLength(2);
-			expect(results[0].status).toBe("success");
-			expect(results[1].status).toBe("success");
+			expect(results[0]!.status).toBe("success");
+			expect(results[1]!.status).toBe("success");
 		});
 
 		it("should return empty array for empty input", async () => {
@@ -125,7 +125,7 @@ describe("ApiNasdaqQuotes", () => {
 			const results = await api.getNasdaqQuote(["UNKNOWN"]);
 
 			expect(results).toHaveLength(1);
-			expect(results[0].status).toBe("error");
+			expect(results[0]!.status).toBe("error");
 			expect((results[0] as any).reason.message).toContain("not found");
 		});
 
@@ -166,7 +166,7 @@ describe("ApiNasdaqQuotes", () => {
 			const api = new ApiNasdaqQuotes({ marketSymbols: mockSymbols });
 			const results = await api.getNasdaqQuote(["AAPL"]);
 
-			expect(results[0].status).toBe("error");
+			expect(results[0]!.status).toBe("error");
 			expect((results[0] as any).reason.message).toContain("DB Down");
 		});
 
@@ -182,7 +182,7 @@ describe("ApiNasdaqQuotes", () => {
 
 			const results = await api.getNasdaqQuote(["AAPL"]);
 
-			expect(results[0].status).toBe("error");
+			expect(results[0]!.status).toBe("error");
 			expect((results[0] as any).reason.message).toBe("Mocked Transport Error");
 			spy.mockRestore();
 		});
@@ -244,7 +244,7 @@ describe("ApiNasdaqQuotes", () => {
 			const api = new ApiNasdaqQuotes({ marketSymbols: mockSymbols });
 			await api.getNasdaqQuote(["a/b"]);
 
-			const url = new URL(spy.mock.calls[0][0] as string);
+			const url = new URL(spy.mock.calls[0]![0] as string);
 			expect(url.pathname).toBe("/api/quote/A%2FB/info");
 			expect([...url.searchParams.keys()]).toEqual(["assetclass"]);
 			expect(url.searchParams.get("assetclass")).toBe("stocks&x=1");
@@ -277,7 +277,7 @@ describe("ApiNasdaqQuotes", () => {
 
 			const results = await api.getNasdaqQuote(["AAPL"]);
 
-			expect(results[0].status).toBe("success");
+			expect(results[0]!.status).toBe("success");
 			expect((results[0] as any).value.symbol).toBe("AAPL");
 			expect(mockProxied.endPoints).toHaveBeenCalled();
 		});
@@ -301,7 +301,7 @@ describe("ApiNasdaqQuotes", () => {
 
 			const results = await api.getNasdaqQuote(["AAPL"]);
 
-			expect(results[0].status).toBe("error");
+			expect(results[0]!.status).toBe("error");
 			expect((results[0] as any).reason.message).toBe("Proxy Timeout");
 		});
 
@@ -330,7 +330,7 @@ describe("ApiNasdaqQuotes", () => {
 
 			const results = await api.getNasdaqQuote(["AAPL"]);
 
-			expect(results[0].status).toBe("error");
+			expect(results[0]!.status).toBe("error");
 			expect((results[0] as any).reason.message).toBe("Invalid Symbol");
 		});
 	});

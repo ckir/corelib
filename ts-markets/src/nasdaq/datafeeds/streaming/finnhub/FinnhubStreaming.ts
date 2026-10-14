@@ -68,9 +68,9 @@ export class FinnhubStreaming extends EventEmitter {
 
 	async init(config: FinnhubConfig = {}): Promise<void> {
 		await this.rust.init({
-			token: config.token ?? undefined,
-			name: config.name ?? undefined,
-			baseUrl: config.baseUrl ?? undefined,
+			...(config.token != null ? { token: config.token } : {}),
+			...(config.name != null ? { name: config.name } : {}),
+			...(config.baseUrl != null ? { baseUrl: config.baseUrl } : {}),
 		});
 		this.initialized = true;
 	}

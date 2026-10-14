@@ -208,6 +208,7 @@ export class MarketMonitor extends EventEmitter {
 			for (let i = 0; i < this.proxies.length; i++) {
 				const currentIdx = (startIdx + i) % this.proxies.length;
 				const proxyUrl = this.proxies[currentIdx];
+				if (proxyUrl === undefined) continue; // unreachable: index is modulo length
 				let proxyData: NasdaqMarketInfo | null = null;
 
 				try {

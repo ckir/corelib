@@ -76,7 +76,7 @@ describe("YahooHistoricalProvider", () => {
 
 		expect(result.status).toBe("success");
 		if (result.status === "success") {
-			expect(result.value[0].adjClose).toBeNull();
+			expect(result.value[0]!.adjClose).toBeNull();
 		}
 	});
 

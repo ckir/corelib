@@ -21,11 +21,10 @@ async function mapWithConcurrency<T>(
 	limit: number,
 	fn: (item: T, index: number) => Promise<void>,
 ): Promise<void> {
-	let next = 0;
+	const queue = items.entries();
 	const worker = async () => {
-		while (next < items.length) {
-			const i = next++;
-			await fn(items[i], i);
+		for (const [i, item] of queue) {
+			await fn(item, i);
 		}
 	};
 	await Promise.all(
@@ -164,9 +163,9 @@ export class ApiNasdaqQuotes {
 			const urls = fetchQueue.map((q) => q.url);
 			const proxyResults = await this.requestProxied.endPoints<T>(urls);
 
-			for (let i = 0; i < proxyResults.length; i++) {
+			for (const [i, pRes] of proxyResults.entries()) {
 				const q = fetchQueue[i];
-				const pRes = proxyResults[i];
+				if (q === undefined) continue; // unreachable: one URL per queue entry
 
 				if (pRes.status === "success") {
 					// We need to verify if the Nasdaq API returned an error in the body

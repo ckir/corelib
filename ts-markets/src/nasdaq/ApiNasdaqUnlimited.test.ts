@@ -225,8 +225,8 @@ describe("ApiNasdaqUnlimited", () => {
 			const results = await ApiNasdaqUnlimited.endPoints<any>(urls);
 
 			expect(results).toHaveLength(2);
-			expect(results[0].status).toBe("success");
-			expect(results[1].status).toBe("success");
+			expect(results[0]!.status).toBe("success");
+			expect(results[1]!.status).toBe("success");
 		});
 
 		it("should return mixed results if one fails", async () => {
@@ -237,8 +237,8 @@ describe("ApiNasdaqUnlimited", () => {
 
 			const results = await ApiNasdaqUnlimited.endPoints<any>(urls);
 
-			expect(results[0].status).toBe("success");
-			expect(results[1].status).toBe("error");
+			expect(results[0]!.status).toBe("success");
+			expect(results[1]!.status).toBe("error");
 		});
 	});
 });

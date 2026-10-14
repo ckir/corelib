@@ -39,7 +39,14 @@ import { YahooStreaming } from "./yahoo/YahooStreaming";
 const count = (s: unknown) =>
 	(s as { health: { symbolCount: number } }).health.symbolCount;
 const rust = (s: unknown) =>
-	(s as { rust: Record<string, ReturnType<typeof vi.fn>> }).rust;
+	(
+		s as {
+			rust: {
+				subscribe: ReturnType<typeof vi.fn>;
+				unsubscribe: ReturnType<typeof vi.fn>;
+			};
+		}
+	).rust;
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 

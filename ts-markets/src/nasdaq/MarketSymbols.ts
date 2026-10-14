@@ -382,7 +382,7 @@ export class MarketSymbols {
 			);
 
 			if (result.status === "success" && result.value.rows.length > 0) {
-				return result.value.rows[0];
+				return result.value.rows[0] ?? null;
 			}
 		} catch (e) {
 			marketSymbolsLogger.warn("SearchDb query failed", {
@@ -660,18 +660,26 @@ export class MarketSymbols {
 					},
 				);
 
+				const [nasdaqResult, otherResult] = results;
+				if (nasdaqResult === undefined || otherResult === undefined) {
+					// Same failure the old code hit (TypeError inside this try) if endPoints returned < 2 results.
+					throw new Error(
+						"endPoints returned fewer results than URLs requested",
+					);
+				}
+
 				if (
-					results[0].status === "success" &&
-					results[1].status === "success"
+					nasdaqResult.status === "success" &&
+					otherResult.status === "success"
 				) {
 					return {
-						nasdaqText: results[0].value.body as string,
-						otherText: results[1].value.body as string,
+						nasdaqText: nasdaqResult.value.body as string,
+						otherText: otherResult.value.body as string,
 					};
 				}
 
 				const errorResult =
-					results[0].status === "error" ? results[0] : results[1];
+					nasdaqResult.status === "error" ? nasdaqResult : otherResult;
 				const reason = errorResult.status === "error" ? errorResult.reason : {};
 
 				marketSymbolsLogger.warn("Symbol directory fetch failed – retrying", {
@@ -756,10 +764,18 @@ export class MarketSymbols {
 			const fields = line.split("|");
 
 			if (fields.length < 8) continue;
-			if (fields[3].trim() === "Y") continue; // test issue
+			const [rawSymbol, rawName, , testIssue] = fields;
+			// unreachable: fields.length >= 8 was checked above
+			if (
+				rawSymbol === undefined ||
+				rawName === undefined ||
+				testIssue === undefined
+			)
+				continue;
+			if (testIssue.trim() === "Y") continue; // test issue
 
-			const symbol = fields[0].trim();
-			const name = fields[1].trim();
+			const symbol = rawSymbol.trim();
+			const name = rawName.trim();
 			const isEtf = fields[6] === "Y";
 
 			rows.push({
@@ -801,8 +817,11 @@ export class MarketSymbols {
 			if (fields.length < 5) continue;
 			if (fields[6]?.trim() === "Y") continue; // test issue
 
-			const symbol = fields[0].trim();
-			const name = fields[1].trim();
+			const [rawSymbol, rawName] = fields;
+			// unreachable: fields.length >= 5 was checked above
+			if (rawSymbol === undefined || rawName === undefined) continue;
+			const symbol = rawSymbol.trim();
+			const name = rawName.trim();
 			const isEtf = fields[4] === "Y";
 
 			rows.push({

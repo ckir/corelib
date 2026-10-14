@@ -148,7 +148,7 @@ describe("Historical Module - Yahoo Provider with corelib Interceptor", () => {
 		expect(result.status).toBe("success");
 
 		if (result.status === "success") {
-			const quote = result.value[0];
+			const quote = result.value[0]!;
 			// Verify symbol and date transformation
 			expect(quote.symbol).toBe("AAPL");
 			expect(quote.date).toBe("2024-03-14T13:30:00.000Z");

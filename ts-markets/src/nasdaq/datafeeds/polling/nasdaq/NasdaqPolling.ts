@@ -182,8 +182,7 @@ export class NasdaqPolling extends EventEmitter {
 
 			const validResults: unknown[] = [];
 
-			for (let i = 0; i < results.length; i++) {
-				const result = results[i];
+			for (const [i, result] of results.entries()) {
 				nasdaqPollingLogger.trace("poll: result", {
 					cid,
 					symbol: symbolList[i],

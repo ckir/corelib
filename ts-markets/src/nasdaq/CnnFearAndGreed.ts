@@ -173,8 +173,9 @@ function getFilteredValue(
 ): unknown {
 	if (filter === "full") return body;
 	const keys = Array.isArray(filter) ? filter : [filter];
-	if (keys.length === 1 && !Array.isArray(filter)) {
-		return body[keys[0]];
+	const only = keys[0];
+	if (only !== undefined && keys.length === 1 && !Array.isArray(filter)) {
+		return body[only];
 	}
 	const result: Record<string, unknown> = {};
 	keys.forEach((k) => {

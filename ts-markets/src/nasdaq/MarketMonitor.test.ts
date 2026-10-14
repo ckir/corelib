@@ -246,7 +246,7 @@ describe("MarketMonitor (Exhaustive)", () => {
 		// Flush microtasks and timers
 		await vi.advanceTimersByTimeAsync(0);
 		expect(changeSpy).toHaveBeenCalledTimes(1);
-		expect(changeSpy.mock.calls[0][0]).toBe("open");
+		expect(changeSpy.mock.calls[0]![0]).toBe("open");
 	});
 
 	it("should emit status-change on phase change", async () => {
@@ -268,7 +268,7 @@ describe("MarketMonitor (Exhaustive)", () => {
 		await vi.advanceTimersByTimeAsync(5000);
 
 		expect(changeSpy).toHaveBeenCalledTimes(2);
-		expect(changeSpy.mock.calls[1][0]).toBe("closed");
+		expect(changeSpy.mock.calls[1]![0]).toBe("closed");
 	});
 
 	it("should fall back to heuristic data + emit phase change during failures", async () => {
@@ -292,7 +292,7 @@ describe("MarketMonitor (Exhaustive)", () => {
 		await vi.advanceTimersByTimeAsync(5000);
 
 		expect(changeSpy).toHaveBeenCalledTimes(2); // second call is heuristic phase change
-		const secondCall = changeSpy.mock.calls[1];
+		const secondCall = changeSpy.mock.calls[1]!;
 		expect(secondCall[0]).toBe("closed");
 		expect(secondCall[2]).toBe(true); // heuristic flag
 		expect(secondCall[1].heuristic).toBe(true);

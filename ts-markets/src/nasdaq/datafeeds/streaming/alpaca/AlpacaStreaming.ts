@@ -100,9 +100,9 @@ export class AlpacaStreaming extends EventEmitter {
 		const finalConfig = {
 			dbPath: config.dbPath ?? `${getTempDir()}/alpaca_streaming.redb`,
 			silenceSeconds: config.silenceSeconds ?? 60,
-			baseUrl: config.baseUrl ?? undefined,
-			keyId: config.keyId ?? undefined,
-			secretKey: config.secretKey ?? undefined,
+			...(config.baseUrl != null ? { baseUrl: config.baseUrl } : {}),
+			...(config.keyId != null ? { keyId: config.keyId } : {}),
+			...(config.secretKey != null ? { secretKey: config.secretKey } : {}),
 		};
 		await this.rust.init(finalConfig);
 		this.initialized = true;
