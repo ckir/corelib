@@ -10,33 +10,31 @@ import { Cron } from "croner";
  *   Pattern matching uses the wall-clock time in that zone.
  *   Defaults to the local system timezone when omitted.
  */
+/**
+ * True when ANY include expression matches `now` and NO exclude expression does.
+ * Uses croner's `match()`; `nextRun(now)` is the NEXT occurrence and is never null for a recurring
+ * expression, so it cannot answer "does this match now".
+ */
+export function shouldRunNow(
+	includeExprs: string[],
+	excludeExprs: string[],
+	now: Date,
+	timezone?: string,
+): boolean {
+	const opts = timezone ? { timezone } : {};
+	const matches = (expr: string) => new Cron(expr, opts).match(now);
+	return includeExprs.some(matches) && !excludeExprs.some(matches);
+}
+
 export function includeExcludeCron(
 	includeExprs: string[],
 	excludeExprs: string[],
 	handler: () => void,
 	timezone?: string,
 ) {
-	const opts = timezone ? { timezone } : {};
-
 	// Tick every second so we can evaluate second-level rules
 	const job = new Cron("* * * * * *", () => {
-		const now = new Date();
-
-		// Check if ANY include cron matches "now"
-		const included = includeExprs.some((expr) => {
-			const c = new Cron(expr, opts);
-			return c.nextRun(now) === null; // null = matches now
-		});
-
-		if (!included) return;
-
-		// Check if ANY exclude cron matches "now"
-		const excluded = excludeExprs.some((expr) => {
-			const c = new Cron(expr, opts);
-			return c.nextRun(now) === null;
-		});
-
-		if (!excluded) {
+		if (shouldRunNow(includeExprs, excludeExprs, new Date(), timezone)) {
 			handler();
 		}
 	});

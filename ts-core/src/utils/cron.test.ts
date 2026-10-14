@@ -18,10 +18,10 @@ describe("includeExcludeCron", () => {
 
 		// Mock Cron instances
 		const includeCronMock = {
-			nextRun: vi.fn().mockReturnValue(null), // matches now
+			match: vi.fn().mockReturnValue(true), // matches now
 		};
 		const excludeCronMock = {
-			nextRun: vi.fn().mockReturnValue(new Date()), // does not match now
+			match: vi.fn().mockReturnValue(false), // does not match now
 		};
 
 		// The first call to Cron constructor is for the main job "* * * * * *"
@@ -69,7 +69,7 @@ describe("includeExcludeCron", () => {
 		const handler = vi.fn();
 
 		const includeCronMock = {
-			nextRun: vi.fn().mockReturnValue(new Date()), // no match
+			match: vi.fn().mockReturnValue(false), // no match
 		};
 
 		let jobCallback: () => void = () => {};
@@ -95,10 +95,10 @@ describe("includeExcludeCron", () => {
 		const handler = vi.fn();
 
 		const includeCronMock = {
-			nextRun: vi.fn().mockReturnValue(null), // matches
+			match: vi.fn().mockReturnValue(true), // matches
 		};
 		const excludeCronMock = {
-			nextRun: vi.fn().mockReturnValue(null), // matches (should block)
+			match: vi.fn().mockReturnValue(true), // matches (should block)
 		};
 
 		let jobCallback: () => void = () => {};
@@ -136,7 +136,7 @@ describe("includeExcludeCron", () => {
 				jobCallback = cb;
 				return {};
 			}
-			return { nextRun: () => null };
+			return { match: () => true };
 		});
 
 		includeExcludeCron(["include"], [], handler, timezone);
