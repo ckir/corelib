@@ -310,6 +310,32 @@ describe("Database Integration Tests (Mocked Drivers)", () => {
 			}
 		});
 
+		it("does not send ROLLBACK through the shared pool when reserving a connection fails", async () => {
+			const db = await createDatabase({
+				dialect: "postgres",
+				url: "dummy",
+				mode: "stateful",
+				logger: mockLogger,
+			});
+			const pool = (
+				db as unknown as {
+					driver: {
+						reserve: ReturnType<typeof vi.fn>;
+						rollbackTransaction: ReturnType<typeof vi.fn>;
+					};
+				}
+			).driver;
+			pool.reserve = vi.fn().mockRejectedValue(new Error("pool exhausted"));
+			pool.rollbackTransaction = vi.fn().mockResolvedValue(undefined);
+
+			const result = await db.transaction(async () => wrapSuccess(true));
+
+			expect(result.status).toBe("error");
+			// No transaction was ever started, so there is nothing to roll back, and a ROLLBACK
+			// sent through the pool would land on an arbitrary pooled connection.
+			expect(pool.rollbackTransaction).not.toHaveBeenCalled();
+		});
+
 		it("should fail gracefully when savepoint creation fails in nested transaction", async () => {
 			const db = await createDatabase({
 				dialect: "postgres",

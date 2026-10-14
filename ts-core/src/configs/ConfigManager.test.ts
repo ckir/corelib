@@ -23,6 +23,22 @@ describe("ConfigManager", () => {
 		expect(instance1).toBe(instance2);
 	});
 
+	it("does not resolve inherited Object.prototype members as config values", () => {
+		cm.updateValue("capstone.section.leaf", 1);
+		for (const key of [
+			"toString",
+			"valueOf",
+			"constructor",
+			"hasOwnProperty",
+			"capstone.toString",
+			"capstone.section.constructor",
+		]) {
+			expect(ConfigManager.get(key)).toBeUndefined();
+		}
+		// real own keys, including array-style ones, still resolve
+		expect(ConfigManager.get("capstone.section.leaf")).toBe(1);
+	});
+
 	it("should provide static get method", () => {
 		expect(typeof ConfigManager.get).toBe("function");
 	});

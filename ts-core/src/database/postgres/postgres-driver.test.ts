@@ -29,6 +29,7 @@ const config = {
 describe("PostgresDriver transactions", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		release.mockReset();
 		poolUnsafe.mockResolvedValue(Object.assign([], { count: 0 }));
 		reservedUnsafe.mockResolvedValue(Object.assign([], { count: 0 }));
 		reserve.mockResolvedValue({ unsafe: reservedUnsafe, release });
@@ -87,5 +88,28 @@ describe("PostgresDriver transactions", () => {
 
 		expect(poolUnsafe).toHaveBeenCalledWith("SELECT 1", []);
 		expect(reservedUnsafe.mock.calls.map((c) => c[0])).toEqual(["BEGIN"]);
+	});
+
+	it("keeps the connection reserved when COMMIT fails, so the caller's ROLLBACK still runs on it", async () => {
+		// postgres.js keeps executing on the connection after release(), so a ROLLBACK issued after
+		// release can hit a connection another caller already owns. Record the real ordering.
+		const log: string[] = [];
+		reservedUnsafe.mockImplementation(async (sql: string) => {
+			log.push(sql);
+			if (sql === "COMMIT") throw new Error("40001 serialization failure");
+			return Object.assign([], { count: 0 });
+		});
+		release.mockImplementation(() => {
+			log.push("release");
+		});
+		const base = new PostgresDriver(config);
+		await base.connect();
+
+		const tx = await base.reserve();
+		await tx.beginTransaction();
+		await expect(tx.commitTransaction()).rejects.toThrow("40001");
+		await tx.rollbackTransaction(); // what PostgresDb's catch block does next
+
+		expect(log).toEqual(["BEGIN", "COMMIT", "ROLLBACK", "release"]);
 	});
 });

@@ -211,7 +211,7 @@ export class ConfigManager extends EventEmitter {
 			if (
 				current === null ||
 				typeof current !== "object" ||
-				!(key in (current as Record<string, unknown>))
+				!Object.hasOwn(current as Record<string, unknown>, key)
 			) {
 				return undefined;
 			}

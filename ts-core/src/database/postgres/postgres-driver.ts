@@ -130,11 +130,11 @@ export class PostgresDriver implements DbDriver {
 		await this.client?.unsafe("BEGIN");
 	}
 	async commitTransaction(): Promise<void> {
-		try {
-			await this.client?.unsafe("COMMIT");
-		} finally {
-			await this.release();
-		}
+		await this.client?.unsafe("COMMIT");
+		// Release only after a successful COMMIT. When COMMIT fails the caller still has to run
+		// ROLLBACK on this connection, and postgres.js keeps executing on a released connection
+		// that another caller may already own. PostgresDb releases in its own finally either way.
+		await this.release();
 	}
 	async rollbackTransaction(): Promise<void> {
 		try {

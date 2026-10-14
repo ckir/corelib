@@ -179,7 +179,9 @@ export class PostgresDb {
 			try {
 				if (isNested) {
 					await driver.query(`ROLLBACK TO SAVEPOINT ${savepointName}`);
-				} else {
+				} else if (driver !== this.driver) {
+					// Only a reserved connection has a transaction to roll back. If reserve() itself failed,
+					// driver is still the shared pool and a ROLLBACK would hit an arbitrary pooled connection.
 					await driver.rollbackTransaction();
 				}
 			} catch (rollbackErr) {
