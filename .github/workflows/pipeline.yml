@@ -67,6 +67,10 @@ jobs:
       - name: Run Biome check (lint + format)
         run: pnpm lint-all
 
+      # No build needed: tsconfig.base.json paths resolve workspace imports to source.
+      - name: Typecheck
+        run: pnpm typecheck-all
+
   # ---------------------------------------------------------
   # 2. TEST — Multi-OS Matrix (Ubuntu, macOS, Windows)
   # TS packages MUST be built before testing for correct workspace resolution.
