@@ -53,6 +53,19 @@ src/
 - **`GET /api/v1/markets/nasdaq/groups/top100`**: Retrieves the list of current Nasdaq 100 constituent symbols.
 - **`POST /api/v1/sql`**: Executes a parameterized SQL query on Turso/LibSQL.
 
+## Authentication & Security
+
+Every `/api/v1` route except `/api/v1/health` (and `/health`) requires a bearer token:
+
+```bash
+curl -H "Authorization: Bearer $CORELIB_API_TOKEN" https://your-service-url/api/v1/markets/nasdaq/status
+```
+
+- Set `CORELIB_API_TOKEN` as a binding/secret on every platform (`wrangler secret put CORELIB_API_TOKEN`, the `ApiToken` parameter in `sam-corelib/template.yaml`, or an env var on Cloud Run).
+- **Fail-closed:** if no token is configured the service answers `503` to protected routes; a missing or wrong token answers `401`.
+- The examples below omit the `Authorization` header for brevity; add it to each call.
+- AWS: CORS on the Function URL is limited to the `AllowedOrigin` parameter.
+
 ## Usage Examples
 
 ### Health Check

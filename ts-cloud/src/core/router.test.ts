@@ -31,7 +31,11 @@ describe("Router", () => {
 		};
 
 		const app = createRouter(logger as any);
-		const res = await app.request("/api/v1/tests/logger");
+		const res = await app.request(
+			"/api/v1/tests/logger",
+			{ headers: { authorization: "Bearer test-token" } },
+			{ CORELIB_API_TOKEN: "test-token" },
+		);
 
 		expect(res.status).toBe(200);
 		const body = (await res.json()) as any;

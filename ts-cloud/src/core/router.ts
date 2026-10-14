@@ -12,6 +12,7 @@ import { nasdaqRouter } from "../markets/nasdaq/ApiNasdaqUnlimitedCloud";
 import { historicalRouter } from "../markets/nasdaq/HistoricalCloud";
 import { marketStatusRouter } from "../markets/nasdaq/MarketStatusCloud";
 import { kyRouter } from "../retrieve/RequestUnlimitedCloud";
+import { requireApiToken } from "./auth";
 import { runInRequest } from "./request-context";
 import type { AppEnv } from "./types";
 
@@ -106,6 +107,11 @@ export const createRouter = (logger?: StrictLogger): Hono<AppEnv> => {
 			version: "v1",
 		});
 	});
+
+	/**
+	 * Everything below this point requires the bearer token (health above stays public).
+	 */
+	apiV1.use("*", requireApiToken);
 
 	/**
 	 * RequestUnlimited (ky) Endpoint

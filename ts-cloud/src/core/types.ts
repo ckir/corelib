@@ -12,6 +12,8 @@ export type AppEnv = {
 		CORELIB_TURSO_URL: string;
 		/** Auth token for the Turso/LibSQL database. */
 		CORELIB_TURSO_TOKEN: string;
+		/** Bearer token required on every /api/v1 route except health. Unset denies all requests. */
+		CORELIB_API_TOKEN?: string;
 		/** Platform identifier (e.g., 'cloudflare', 'aws-lambda'). */
 		PLATFORM: string;
 	};

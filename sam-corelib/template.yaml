@@ -2,6 +2,26 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: Corelib - Resilient Nasdaq Market Data Proxy
 
+Parameters:
+  ApiToken:
+    Type: String
+    NoEcho: true
+    MinLength: 24
+    Description: Bearer token every /api/v1 request (except /health) must present. No default on purpose.
+  TursoUrl:
+    Type: String
+    Default: ''
+    Description: libsql:// URL of the Turso database used by /api/v1/sql.
+  TursoToken:
+    Type: String
+    NoEcho: true
+    Default: ''
+    Description: Auth token for the Turso database.
+  AllowedOrigin:
+    Type: String
+    Default: 'https://localhost'
+    Description: Single browser origin allowed by CORS on the Function URL.
+
 Globals:
   Function:
     Timeout: 30
@@ -20,8 +40,9 @@ Resources:
         Variables:
           MODE: production
           LOG_LEVEL: info
-          CORELIB_TURSO_URL: "libsql://:memory:"
-          CORELIB_TURSO_TOKEN: "local-dev-token"
+          CORELIB_API_TOKEN: !Ref ApiToken
+          CORELIB_TURSO_URL: !Ref TursoUrl
+          CORELIB_TURSO_TOKEN: !Ref TursoToken
       Events:
         HttpApiEvent:
           Type: HttpApi
@@ -38,11 +59,13 @@ Resources:
         InvokeMode: BUFFERED
         Cors:
           AllowOrigins:
-            - '*'
+            - !Ref AllowedOrigin
           AllowMethods:
-            - '*'               # - This fixes the lint error (covers POST + OPTIONS)
+            - GET
+            - POST
           AllowHeaders:
-            - '*'
+            - authorization
+            - content-type
 
 Outputs:
   CorelibFunctionUrl:
