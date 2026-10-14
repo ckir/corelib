@@ -77,6 +77,10 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck-all
 
+      # Package layering (core <- markets <- cloud) and logger privacy; see .dependency-cruiser.cjs.
+      - name: Dependency rules
+        run: pnpm deps:check
+
   # ---------------------------------------------------------
   # 2. TEST — Multi-OS Matrix (Ubuntu, macOS, Windows)
   # TS packages MUST be built before testing for correct workspace resolution.
@@ -118,6 +122,10 @@ jobs:
       - name: Verify generated napi bindings are committed
         if: matrix.os == 'ubuntu-latest'
         run: git diff --exit-code -- rust/index.js rust/index.d.ts
+
+      # The browser entry ships to browsers/edge workers; it must not reach Node builtins.
+      - name: Check browser bundle has no Node builtins
+        run: pnpm check:browser-bundle
 
       # Build Rust FFI for Linux (required for ts-core tests that use FFI)
       - name: Build Rust FFI (Linux)
