@@ -57,64 +57,40 @@ export interface FinnhubStreamingConstructor {
 }
 
 /**
- * Alpaca Streaming FFI interface
- * Mirrors rust/src/markets/nasdaq/datafeeds/streaming/alpaca/alpaca_streamer.rs
+ * Instance side of the native streaming classes. These must equal the classes napi generates in
+ * rust/index.d.ts; ffi-types.test.ts enforces that at typecheck time. Every method returns a promise.
  */
 export interface AlpacaStreamingFFI {
 	/** Initialize with config object */
-	init: (config: AlpacaConfig) => Promise<void>;
+	init(config: AlpacaConfig): Promise<void>;
 	/** Start the streaming connection */
-	start: () => Promise<void>;
-	/** Stop the streaming connection */
-	stop: () => void;
-	/** Subscribe to symbols */
-	subscribe: (opts: AlpacaSubscribeOpts) => void;
-	/** Unsubscribe from symbols */
-	unsubscribe: (opts: AlpacaSubscribeOpts) => void;
+	start(): Promise<void>;
+	/** Subscribe to symbols per channel */
+	subscribe(opts: AlpacaSubscribeOpts): Promise<void>;
+	/** Unsubscribe from symbols per channel */
+	unsubscribe(opts: AlpacaSubscribeOpts): Promise<void>;
 	/** Clean local state/database */
-	clean: () => void;
-	/** Set log callback */
-	setLogCallback?: (callback: (record: LogRecord) => void) => void;
-	/** Set pricing callback */
-	setPricingCallback?: (callback: (data: AlpacaPricingData) => void) => void;
-	/** Set event callback */
-	setEventCallback?: (callback: (event: StreamingEvent) => void) => void;
-	/** Set market callback */
-	setMarketCallback?: (callback: (json: string) => void) => void;
+	clean(): Promise<void>;
+	/** Stop the streaming connection */
+	stop(): Promise<void>;
 }
 
-/**
- * Yahoo Streaming FFI interface
- * Mirrors rust/src/markets/nasdaq/datafeeds/streaming/yahoo/yahoo_streamer.rs
- */
 export interface YahooStreamingFFI {
-	init: (config: YahooConfig) => Promise<void>;
-	start: () => Promise<void>;
-	stop: () => void;
-	subscribe: (opts: YahooSubscribeOpts) => void;
-	unsubscribe: (opts: YahooSubscribeOpts) => void;
-	clean: () => void;
-	setLogCallback?: (callback: (record: LogRecord) => void) => void;
-	setPricingCallback?: (callback: (data: YahooPricingData) => void) => void;
-	setEventCallback?: (callback: (event: StreamingEvent) => void) => void;
-	setMarketCallback?: (callback: (json: string) => void) => void;
+	init(config: YahooConfig): Promise<void>;
+	start(): Promise<void>;
+	subscribe(symbols: string[]): Promise<void>;
+	unsubscribe(symbols: string[]): Promise<void>;
+	clean(): Promise<void>;
+	stop(): Promise<void>;
 }
 
-/**
- * Finnhub Streaming FFI interface (optional feature)
- * Mirrors rust/src/markets/nasdaq/datafeeds/streaming/finnhub/finnhub_streamer.rs
- */
 export interface FinnhubStreamingFFI {
-	init: (config: FinnhubConfig) => Promise<void>;
-	start: () => Promise<void>;
-	stop: () => void;
-	subscribe: (opts: FinnhubSubscribeOpts) => void;
-	unsubscribe: (opts: FinnhubSubscribeOpts) => void;
-	clean: () => void;
-	setLogCallback?: (callback: (record: LogRecord) => void) => void;
-	setPricingCallback?: (callback: (data: FinnhubPricingData) => void) => void;
-	setEventCallback?: (callback: (event: StreamingEvent) => void) => void;
-	setMarketCallback?: (callback: (json: string) => void) => void;
+	init(config: FinnhubConfig): Promise<void>;
+	start(): Promise<void>;
+	subscribe(symbols: string[]): Promise<void>;
+	unsubscribe(symbols: string[]): Promise<void>;
+	stop(): Promise<void>;
+	clean(): Promise<void>;
 }
 
 // =============================================
@@ -132,15 +108,13 @@ export interface AlpacaConfig {
 export interface YahooConfig {
 	dbPath?: string;
 	silenceSeconds?: number;
-	symbols?: string[];
-	noPersist?: boolean;
+	baseUrl?: string;
 }
 
 export interface FinnhubConfig {
-	token: string;
-	dbPath?: string;
-	silenceSeconds?: number;
-	symbols?: string[];
+	token?: string;
+	name?: string;
+	baseUrl?: string;
 }
 
 // =============================================
@@ -153,18 +127,11 @@ export interface AlpacaSubscribeOpts {
 	bars?: string[];
 }
 
-export interface YahooSubscribeOpts {
-	symbols: string[];
-}
-
-export interface FinnhubSubscribeOpts {
-	symbols: string[];
-}
-
 export interface LogRecord {
 	level: string;
 	msg: string;
-	extras?: Record<string, unknown>;
+	/** JSON-serialized extras, as delivered by native. */
+	extras?: string;
 }
 
 // The pricing payload interfaces below must equal the typings napi generates for the Rust structs
@@ -237,11 +204,8 @@ export interface FinnhubPricingData {
 }
 
 export interface StreamingEvent {
-	type:
-		| "connected"
-		| "disconnected"
-		| "reconnecting"
-		| "silence-reconnect"
-		| "error";
-	data?: Record<string, unknown>;
+	/** Event type, e.g. "connected", "disconnected", "reconnecting", "error". */
+	type: string;
+	/** Optional metadata or error message. */
+	data?: string;
 }

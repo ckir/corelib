@@ -1,20 +1,19 @@
 // Mirrors AlpacaStreaming.ts: EventEmitter, 0-arg constructor, three ERROR-FIRST (_err, data)
 // native callbacks adapted to emit("log"|"pricing"|<event.type>), config via async init().
 import { EventEmitter } from "node:events";
-import { coreFFI, logger, nextCid } from "@ckirg/corelib";
+import {
+	coreFFI,
+	type FinnhubStreamingFFI,
+	logger,
+	nextCid,
+} from "@ckirg/corelib";
 import { createNativeCallbacks } from "../nativeCallbacks.js";
 import { StreamHealthTracker } from "../StreamHealthTracker.js";
-import type {
-	FinnhubPricingData,
-	FinnhubStreamingNative,
-	FinnhubStreamingNativeConstructor,
-} from "../types.js";
+import type { FinnhubPricingData } from "../types.js";
 
 export type { FinnhubPricingData };
 
-const RustFinnhub = (
-	coreFFI as { FinnhubStreaming?: FinnhubStreamingNativeConstructor } | null
-)?.FinnhubStreaming;
+const RustFinnhub = coreFFI?.FinnhubStreaming;
 const finnhubStreamingLogger = logger.child({ section: "FinnhubStreaming" });
 
 export interface FinnhubConfig {
@@ -34,7 +33,7 @@ export interface FinnhubConfig {
  * db paths resolve.
  */
 export class FinnhubStreaming extends EventEmitter {
-	private rust: FinnhubStreamingNative;
+	private rust: FinnhubStreamingFFI;
 	private initialized = false;
 	private readonly health = new StreamHealthTracker(
 		"finnhub",

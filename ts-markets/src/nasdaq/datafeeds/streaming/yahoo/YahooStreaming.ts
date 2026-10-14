@@ -6,21 +6,22 @@
 // =============================================
 
 import { EventEmitter } from "node:events";
-import { coreFFI, getMode, getTempDir, logger, nextCid } from "@ckirg/corelib";
+import {
+	coreFFI,
+	getMode,
+	getTempDir,
+	logger,
+	nextCid,
+	type YahooStreamingFFI,
+} from "@ckirg/corelib";
 import {
 	afterNativeSuccess,
 	createNativeCallbacks,
 } from "../nativeCallbacks.js";
 import { StreamHealthTracker } from "../StreamHealthTracker.js";
-import type {
-	YahooPricingData,
-	YahooStreamingNative,
-	YahooStreamingNativeConstructor,
-} from "../types.js";
+import type { YahooPricingData } from "../types.js";
 
-const RustYahoo = (
-	coreFFI as { YahooStreaming?: YahooStreamingNativeConstructor } | null
-)?.YahooStreaming;
+const RustYahoo = coreFFI?.YahooStreaming;
 const yahooStreamingLogger = logger.child({ section: "YahooStreaming" });
 
 /**
@@ -34,7 +35,7 @@ const yahooStreamingLogger = logger.child({ section: "YahooStreaming" });
  * db paths resolve.
  */
 export class YahooStreaming extends EventEmitter {
-	private rust: YahooStreamingNative;
+	private rust: YahooStreamingFFI;
 	private initialized = false;
 	private readonly health = new StreamHealthTracker(
 		"yahoo",

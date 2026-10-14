@@ -1,7 +1,8 @@
 // =============================================
 // FILE: ts-markets/src/nasdaq/datafeeds/streaming/types.ts
-// PURPOSE: Payload and native-class types for the streaming wrappers. These mirror the
-// N-API declarations in rust/index.d.ts (the source of truth for what the native side emits).
+// PURPOSE: Payload types for the streaming wrappers. These mirror the N-API declarations in
+// rust/index.d.ts (the source of truth for what the native side emits); index.types.test.ts enforces it.
+// The native class/constructor types live in @ckirg/corelib (ts-core/src/core/ffi-types.ts).
 // =============================================
 
 /** Alpaca pricing payload (trade, quote or bar) as emitted by the native streamer. */
@@ -65,66 +66,4 @@ export interface FinnhubPricingData {
 	volume: number;
 	timestamp: number;
 	conditions?: string[];
-}
-/** Log record delivered by the native side. */
-export interface NativeLogRecord {
-	level: string;
-	msg: string;
-	extras?: string;
-}
-
-/** Lifecycle event delivered by the native side. */
-export interface NativeEventRecord {
-	type: string;
-	data?: string;
-}
-
-type ErrFirst<T> = (err: Error | null, value: T) => unknown;
-
-/** Native Yahoo streamer class (constructor-visible shape). */
-export interface YahooStreamingNative {
-	init(config: {
-		dbPath?: string;
-		silenceSeconds?: number;
-		baseUrl?: string;
-	}): Promise<void>;
-	start(): Promise<void>;
-	subscribe(symbols: string[]): Promise<void>;
-	unsubscribe(symbols: string[]): Promise<void>;
-	clean(): Promise<void>;
-	stop(): Promise<void>;
-}
-
-/** Constructor of the native Yahoo streamer. */
-export interface YahooStreamingNativeConstructor {
-	new (
-		onLog: ErrFirst<NativeLogRecord>,
-		onPricing: ErrFirst<YahooPricingData>,
-		onEvent: ErrFirst<NativeEventRecord>,
-		onMarketEvent?: ErrFirst<string> | null,
-	): YahooStreamingNative;
-}
-
-/** Native Finnhub streamer class (constructor-visible shape). */
-export interface FinnhubStreamingNative {
-	init(config: {
-		token?: string;
-		name?: string;
-		baseUrl?: string;
-	}): Promise<void>;
-	start(): Promise<void>;
-	subscribe(symbols: string[]): Promise<void>;
-	unsubscribe(symbols: string[]): Promise<void>;
-	stop(): Promise<void>;
-	clean(): Promise<void>;
-}
-
-/** Constructor of the native Finnhub streamer. */
-export interface FinnhubStreamingNativeConstructor {
-	new (
-		onLog: ErrFirst<NativeLogRecord>,
-		onPricing: ErrFirst<FinnhubPricingData>,
-		onEvent: ErrFirst<NativeEventRecord>,
-		onMarketEvent?: ErrFirst<string> | null,
-	): FinnhubStreamingNative;
 }
