@@ -9,6 +9,9 @@ name: Corelib Pipeline
 on:
   push:
     branches: [main]
+    # The Release jobs run only for version tags (see their `if:` conditions); without this
+    # filter a pushed tag never starts the pipeline.
+    tags: ['v*']
   pull_request:
     branches: [main]
   workflow_dispatch:
