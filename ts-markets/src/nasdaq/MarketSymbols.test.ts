@@ -44,6 +44,23 @@ vi.mock("./ApiNasdaqUnlimited", () => ({
 	},
 }));
 
+/** Builds a nasdaqlisted/otherlisted response pair with `n` distinct valid rows each. */
+function directoryResponses(n: number) {
+	const header = "Symbol|Security Name|x|x|x|x|ETF|x\n";
+	const nasdaq = Array.from(
+		{ length: n },
+		(_, i) => `N${i}|Name ${i}|Q|N|N|100|N|N`,
+	).join("\n");
+	const other = Array.from(
+		{ length: n },
+		(_, i) => `O${i}|Name ${i}|N|O${i}|N`,
+	).join("\n");
+	return [
+		{ status: "success", value: { body: `${header}${nasdaq}\n` } },
+		{ status: "success", value: { body: `Symbol|Name|x|x|ETF\n${other}\n` } },
+	] as any;
+}
+
 describe("MarketSymbols - Integrated Suite", () => {
 	let marketSymbols: MarketSymbols;
 	const mockDbQuery = vi.fn();
@@ -60,6 +77,8 @@ describe("MarketSymbols - Integrated Suite", () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
+		// clearAllMocks keeps implementations; don't let one test's directory download leak into the next.
+		vi.mocked(corelib.endPoints).mockReset();
 		vi.mocked(corelib.createDatabase).mockResolvedValue(mockDb as any);
 		vi.mocked(corelib.detectRuntime).mockReturnValue("node");
 
@@ -139,20 +158,58 @@ describe("MarketSymbols - Integrated Suite", () => {
 				return Promise.resolve({ status: "success", value: { rows: [] } });
 			});
 
-			vi.mocked(corelib.endPoints).mockResolvedValue([
-				{
-					status: "success",
-					value: { body: "Symbol|Name|...|ETF|...\nAAPL|Apple|N\n" },
-				},
-				{
-					status: "success",
-					value: { body: "Symbol|Name|...|ETF|...\nMSFT|Microsoft|N\n" },
-				},
-			] as any);
+			vi.mocked(corelib.endPoints).mockResolvedValue(directoryResponses(1200));
 
 			await marketSymbols.refresh();
 			expect(corelib.endPoints).toHaveBeenCalled();
 			expect(mockDbTransaction).toHaveBeenCalled();
+		});
+
+		it("does not touch the symbol table when the download parses to too few rows (existing data)", async () => {
+			mockDbQuery.mockImplementation((query: string) => {
+				if (query.includes("MAX(ts)")) {
+					return Promise.resolve({
+						status: "success",
+						value: { rows: [{ max_ts: 1 }] }, // stale: forces a refresh
+					});
+				}
+				if (query.includes("COUNT")) {
+					return Promise.resolve({
+						status: "success",
+						value: { rows: [{ count: 11000, c: 11000, n: 11000 }] },
+					});
+				}
+				return Promise.resolve({ status: "success", value: { rows: [{}] } });
+			});
+			// 200 OK but an HTML error page instead of the directory file
+			vi.mocked(corelib.endPoints).mockResolvedValue([
+				{
+					status: "success",
+					value: { body: "<html>Service unavailable</html>" },
+				},
+				{
+					status: "success",
+					value: { body: "<html>Service unavailable</html>" },
+				},
+			] as any);
+
+			await marketSymbols.refresh();
+
+			expect(corelib.endPoints).toHaveBeenCalled();
+			expect(mockDbTransaction).not.toHaveBeenCalled();
+		});
+
+		it("throws instead of wiping when there is no existing data and the download is unusable", async () => {
+			mockDbQuery.mockImplementation(() =>
+				Promise.resolve({ status: "success", value: { rows: [] } }),
+			);
+			vi.mocked(corelib.endPoints).mockResolvedValue([
+				{ status: "success", value: { body: "" } },
+				{ status: "success", value: { body: "" } },
+			] as any);
+
+			await expect(marketSymbols.refresh()).rejects.toThrow(/parsed to 0 rows/);
+			expect(mockDbTransaction).not.toHaveBeenCalled();
 		});
 
 		it("should skip refresh if data was updated today (NY Time)", async () => {
@@ -208,8 +265,17 @@ describe("MarketSymbols - Integrated Suite", () => {
 		it("NodeJS: Sequence should be DB -> API -> Ingestor", async () => {
 			vi.mocked(corelib.detectRuntime).mockReturnValue("node");
 
-			// 1. DB returns null
-			mockDbQuery.mockResolvedValue({ status: "success", value: { rows: [] } });
+			// 1. DB is fresh (no refresh) but has no row for the symbol
+			mockDbQuery.mockImplementation((query: string) =>
+				Promise.resolve({
+					status: "success",
+					value: {
+						rows: query.includes("SELECT MAX(ts)")
+							? [{ max_ts: Date.now() }]
+							: [],
+					},
+				}),
+			);
 			// 2. API returns AAPL
 			vi.mocked(ApiNasdaqUnlimited.endPoint).mockResolvedValue({
 				status: "success",

@@ -33,6 +33,9 @@ const DEFAULT_NASDAQ_LISTED_URL =
 const DEFAULT_OTHER_LISTED_URL =
 	"https://www.nasdaqtrader.com/dynamic/symdir/otherlisted.txt";
 
+// The real directories hold ~11k symbols; anything far below that is an error page or a truncated file.
+const DEFAULT_MIN_SYMBOL_ROWS = 1_000;
+
 const DEFAULT_INITIAL_BACKOFF_MS = 1_000;
 const DEFAULT_MAX_RETRY_BACKOFF_MS = 3_600_000; // 1 hour cap per retry interval
 const DEFAULT_MAX_FETCH_RETRIES = 10; // circuit breaker: give up after this many consecutive failures
@@ -428,11 +431,30 @@ export class MarketSymbols {
 
 		marketSymbolsLogger.info("Starting full symbol directory refresh");
 
-		let texts: { nasdaqText: string; otherText: string };
+		let allRows: Map<string, MarketSymbolRow>;
 		try {
-			texts = await this.fetchSymbolFilesWithRetry();
+			const texts = await this.fetchSymbolFilesWithRetry();
+			allRows = new Map<string, MarketSymbolRow>();
+			for (const r of this.parseNasdaqListed(texts.nasdaqText)) {
+				allRows.set(r.symbol, r);
+			}
+			for (const r of this.parseOtherListed(texts.otherText)) {
+				if (!allRows.has(r.symbol)) allRows.set(r.symbol, r);
+			}
+
+			// A 200 response carrying an error page or truncated file parses to few or no rows.
+			// Deactivating every symbol on that would wipe the table, so refuse it before the transaction.
+			const minRows =
+				(ConfigManager.get("markets.nasdaq.symbols.minRows") as
+					| number
+					| undefined) ?? DEFAULT_MIN_SYMBOL_ROWS;
+			if (allRows.size < minRows) {
+				throw new Error(
+					`Symbol directories parsed to ${allRows.size} rows, expected at least ${minRows}`,
+				);
+			}
 		} catch (err) {
-			// Circuit breaker fired with existing data — continue with stale symbols
+			// Circuit breaker fired or the download was unusable — continue with stale symbols if any
 			if (await this.hasExistingData()) {
 				marketSymbolsLogger.warn(
 					"Symbol refresh abandoned, using existing data",
@@ -443,16 +465,6 @@ export class MarketSymbols {
 				return;
 			}
 			throw err;
-		}
-
-		const nasdaqRows = this.parseNasdaqListed(texts.nasdaqText);
-		const otherRows = this.parseOtherListed(texts.otherText);
-
-		const allRows = new Map<string, MarketSymbolRow>();
-		for (const r of nasdaqRows) allRows.set(r.symbol, r);
-
-		for (const r of otherRows) {
-			if (!allRows.has(r.symbol)) allRows.set(r.symbol, r);
 		}
 
 		const now = Date.now();
