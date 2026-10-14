@@ -17,6 +17,7 @@
         "watch": "tsup --watch",
         "test": "vitest",
         "test:run": "vitest run",
+        "test:coverage": "vitest run --coverage",
         "test:integration": "vitest run --config vitest.integration.config.ts && vitest run --config vitest.integration.worker.config.ts",
         "test:worker": "vitest --config vitest.config.ts",
         "typecheck": "tsc --noEmit",
@@ -46,6 +47,7 @@
         "typedoc": "^0.28.20",
         "typescript": "catalog:",
         "vite": "^8.3.4",
+        "@vitest/coverage-v8": "catalog:",
         "vitest": "catalog:",
         "wrangler": "^4.149.0"
     }

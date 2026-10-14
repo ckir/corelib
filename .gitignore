@@ -14,6 +14,9 @@ lint-output.txt
 # vitest json reporter artifact (regenerated each run)
 vitest-results.json
 
+# vitest coverage output
+coverage/
+
 # token-discipline + Antigravity dev-workflow (local working artifacts)
 .claude/token-ledger.ndjson
 .claude/worktrees/

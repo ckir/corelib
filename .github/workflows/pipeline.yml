@@ -144,6 +144,14 @@ jobs:
           MODE: "test"
           NODE_ENV: "test"
 
+      # Enforces the per-package coverage floors in each vitest.config.ts (re-runs the unit tests).
+      - name: Coverage thresholds (Linux only)
+        if: matrix.os == 'ubuntu-latest'
+        run: pnpm test-all:coverage
+        env:
+          MODE: "test"
+          NODE_ENV: "test"
+
       # Rust FFI tests (only on Linux where cargo builds natively)
       - name: Run Rust tests (Linux only)
         if: matrix.os == 'ubuntu-latest'

@@ -21,6 +21,7 @@
         "watch-all": "pnpm -r watch --parallel",
         "test-all": "pnpm -r test",
         "test-all:run": "pnpm -r test:run",
+        "test-all:coverage": "pnpm -r test:coverage",
         "typecheck-all": "pnpm -r typecheck",
         "lint-all": "pnpm -r lint",
         "lint:strict": "biome ci ts-core ts-markets ts-cloud",

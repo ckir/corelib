@@ -24,6 +24,7 @@
         "watch": "tsup --watch",
         "test": "vitest",
         "test:run": "vitest run",
+        "test:coverage": "vitest run --coverage",
         "test:integration": "vitest run --config vitest.integration.config.ts",
         "typecheck": "tsc --noEmit",
         "lint": "biome check . --write --unsafe --max-diagnostics=100",
@@ -57,6 +58,7 @@
         "pg-mem": "^3.0.14",
         "tsx": "catalog:",
         "typedoc": "^0.28.20",
+        "@vitest/coverage-v8": "catalog:",
         "vitest": "catalog:"
     }
 }
