@@ -224,256 +224,172 @@ jobs:
         uses: actions/deploy-pages@v4
 
   # ---------------------------------------------------------
-  # 4. RELEASE — Build & Upload 11 Assets
-  # Triggered on version tags (v*). Produces:
-  #   - 3 TS packages (.tgz)
-  #   - 4 Rust FFI binaries (.node) — Darwin x64/arm64, Linux x64, Win x64
-  #   - 2 CLI binaries (yahoo_streamer, alpaca_streamer) × 4 targets
+  # 4. RELEASE (only on tags v*) - restored from the v0.2.0 flow that shipped releases:
+  #    build-ts + build-rust -> release (GitHub Release assets) -> publish-npm.
+  # Assets: 3 TS tarballs, 4 native modules (.node), 3 CLI binaries x 4 targets.
+  # The Rust toolchain comes from rust-toolchain.toml via ./.github/actions/setup-rust.
   # ---------------------------------------------------------
-  release:
-    name: Release (${{ matrix.target }})
+  build-ts:
+    name: Pack TS Packages
     needs: test
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v5
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build all packages
+        run: pnpm build-all
+      - name: Pack packages
+        run: |
+          mkdir dist-packages
+          pnpm --filter @ckirg/corelib pack --pack-destination ./dist-packages
+          pnpm --filter @ckirg/corelib-markets pack --pack-destination ./dist-packages
+          pnpm --filter @ckirg/corelib-cloud pack --pack-destination ./dist-packages
+          ls -l dist-packages
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ts-packages
+          path: dist-packages/*.tgz
+          retention-days: 1
+
+  build-rust:
+    name: Build Rust (${{ matrix.artifact_name }})
+    needs: test
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     strategy:
       fail-fast: false
       matrix:
         include:
-          # TS package builds (run on any OS, but Ubuntu is fastest)
           - os: ubuntu-latest
-            target: ts-packages
-            name: "Build TS Packages"
-          # Rust FFI binaries
-          - os: ubuntu-latest
-            target: rust-linux-x64
-            name: "Build Rust FFI (Linux x64)"
+            artifact_name: corelib-rust-linux-x64.node
+            bin_yahoo: yahoo_streamer-linux-x64
+            bin_polling: nasdaq_polling-linux-x64
+            bin_alpaca: alpaca_streamer-linux-x64
+          # macos-latest is Apple Silicon; the x64 build needs an Intel runner or it would
+          # silently ship an arm64 binary under an x64 name.
+          - os: macos-15-intel
+            artifact_name: corelib-rust-darwin-x64.node
+            bin_yahoo: yahoo_streamer-darwin-x64
+            bin_polling: nasdaq_polling-darwin-x64
+            bin_alpaca: alpaca_streamer-darwin-x64
           - os: macos-latest
-            target: rust-darwin-x64
-            name: "Build Rust FFI (macOS x64)"
-          - os: macos-latest
-            target: rust-darwin-arm64
-            name: "Build Rust FFI (macOS arm64)"
+            artifact_name: corelib-rust-darwin-arm64.node
+            bin_yahoo: yahoo_streamer-darwin-arm64
+            bin_polling: nasdaq_polling-darwin-arm64
+            bin_alpaca: alpaca_streamer-darwin-arm64
           - os: windows-latest
-            target: rust-win32-x64
-            name: "Build Rust FFI (Windows x64)"
-          # CLI binaries (Rust)
-          - os: ubuntu-latest
-            target: cli-linux-x64
-            name: "Build CLI Binaries (Linux x64)"
-          - os: macos-latest
-            target: cli-darwin-x64
-            name: "Build CLI Binaries (macOS x64)"
-          - os: macos-latest
-            target: cli-darwin-arm64
-            name: "Build CLI Binaries (macOS arm64)"
-          - os: windows-latest
-            target: cli-win32-x64
-            name: "Build CLI Binaries (Windows x64)"
+            artifact_name: corelib-rust-win32-x64.node
+            bin_yahoo: yahoo_streamer-win32-x64.exe
+            bin_polling: nasdaq_polling-win32-x64.exe
+            bin_alpaca: alpaca_streamer-win32-x64.exe
+    runs-on: ${{ matrix.os }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # needed for git tags
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v5
         with:
           version: ${{ env.PNPM_VERSION }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: "24"
-          cache: "pnpm"
-
+          node-version: 24
+          cache: pnpm
+      - name: Setup Rust (pinned)
+        uses: ./.github/actions/setup-rust
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      # --- TS PACKAGE BUILD ---
-      - name: Build TS packages
-        if: matrix.target == 'ts-packages'
+      - name: Build Rust FFI
         run: |
-          pnpm build-all
-          pnpm pack --filter @ckirg/corelib --filter @ckirg/corelib-markets --filter @ckirg/corelib-cloud --prod
+          cd rust
+          pnpm exec napi build --release
+      - name: Build CLI binaries
+        run: |
+          cd rust
+          cargo build --release --bins --features clap
+      - name: Rename artifacts
         shell: bash
-
-      - name: Upload TS package artifacts
-        if: matrix.target == 'ts-packages'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ts-packages
-          path: |
-            ts-core/*.tgz
-            ts-markets/*.tgz
-            ts-cloud/*.tgz
-          retention-days: 30
-
-      # --- RUST FFI BUILDS ---
-      # Toolchain version comes from rust-toolchain.toml (single source of truth, see that file).
-      - name: Setup Rust (pinned)
-        if: matrix.target != 'ts-packages'
-        uses: ./.github/actions/setup-rust
-
-      - name: Add Apple Silicon target
-        if: matrix.target == 'rust-darwin-arm64'
-        run: rustup target add aarch64-apple-darwin
-
-      - name: Cache cargo
-        if: matrix.target != 'ts-packages'
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            rust/target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Build Rust FFI (cdylib)
-        if: matrix.target != 'ts-packages' && matrix.target != 'cli-*'
-        working-directory: ./rust
         run: |
-          cargo build --release --features napi
-          # Copy .node binary with standard release naming
-          TARGET_SUFFIX="${{ matrix.target }}"
-          TARGET_SUFFIX="${TARGET_SUFFIX/rust-/}"
-          cp target/release/corelib-rust.node ../corelib-rust-${TARGET_SUFFIX}.node
-
-      - name: Build CLI binaries (yahoo_streamer, alpaca_streamer)
-        if: matrix.target != 'ts-packages' && startsWith(matrix.target, 'cli-')
-        working-directory: ./rust
-        run: |
-          cargo build --release --features clap --bin yahoo_streamer --bin alpaca_streamer
-          mkdir -p ../cli-bin
-          TARGET_SUFFIX="${{ matrix.target }}"
-          TARGET_SUFFIX="${TARGET_SUFFIX/cli-/}"
-          cp target/release/yahoo_streamer ../cli-bin/yahoo_streamer-${TARGET_SUFFIX}
-          cp target/release/alpaca_streamer ../cli-bin/alpaca_streamer-${TARGET_SUFFIX}
-
-      - name: Upload Rust FFI artifact
-        if: matrix.target != 'ts-packages' && matrix.target != 'cli-*'
-        uses: actions/upload-artifact@v4
+          mv rust/corelib-rust.node ${{ matrix.artifact_name }}
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            mv rust/target/release/yahoo_streamer.exe ${{ matrix.bin_yahoo }}
+            mv rust/target/release/nasdaq_polling.exe ${{ matrix.bin_polling }}
+            mv rust/target/release/alpaca_streamer.exe ${{ matrix.bin_alpaca }}
+          else
+            mv rust/target/release/yahoo_streamer ${{ matrix.bin_yahoo }}
+            mv rust/target/release/nasdaq_polling ${{ matrix.bin_polling }}
+            mv rust/target/release/alpaca_streamer ${{ matrix.bin_alpaca }}
+          fi
+      # One artifact per matrix leg; the release job merges them all (merge-multiple).
+      - uses: actions/upload-artifact@v7
         with:
-          name: rust-ffi-${{ matrix.target }}
-          path: corelib-rust-*.node
-          retention-days: 30
+          name: rust-${{ matrix.artifact_name }}
+          path: |
+            ${{ matrix.artifact_name }}
+            ${{ matrix.bin_yahoo }}
+            ${{ matrix.bin_polling }}
+            ${{ matrix.bin_alpaca }}
+          if-no-files-found: error
+          retention-days: 1
 
-      - name: Upload CLI binary artifacts
-        if: startsWith(matrix.target, 'cli-')
-        uses: actions/upload-artifact@v4
-        with:
-          name: cli-binaries-${{ matrix.target }}
-          path: cli-bin/*
-          retention-days: 30
-
-  # ---------------------------------------------------------
-  # 5. RELEASE AGGREGATE — Collect all artifacts & create GitHub Release
-  # Runs after all matrix jobs complete.
-  # ---------------------------------------------------------
-  release-aggregate:
-    name: Aggregate & Publish Release
-    needs: [release]
+  release:
+    name: Create GitHub Release
+    needs: [build-ts, build-rust]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     permissions:
       contents: write
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
         with:
-          fetch-depth: 0
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+          name: ts-packages
+          path: artifacts
+      - uses: actions/download-artifact@v8
         with:
-          path: ./release-artifacts
-          pattern: ts-packages,rust-ffi-*,cli-binaries-*
-
-      - name: List downloaded artifacts
-        run: |
-          echo "=== Release Artifacts ==="
-          find release-artifacts -type f -name "*.node" -o -name "*.tgz" -o -name "yahoo_streamer*" -o -name "alpaca_streamer*" | sort
-
-      - name: Verify all 11 expected assets exist
-        id: verify
-        run: |
-          VERSION="${GITHUB_REF#refs/tags/v}"
-          echo "Verifying assets for version $VERSION"
-          
-          # Expected assets:
-          # 1. @ckirg/corelib-${VERSION}.tgz
-          # 2. @ckirg/corelib-markets-${VERSION}.tgz
-          # 3. @ckirg/corelib-cloud-${VERSION}.tgz
-          # 4. corelib-rust-linux-x64.node
-          # 5. corelib-rust-darwin-x64.node
-          # 6. corelib-rust-darwin-arm64.node
-          # 7. corelib-rust-win32-x64.node
-          # 8. yahoo_streamer-linux-x64
-          # 9. yahoo_streamer-darwin-x64
-          # 10. yahoo_streamer-darwin-arm64
-          # 11. yahoo_streamer-win32-x64
-          # 12. alpaca_streamer-linux-x64
-          # 13. alpaca_streamer-darwin-x64
-          # 14. alpaca_streamer-darwin-arm64
-          # 15. alpaca_streamer-win32-x64
-          
-          MISSING=0
-          
-          # Check TS packages
-          for pkg in corelib corelib-markets corelib-cloud; do
-            if [ ! -f "release-artifacts/ts-packages/@ckirg/${pkg}-${VERSION}.tgz" ]; then
-              echo "❌ MISSING: @ckirg/${pkg}-${VERSION}.tgz"
-              MISSING=1
-            else
-              echo "✅ Found: @ckirg/${pkg}-${VERSION}.tgz"
-            fi
-          done
-          
-          # Check Rust FFI
-          for target in linux-x64 darwin-x64 darwin-arm64 win32-x64; do
-            if [ ! -f "release-artifacts/rust-ffi-rust-${target}/corelib-rust-${target}.node" ]; then
-              echo "❌ MISSING: corelib-rust-${target}.node"
-              MISSING=1
-            else
-              echo "✅ Found: corelib-rust-${target}.node"
-            fi
-          done
-          
-          # Check CLI binaries
-          for cli in yahoo_streamer alpaca_streamer; do
-            for target in linux-x64 darwin-x64 darwin-arm64 win32-x64; do
-              ext=""
-              [[ "$target" == "win32-x64" ]] && ext=".exe"
-              if [ ! -f "release-artifacts/cli-binaries-cli-${target}/${cli}-${target}${ext}" ]; then
-                echo "❌ MISSING: ${cli}-${target}${ext}"
-                MISSING=1
-              else
-                echo "✅ Found: ${cli}-${target}${ext}"
-              fi
-            done
-          done
-          
-          if [ $MISSING -eq 1 ]; then
-            echo "::error::One or more release assets are missing"
-            exit 1
-          fi
-          echo "✅ All 11+ assets verified"
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+          path: artifacts
+          merge-multiple: true
+      - name: List release assets
+        run: ls -l artifacts
+      - uses: softprops/action-gh-release@v2
         with:
-          files: |
-            release-artifacts/ts-packages/@ckirg/corelib-*.tgz
-            release-artifacts/ts-packages/@ckirg/corelib-markets-*.tgz
-            release-artifacts/ts-packages/@ckirg/corelib-cloud-*.tgz
-            release-artifacts/rust-ffi-*/corelib-rust-*.node
-            release-artifacts/cli-binaries-*/yahoo_streamer-*
-            release-artifacts/cli-binaries-*/alpaca_streamer-*
-          draft: false
+          files: artifacts/*
           prerelease: ${{ contains(github.ref, '-') }}
           generate_release_notes: true
+
+  # ---------------------------------------------------------
+  # 5. NPM PUBLISH (only after a successful GitHub Release)
+  # Publishes the exact tarballs the release built, so npm == release assets. Runs AFTER `release`
+  # so the native binaries are on the GitHub Release before the npm package (whose postinstall
+  # downloads them) is consumable. Requires the repo secret NPM_TOKEN (npm "Automation" token).
+  # ---------------------------------------------------------
+  publish-npm:
+    name: Publish to npm
+    needs: release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@v8
+        with:
+          name: ts-packages
+          path: artifacts
+      - name: Publish packages in dependency order
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -e
+          # Leading ./ is REQUIRED: `npm publish artifacts/x.tgz` is read as a GitHub repo spec
+          # (owner/repo); `./artifacts/x.tgz` is read as a local tarball.
+          # Base package first (markets/cloud depend on it); [0-9] avoids matching -markets/-cloud.
+          npm publish ./artifacts/ckirg-corelib-[0-9]*.tgz     --access public
+          npm publish ./artifacts/ckirg-corelib-markets-*.tgz  --access public
+          npm publish ./artifacts/ckirg-corelib-cloud-*.tgz    --access public
