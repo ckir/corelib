@@ -1,11 +1,14 @@
 import {
 	ConfigManager,
+	logger,
 	nextCid,
 	RequestProxied,
 	type StrictLogger,
 } from "@ckirg/corelib";
 import { ApiNasdaqUnlimited, type NasdaqResult } from "./ApiNasdaqUnlimited";
 import { MarketSymbols } from "./MarketSymbols";
+
+const apiNasdaqQuotesLogger = logger.child({ section: "ApiNasdaqQuotes" });
 
 const DEFAULT_CONCURRENCY_LIMIT = 5;
 
@@ -29,7 +32,7 @@ export interface ApiNasdaqQuotesOptions {
  * rate-limited (batched) request strategies.
  */
 export class ApiNasdaqQuotes {
-	private readonly logger?: StrictLogger;
+	private readonly logger: StrictLogger;
 	private readonly marketSymbols: MarketSymbols;
 	private readonly requestProxied?: RequestProxied;
 	private readonly isInternalMarketSymbols: boolean;
@@ -40,8 +43,9 @@ export class ApiNasdaqQuotes {
 	 * @param options Configuration options for the module.
 	 */
 	constructor(options: ApiNasdaqQuotesOptions = {}) {
-		const baseLogger = options.logger || (globalThis as any).logger;
-		this.logger = baseLogger?.child({ section: "ApiNasdaqQuotes" });
+		this.logger = options.logger
+			? options.logger.child({ section: "ApiNasdaqQuotes" })
+			: apiNasdaqQuotesLogger;
 		this.concurrencyLimit =
 			options.concurrencyLimit ??
 			(ConfigManager.get("markets.nasdaq.quotes.concurrencyLimit") as
@@ -76,7 +80,7 @@ export class ApiNasdaqQuotes {
 		const batches = this.requestProxied
 			? 1
 			: Math.ceil(symbols.length / this.concurrencyLimit);
-		this.logger?.trace("getNasdaqQuote: start", {
+		this.logger.trace("getNasdaqQuote: start", {
 			cid,
 			requested: symbols.length,
 			batches,
@@ -104,7 +108,7 @@ export class ApiNasdaqQuotes {
 				fetchQueue.push({ symbol, url, index: i });
 			} catch (error: unknown) {
 				const message = error instanceof Error ? error.message : String(error);
-				this.logger?.warn("Error resolving asset class", {
+				this.logger.warn("Error resolving asset class", {
 					symbol,
 					error: message,
 				});
@@ -186,7 +190,7 @@ export class ApiNasdaqQuotes {
 
 		const ok = results.filter((r) => r?.status === "success").length;
 		const failed = results.filter((r) => r?.status === "error").length;
-		this.logger?.trace("getNasdaqQuote: done", {
+		this.logger.trace("getNasdaqQuote: done", {
 			cid,
 			durationMs: performance.now() - startedAt,
 			requested: symbols.length,

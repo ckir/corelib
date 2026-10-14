@@ -20,6 +20,7 @@ export class NasdaqPolling extends EventEmitter {
 	private apiInterval: number;
 	private proxies: string[];
 	private nasdaqQuotes: ApiNasdaqQuotes;
+	private inFlight = false;
 
 	/**
 	 * @param apiInterval - Polling interval in milliseconds (defaults to 10000ms/10s).
@@ -100,10 +101,10 @@ export class NasdaqPolling extends EventEmitter {
 		this.emit("status", "started");
 
 		// Initial poll execution
-		void this.poll();
+		this.runPoll();
 
 		this.intervalId = setInterval(() => {
-			void this.poll();
+			this.runPoll();
 		}, this.apiInterval);
 	}
 
@@ -127,6 +128,35 @@ export class NasdaqPolling extends EventEmitter {
 		this.subscriptions.clear();
 		nasdaqPollingLogger.info("Subscriptions cleared.");
 		this.stop();
+	}
+
+	/**
+	 * Runs one poll unless the previous one is still in flight (slow polls must not
+	 * overlap and deliver out-of-order data). Never rejects.
+	 */
+	private runPoll(): void {
+		if (this.inFlight) {
+			nasdaqPollingLogger.debug("Previous poll still in flight; skipping tick");
+			return;
+		}
+		this.inFlight = true;
+		this.poll()
+			.catch((error: unknown) => {
+				nasdaqPollingLogger.error("Unhandled poll failure", { error });
+			})
+			.finally(() => {
+				this.inFlight = false;
+			});
+	}
+
+	/**
+	 * Emits "error" only when someone listens (an unlistened "error" event makes
+	 * EventEmitter throw). The error is always logged by the caller.
+	 */
+	private emitError(err: unknown): void {
+		if (this.listenerCount("error") > 0) {
+			this.emit("error", err);
+		}
 	}
 
 	/**
@@ -171,7 +201,7 @@ export class NasdaqPolling extends EventEmitter {
 						symbol: symbolList[i],
 						error: serializeError(result.reason),
 					});
-					this.emit("error", result.reason);
+					this.emitError(result.reason);
 				}
 			}
 
@@ -205,7 +235,7 @@ export class NasdaqPolling extends EventEmitter {
 				cid,
 				error: serialized,
 			});
-			this.emit("error", serialized);
+			this.emitError(serialized);
 		}
 	}
 }

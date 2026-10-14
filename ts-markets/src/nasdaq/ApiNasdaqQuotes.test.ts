@@ -54,15 +54,6 @@ const server = setupServer(
 describe("ApiNasdaqQuotes", () => {
 	beforeAll(() => {
 		server.listen({ onUnhandledRequest: "bypass" });
-		// Mock global logger
-		globalThis.logger = {
-			info: vi.fn(),
-			warn: vi.fn(),
-			error: vi.fn(),
-			debug: vi.fn(),
-			trace: vi.fn(),
-			child: vi.fn().mockReturnThis(),
-		} as any;
 	});
 
 	afterEach(() => {
@@ -96,9 +87,10 @@ describe("ApiNasdaqQuotes", () => {
 			expect((api as any).requestProxied).toBeDefined();
 		});
 
-		it("should fallback to global logger if none provided", () => {
+		it("should fallback to the corelib module child logger if none provided", () => {
 			const api = new ApiNasdaqQuotes();
-			expect((api as any).logger).toBe(globalThis.logger);
+			expect((api as any).logger).toBeDefined();
+			expect(typeof (api as any).logger.warn).toBe("function");
 		});
 	});
 

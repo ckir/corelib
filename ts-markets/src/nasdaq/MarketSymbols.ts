@@ -36,6 +36,8 @@ const DEFAULT_OTHER_LISTED_URL =
 // The real directories hold ~11k symbols; anything far below that is an error page or a truncated file.
 const DEFAULT_MIN_SYMBOL_ROWS = 1_000;
 
+const FRESHNESS_CHECK_INTERVAL_MS = 3_600_000; // re-check staleness at most hourly on get()
+
 const DEFAULT_INITIAL_BACKOFF_MS = 1_000;
 const DEFAULT_MAX_RETRY_BACKOFF_MS = 3_600_000; // 1 hour cap per retry interval
 const DEFAULT_MAX_FETCH_RETRIES = 10; // circuit breaker: give up after this many consecutive failures
@@ -78,6 +80,12 @@ interface IngestorEntry {
 export class MarketSymbols {
 	private db: Database | null = null;
 	private initialized = false;
+	/** In-flight initialization shared by concurrent callers; cleared on failure so the next call retries. */
+	private initPromise: Promise<Database> | null = null;
+	/** In-flight background refresh (at most one at a time). */
+	private backgroundRefresh: Promise<void> | null = null;
+	/** Last time freshness was (re)checked; drives the at-most-hourly re-check on get(). */
+	private lastFreshnessCheckAt = 0;
 	private isDbOwner = true;
 	private readonly config?: {
 		dialect: "sqlite";
@@ -205,6 +213,9 @@ export class MarketSymbols {
 	 * Graceful shutdown – disconnects the database driver if it was created internally.
 	 */
 	public async close(): Promise<void> {
+		// Let an in-flight initialization settle so it does not use a nulled-out database.
+		await this.initPromise?.catch(() => undefined);
+		this.initPromise = null;
 		if (this.db) {
 			if (this.isDbOwner) {
 				await this.db.disconnect();
@@ -331,6 +342,7 @@ export class MarketSymbols {
 	private async searchDb(symbol: string): Promise<MarketSymbolRow | null> {
 		try {
 			const db = await this.ensureInitialized();
+			this.scheduleFreshnessCheck();
 			const result = await db.query<MarketSymbolRow>(
 				"SELECT symbol, type, class, name, ts, active FROM nasdaq_symbols WHERE symbol = ? AND active = true LIMIT 1",
 				[symbol.toUpperCase()],
@@ -358,9 +370,20 @@ export class MarketSymbols {
 	 * Creates an index on the `active` column if it doesn't exist.
 	 * Called automatically on first use, and before any other operations.
 	 */
-	private async ensureInitialized(): Promise<Database> {
-		if (this.db && this.initialized) return this.db;
+	private ensureInitialized(): Promise<Database> {
+		if (this.db && this.initialized) return Promise.resolve(this.db);
+		if (!this.initPromise) {
+			const attempt = this.initialize();
+			this.initPromise = attempt;
+			attempt.catch(() => {
+				// Clear on failure so the next call retries (only if still the current attempt).
+				if (this.initPromise === attempt) this.initPromise = null;
+			});
+		}
+		return this.initPromise;
+	}
 
+	private async initialize(): Promise<Database> {
 		if (!this.db) {
 			if (!this.config) {
 				throw new Error(
@@ -369,8 +392,9 @@ export class MarketSymbols {
 			}
 			this.db = await createDatabase(this.config);
 		}
+		const db = this.db;
 
-		await this.db.query(`
+		await db.query(`
 			CREATE TABLE IF NOT EXISTS nasdaq_symbols (
 				symbol   TEXT PRIMARY KEY,
 				type     TEXT NOT NULL,
@@ -381,16 +405,60 @@ export class MarketSymbols {
 			)
 		`);
 
-		await this.db.query(
+		await db.query(
 			"CREATE INDEX IF NOT EXISTS idx_nasdaq_symbols_active ON nasdaq_symbols(active)",
 		);
 
+		// Auto-refresh on first use if needed. Stale data is served immediately while the
+		// refresh runs in the background; with no data at all the caller waits for the download.
+		if (await this.needsRefresh()) {
+			if (await this.hasExistingData()) {
+				this.startBackgroundRefresh();
+			} else {
+				await this.performRefresh();
+			}
+		}
+
 		this.initialized = true;
+		this.lastFreshnessCheckAt = Date.now();
+		return db;
+	}
 
-		// Auto-refresh on first use if needed
-		await this.performRefresh();
+	/**
+	 * Starts a non-blocking refresh. Never throws into the caller; failures are logged.
+	 * Only one background refresh runs at a time.
+	 */
+	private startBackgroundRefresh(): void {
+		if (this.backgroundRefresh) return;
+		const run = this.performRefresh()
+			.catch((err: unknown) => {
+				marketSymbolsLogger.warn("Background symbol refresh failed", {
+					error: err,
+				});
+			})
+			.finally(() => {
+				if (this.backgroundRefresh === run) this.backgroundRefresh = null;
+			});
+		this.backgroundRefresh = run;
+	}
 
-		return this.db;
+	/**
+	 * Re-checks freshness at most once per hour so a long-running process keeps its symbols current.
+	 * Fire-and-forget: never blocks or throws into the caller.
+	 */
+	private scheduleFreshnessCheck(): void {
+		const now = Date.now();
+		if (now - this.lastFreshnessCheckAt < FRESHNESS_CHECK_INTERVAL_MS) return;
+		this.lastFreshnessCheckAt = now;
+		void (async () => {
+			try {
+				if (await this.needsRefresh()) this.startBackgroundRefresh();
+			} catch (err) {
+				marketSymbolsLogger.warn("Symbol freshness check failed", {
+					error: err,
+				});
+			}
+		})();
 	}
 
 	/**
@@ -645,15 +713,17 @@ export class MarketSymbols {
 		const lines = text.trim().split(/\r?\n/);
 
 		for (const line of lines) {
+			// The real footer is "File Creation Time: MMDDYYYYhh:mm|||||||" (colon, not pipe).
 			if (
 				line.startsWith("Symbol|") ||
-				line.startsWith("File Creation Time|") ||
+				line.startsWith("File Creation Time") ||
 				!line.trim()
 			)
 				continue;
 			const fields = line.split("|");
 
 			if (fields.length < 8) continue;
+			if (fields[3].trim() === "Y") continue; // test issue
 
 			const symbol = fields[0].trim();
 			const name = fields[1].trim();
@@ -685,15 +755,18 @@ export class MarketSymbols {
 		const lines = text.trim().split(/\r?\n/);
 
 		for (const line of lines) {
+			// The real header starts with "ACT Symbol|" and the footer is "File Creation Time: ...|||".
 			if (
 				line.startsWith("Symbol|") ||
-				line.startsWith("File Creation Time|") ||
+				line.startsWith("ACT Symbol|") ||
+				line.startsWith("File Creation Time") ||
 				!line.trim()
 			)
 				continue;
 			const fields = line.split("|");
 
 			if (fields.length < 5) continue;
+			if (fields[6]?.trim() === "Y") continue; // test issue
 
 			const symbol = fields[0].trim();
 			const name = fields[1].trim();

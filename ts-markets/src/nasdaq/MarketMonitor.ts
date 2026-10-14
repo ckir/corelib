@@ -63,6 +63,8 @@ export class MarketMonitor extends EventEmitter {
 	private lastWarnTime = 0;
 	private failureCount = 0;
 	private hasEmitted = false;
+	/** Bumped on every start()/stop(); a poll resumed from an older generation must not schedule or emit. */
+	private generation = 0;
 
 	/**
 	 * @param {object} [options] - Configuration options.
@@ -109,17 +111,19 @@ export class MarketMonitor extends EventEmitter {
 	start(): void {
 		if (this.isRunning) return;
 		this.isRunning = true;
+		this.generation++;
 		this.failureCount = 0;
 		marketMonitorLogger.info(
 			`Starting market status monitor. Using ${this.proxies.length} proxies.`,
 		);
-		this.poll(); // kick off the first poll immediately
+		this.runPoll(this.generation); // kick off the first poll immediately
 	}
 
 	/** Graceful shutdown. Clears timer and emits 'stopped'. */
 	stop(): void {
 		if (!this.isRunning) return;
 		this.isRunning = false;
+		this.generation++;
 		if (this.timeoutId) {
 			clearTimeout(this.timeoutId);
 			this.timeoutId = null;
@@ -148,8 +152,39 @@ export class MarketMonitor extends EventEmitter {
 		return this.failureCount;
 	}
 
-	private async poll(): Promise<void> {
-		if (!this.isRunning) return;
+	/** Runs one poll, never rejecting (a rejected poll would otherwise be an unhandled rejection). */
+	private runPoll(gen: number): void {
+		this.poll(gen).catch((err: unknown) => {
+			marketMonitorLogger.error("Poll crashed", { error: err });
+			// Keep the loop alive for this generation.
+			if (gen === this.generation) this.scheduleNextPoll(gen);
+		});
+	}
+
+	/** True while `gen` is still the live generation (no stop()/start() since it began). */
+	private isCurrent(gen: number): boolean {
+		return this.isRunning && gen === this.generation;
+	}
+
+	/**
+	 * Emits without letting a throwing listener alter poll control flow.
+	 * Listeners run one by one so a faulty one neither skips the others nor throws into the caller.
+	 */
+	private safeEmit(event: string, ...args: unknown[]): void {
+		for (const listener of this.rawListeners(event)) {
+			try {
+				(listener as (...a: unknown[]) => void).apply(this, args);
+			} catch (err) {
+				marketMonitorLogger.error("Listener threw", {
+					event,
+					error: serializeError(err),
+				});
+			}
+		}
+	}
+
+	private async poll(gen: number = this.generation): Promise<void> {
+		if (!this.isCurrent(gen)) return;
 
 		// Flight-recorder: cid threads this whole poll cycle; source records which
 		// path produced the phase (proxy/api live data vs time-based heuristic).
@@ -166,11 +201,13 @@ export class MarketMonitor extends EventEmitter {
 			for (let i = 0; i < this.proxies.length; i++) {
 				const currentIdx = (startIdx + i) % this.proxies.length;
 				const proxyUrl = this.proxies[currentIdx];
+				let proxyData: NasdaqMarketInfo | null = null;
 
 				try {
 					const result = await endPoint<
 						{ value?: NasdaqMarketInfo } & NasdaqMarketInfo
 					>(proxyUrl);
+					if (!this.isCurrent(gen)) return;
 					if (
 						result.status === "success" &&
 						typeof result.value.body === "object" &&
@@ -187,46 +224,57 @@ export class MarketMonitor extends EventEmitter {
 							data.mrktStatus &&
 							data.openRaw
 						) {
-							this.handleSuccess(data as NasdaqMarketInfo, cid);
-							// Update proxy index for next round robin (start with next one next time)
-							this.proxyIndex = (currentIdx + 1) % this.proxies.length;
-							success = true;
-							source = "proxy";
-							break;
+							proxyData = data as NasdaqMarketInfo;
 						}
 					}
-					marketMonitorLogger.warn(
-						"Proxy status fetch failed or returned unexpected format",
-						{ cid, proxyUrl },
-					);
+					if (!proxyData) {
+						marketMonitorLogger.warn(
+							"Proxy status fetch failed or returned unexpected format",
+							{ cid, proxyUrl },
+						);
+					}
 				} catch (err) {
+					if (!this.isCurrent(gen)) return;
 					marketMonitorLogger.error("Error fetching via proxy", {
 						cid,
 						proxyUrl,
 						error: serializeError(err),
 					});
 				}
+
+				// Handled outside the fetch try/catch so listener/handler problems are
+				// never mistaken for a proxy fetch error (and never trigger the next proxy).
+				if (proxyData) {
+					this.handleSuccess(proxyData, cid);
+					// Update proxy index for next round robin (start with next one next time)
+					this.proxyIndex = (currentIdx + 1) % this.proxies.length;
+					success = true;
+					source = "proxy";
+					break;
+				}
 			}
 		}
 
 		// 2. Revert to local method if proxies failed or no proxies provided
 		if (!success) {
+			let apiData: NasdaqMarketInfo | null = null;
 			try {
 				const result = await MarketStatus.getStatus();
-
-				if (result.status === "success") {
-					this.handleSuccess(result.value, cid);
-					success = true;
-					source = "api";
-				} else {
-					this.handleFailure(cid);
-					source = this.lastData ? "heuristic" : "none";
-				}
+				if (result.status === "success") apiData = result.value;
 			} catch (err) {
+				if (!this.isCurrent(gen)) return;
 				marketMonitorLogger.error("Unexpected poll error", {
 					cid,
 					error: serializeError(err),
 				});
+			}
+			if (!this.isCurrent(gen)) return;
+
+			if (apiData) {
+				this.handleSuccess(apiData, cid);
+				success = true;
+				source = "api";
+			} else {
 				this.handleFailure(cid);
 				source = this.lastData ? "heuristic" : "none";
 			}
@@ -242,7 +290,7 @@ export class MarketMonitor extends EventEmitter {
 			source,
 		});
 
-		this.scheduleNextPoll();
+		this.scheduleNextPoll(gen);
 	}
 
 	private handleSuccess(data: NasdaqMarketInfo, cid: number): void {
@@ -267,7 +315,7 @@ export class MarketMonitor extends EventEmitter {
 				failureCount: 0,
 				rawStatus: data.mrktStatus,
 			});
-			this.emit("status-change", phase, { ...data }, false);
+			this.safeEmit("status-change", phase, { ...data }, false);
 			this.hasEmitted = true;
 		}
 	}
@@ -308,7 +356,7 @@ export class MarketMonitor extends EventEmitter {
 				rawStatus: "",
 				computedEt,
 			});
-			this.emit("status-change", phase, heuristicData, true);
+			this.safeEmit("status-change", phase, heuristicData, true);
 		}
 
 		this.maybeLogWarn();
@@ -342,22 +390,24 @@ export class MarketMonitor extends EventEmitter {
 
 		// Time-based fallback (used when mrktStatus is missing or heuristic)
 		const now = DateTime.now().setZone("America/New_York");
-		const pmOpen = DateTime.fromISO(data.pmOpenRaw || "", {
-			zone: "America/New_York",
-		});
-		const mOpen = DateTime.fromISO(data.openRaw || "", {
-			zone: "America/New_York",
-		});
-		const mClose = DateTime.fromISO(data.closeRaw || "", {
-			zone: "America/New_York",
-		});
-		const ahClose = DateTime.fromISO(data.ahCloseRaw || "", {
-			zone: "America/New_York",
-		});
+		// The raw times carry the date of the poll that produced them; roll their wall-clock
+		// time forward to today (NY) or the phase would be "closed" forever after midnight.
+		const rollToToday = (raw: string | undefined): DateTime => {
+			const t = DateTime.fromISO(raw || "", { zone: "America/New_York" });
+			return t.isValid
+				? t.set({ year: now.year, month: now.month, day: now.day })
+				: t;
+		};
+		const pmOpen = rollToToday(data.pmOpenRaw);
+		const mOpen = rollToToday(data.openRaw);
+		const mClose = rollToToday(data.closeRaw);
+		const ahClose = rollToToday(data.ahCloseRaw);
 
 		if (!pmOpen.isValid || !mOpen.isValid) {
 			return "closed"; // safety fallback
 		}
+		// Rolled-forward times would otherwise claim a session on weekends.
+		if (now.weekday >= 6) return "closed";
 
 		if (now >= pmOpen && now < mOpen) return "pre-market";
 		if (now >= mOpen && now < mClose) return "open";
@@ -366,11 +416,11 @@ export class MarketMonitor extends EventEmitter {
 		return "closed";
 	}
 
-	private scheduleNextPoll(): void {
-		if (!this.isRunning) return;
+	private scheduleNextPoll(gen: number = this.generation): void {
+		if (!this.isCurrent(gen)) return;
 
 		const intervalMs = this.getPollIntervalMs();
-		this.timeoutId = setTimeout(() => this.poll(), intervalMs);
+		this.timeoutId = setTimeout(() => this.runPoll(gen), intervalMs);
 	}
 
 	/**
@@ -383,7 +433,13 @@ export class MarketMonitor extends EventEmitter {
 			return this.warnIntervalSec * 1000;
 		}
 
-		const phase = this.determinePhase(this.lastData);
+		// In failure mode the cached official status is stale; use the same status-cleared
+		// (time-based) data the heuristic path uses.
+		const phase = this.determinePhase(
+			this.failureCount > 0
+				? { ...this.lastData, mrktStatus: "" }
+				: this.lastData,
+		);
 		return phase === "closed"
 			? this.closedIntervalSec * 1000
 			: this.liveIntervalSec * 1000;

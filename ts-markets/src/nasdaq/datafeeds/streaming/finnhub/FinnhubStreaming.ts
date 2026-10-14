@@ -2,6 +2,7 @@
 // native callbacks adapted to emit("log"|"pricing"|<event.type>), config via async init().
 import { EventEmitter } from "node:events";
 import { coreFFI, logger, nextCid } from "@ckirg/corelib";
+import { createNativeCallbacks } from "../nativeCallbacks.js";
 import { StreamHealthTracker } from "../StreamHealthTracker.js";
 
 const RustFinnhub = (coreFFI as any)?.FinnhubStreaming;
@@ -45,22 +46,13 @@ export class FinnhubStreaming extends EventEmitter {
 			throw new Error(
 				"FinnhubStreaming (Native) is not supported in this runtime (no FFI available).",
 			);
+		const cb = createNativeCallbacks(this, this.health, finnhubStreamingLogger);
 		try {
 			this.rust = new RustFinnhub(
-				// napi invokes TSFNs error-first: (err, data). Discard err, forward data.
-				(_err: any, record: any) => this.emit("log", record),
-				(_err: any, data: any) => {
-					this.health.recordTick();
-					this.emit("pricing", data);
-				},
-				(_err: any, event: any) => {
-					if (event) this.emit(event.type, event.data ?? null);
-				},
-				(_err: any, json: string) => {
-					try {
-						this.emit("market", JSON.parse(json));
-					} catch {}
-				},
+				cb.onLog,
+				cb.onPricing,
+				cb.onEvent,
+				cb.onMarket,
 			);
 		} catch (e) {
 			throw new Error(

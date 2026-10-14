@@ -50,7 +50,7 @@ vi.mock("@ckirg/corelib", () => {
 	};
 });
 
-import { getMode, getTempDir } from "@ckirg/corelib";
+import { getMode, getTempDir, logger } from "@ckirg/corelib";
 import { AlpacaStreaming } from "./AlpacaStreaming";
 
 describe("AlpacaStreaming (Exhaustive)", () => {
@@ -199,8 +199,53 @@ describe("AlpacaStreaming (Exhaustive)", () => {
 		expect(marketSpy).toHaveBeenCalledWith(payload);
 	});
 
-	it("should not throw when 'market' callback receives invalid JSON", () => {
-		// The implementation silently swallows parse errors
+	it("should not throw, not emit, and warn when 'market' callback receives invalid JSON", () => {
+		// Previously pinned silent swallowing; parse failures are now logged (warn) without the raw payload.
+		const marketSpy = vi.fn();
+		stream.on("market", marketSpy);
 		expect(() => mockRust.on_market(null, "not-valid-json")).not.toThrow();
+		expect(marketSpy).not.toHaveBeenCalled();
+		expect(logger.warn).toHaveBeenCalledWith(
+			expect.stringContaining("parse"),
+			expect.objectContaining({ length: 14 }),
+		);
+	});
+
+	it("ignores a native error argument: no pricing emit, no tick recorded", () => {
+		const pricingSpy = vi.fn();
+		stream.on("pricing", pricingSpy);
+		const tick = vi.spyOn((stream as any).health, "recordTick");
+		mockRust.on_pricing(new Error("napi failure"), undefined);
+		expect(pricingSpy).not.toHaveBeenCalled();
+		expect(tick).not.toHaveBeenCalled();
+		expect(logger.error).toHaveBeenCalledWith(
+			expect.any(String),
+			expect.objectContaining({ error: expect.any(Error) }),
+		);
+	});
+
+	it("does not throw for a native 'error' event when nobody listens", () => {
+		expect(() =>
+			mockRust.on_event(null, { type: "error", data: "boom" }),
+		).not.toThrow();
+		expect(logger.error).toHaveBeenCalled();
+	});
+
+	it("emits a native 'error' event when a listener exists", () => {
+		const errSpy = vi.fn();
+		stream.on("error", errSpy);
+		mockRust.on_event(null, { type: "error", data: "boom" });
+		expect(errSpy).toHaveBeenCalledWith("boom");
+	});
+
+	it("ignores and logs unknown native event types", () => {
+		const pricingSpy = vi.fn();
+		stream.on("pricing", pricingSpy);
+		mockRust.on_event(null, { type: "pricing", data: 1 });
+		expect(pricingSpy).not.toHaveBeenCalled();
+		expect(logger.warn).toHaveBeenCalledWith(
+			expect.stringContaining("unknown"),
+			expect.objectContaining({ type: "pricing" }),
+		);
 	});
 });

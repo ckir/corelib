@@ -190,6 +190,31 @@ describe("ApiNasdaqUnlimited", () => {
 		});
 	});
 
+	describe("endPoint() bodies without a status object", () => {
+		it.each([
+			["a string (HTML block page)", "<html>Access Denied</html>"],
+			["an empty object", {}],
+			["null", null],
+		])("returns an error result for %s", async (_name, payload) => {
+			server.use(
+				http.get("https://api.nasdaq.com/nostatus", () =>
+					typeof payload === "string"
+						? new HttpResponse(payload, {
+								headers: { "content-type": "text/html" },
+							})
+						: HttpResponse.json(payload),
+				),
+			);
+			const result = await ApiNasdaqUnlimited.endPoint(
+				"https://api.nasdaq.com/nostatus",
+			);
+			expect(result.status).toBe("error");
+			if (result.status === "error") {
+				expect(result.reason.message).toBe("Malformed Nasdaq Response");
+			}
+		});
+	});
+
 	describe("endPoints()", () => {
 		it("should handle parallel requests", async () => {
 			const urls = [

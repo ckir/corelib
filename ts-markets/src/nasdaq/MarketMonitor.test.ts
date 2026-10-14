@@ -368,4 +368,125 @@ describe("MarketMonitor (Exhaustive)", () => {
 		expect(monitor.lastKnownData).toBeDefined();
 		expect(monitor.failureCountValue).toBe(0);
 	});
+
+	describe("Hardening", () => {
+		it("stop(); start() while a poll is pending leaves exactly one schedule chain", async () => {
+			let resolveFirst: (v: unknown) => void = () => undefined;
+			const open = {
+				status: "success",
+				value: { mrktStatus: "Open", ...baseData },
+			};
+			mockGetStatus
+				.mockImplementationOnce(
+					() =>
+						new Promise((resolve) => {
+							resolveFirst = resolve;
+						}),
+				)
+				.mockResolvedValue(open);
+			const changes = vi.fn();
+			monitor.on("status-change", changes);
+
+			monitor.start(); // poll #1 pending on the network
+			monitor.stop();
+			monitor.start(); // poll #2 resolves, schedules the only chain
+			await vi.advanceTimersByTimeAsync(0);
+			expect(mockGetStatus).toHaveBeenCalledTimes(2);
+			expect(changes).toHaveBeenCalledTimes(1);
+
+			resolveFirst(open); // stale generation resumes: must not emit or schedule
+			await vi.advanceTimersByTimeAsync(0);
+			expect(changes).toHaveBeenCalledTimes(1);
+
+			await vi.advanceTimersByTimeAsync(5000); // live interval = 5s
+			expect(mockGetStatus).toHaveBeenCalledTimes(3);
+			await vi.advanceTimersByTimeAsync(5000);
+			expect(mockGetStatus).toHaveBeenCalledTimes(4);
+		});
+
+		it("a throwing status-change listener causes one handleSuccess and no extra proxy attempts", async () => {
+			const proxied = new MarketMonitor({
+				liveIntervalSec: 5,
+				closedIntervalSec: 30,
+				warnIntervalSec: 10,
+				proxies: ["https://p1.example", "https://p2.example"],
+			});
+			mockEndPoint.mockResolvedValue({
+				status: "success",
+				value: {
+					body: {
+						status: "success",
+						value: { mrktStatus: "Open", ...baseData },
+					},
+				},
+			});
+			const handleSuccess = vi.spyOn(proxied as any, "handleSuccess");
+			proxied.on("status-change", () => {
+				throw new Error("listener bug");
+			});
+
+			proxied.start();
+			await vi.advanceTimersByTimeAsync(0);
+
+			expect(handleSuccess).toHaveBeenCalledTimes(1);
+			expect(mockEndPoint).toHaveBeenCalledTimes(1);
+			expect(mockGetStatus).not.toHaveBeenCalled();
+			expect(mockError).toHaveBeenCalledWith(
+				expect.stringContaining("Listener threw"),
+				expect.any(Object),
+			);
+			proxied.stop();
+		});
+
+		it("a throwing listener does not trigger handleFailure in the API branch", async () => {
+			mockGetStatus.mockResolvedValue({
+				status: "success",
+				value: { mrktStatus: "Open", ...baseData },
+			});
+			const handleFailure = vi.spyOn(monitor as any, "handleFailure");
+			monitor.on("status-change", () => {
+				throw new Error("listener bug");
+			});
+			monitor.start();
+			await vi.advanceTimersByTimeAsync(0);
+			expect(handleFailure).not.toHaveBeenCalled();
+			expect(monitor.failureCountValue).toBe(0);
+		});
+
+		it("uses the closed interval in failure mode when a stale 'Open' status is cached", () => {
+			vi.setSystemTime(new Date("2026-03-18T01:00:00Z")); // 21:00 ET Mar 17, after close
+			(monitor as any).lastData = { mrktStatus: "Open", ...baseData };
+			(monitor as any).failureCount = 0;
+			expect((monitor as any).getPollIntervalMs()).toBe(5000); // trusted status
+			(monitor as any).failureCount = 2;
+			expect((monitor as any).getPollIntervalMs()).toBe(30000); // heuristic: closed
+		});
+
+		it("rolls yesterday's raw times forward to today in the heuristic", () => {
+			// Wednesday 10:00 ET; data is from Tuesday
+			vi.setSystemTime(new Date("2026-03-18T14:00:00Z"));
+			(monitor as any).lastData = { mrktStatus: "Closed", ...baseData };
+			(monitor as any).lastPhase = "closed";
+			(monitor as any).hasEmitted = true;
+			const changes = vi.fn();
+			monitor.on("status-change", changes);
+
+			(monitor as any).handleFailure(1);
+
+			expect(changes).toHaveBeenCalledWith(
+				"open",
+				expect.objectContaining({ heuristic: true }),
+				true,
+			);
+			(monitor as any).failureCount = 1;
+			expect((monitor as any).getPollIntervalMs()).toBe(5000);
+		});
+
+		it("stays closed on a weekend even with rolled-forward times", () => {
+			vi.setSystemTime(new Date("2026-03-21T14:00:00Z")); // Saturday 10:00 ET
+			expect(
+				(monitor as any).determinePhase({ mrktStatus: "", ...baseData }),
+			).toBe("closed");
+		});
+	});
 });

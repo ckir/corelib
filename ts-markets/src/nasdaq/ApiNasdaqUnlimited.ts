@@ -168,28 +168,34 @@ async function nasdaqEndPoint<T = unknown>(
 	const val = result.value;
 	const nasdaqBody = val.body as Record<string, unknown> | null;
 
-	if (nasdaqBody && typeof nasdaqBody === "object" && "status" in nasdaqBody) {
-		const statusObj = nasdaqBody.status as Record<string, unknown> | undefined;
-		if (statusObj?.rCode !== 200) {
-			nasdaqUnlimitedLogger.trace("nasdaqEndPoint: error", {
-				cid,
-				durationMs: performance.now() - startedAt,
-				errorMsg: "logic check failed",
-			});
-			log("warn", "Request failed logic check", {
-				url: urlStr,
-				status: nasdaqBody.status,
-			});
+	// Every Nasdaq API body carries a `status` object. A body without one (HTML block page,
+	// null, or an object missing "status") is not a success, consistent with the proxied path.
+	const statusObj =
+		nasdaqBody && typeof nasdaqBody === "object"
+			? (nasdaqBody.status as Record<string, unknown> | null | undefined)
+			: undefined;
+	if (!statusObj || typeof statusObj !== "object" || statusObj.rCode !== 200) {
+		nasdaqUnlimitedLogger.trace("nasdaqEndPoint: error", {
+			cid,
+			durationMs: performance.now() - startedAt,
+			errorMsg: "logic check failed",
+		});
+		log("warn", "Request failed logic check", {
+			url: urlStr,
+			status:
+				nasdaqBody && typeof nasdaqBody === "object" ? nasdaqBody.status : null,
+			bodyType: typeof nasdaqBody,
+		});
 
-			const errorMessage = statusObj
+		const errorMessage =
+			statusObj && typeof statusObj === "object"
 				? apiErrorToString(statusObj as unknown as NasdaqStatus)
 				: "Malformed Nasdaq Response";
 
-			return {
-				status: "error",
-				reason: { message: errorMessage },
-			};
-		}
+		return {
+			status: "error",
+			reason: { message: errorMessage },
+		};
 	}
 
 	const { body, ...details } = val;

@@ -377,4 +377,144 @@ describe("MarketSymbols - Integrated Suite", () => {
 			});
 		});
 	});
+
+	// -----------------------------------------------------------------------
+	// 5. Hardening: parsing, init concurrency, stale-while-revalidate
+	// -----------------------------------------------------------------------
+	describe("Directory parsing hardening", () => {
+		it("skips the real colon-style footer and test issues in nasdaqlisted", () => {
+			const text =
+				"Symbol|Security Name|Market Category|Test Issue|Financial Status|Round Lot Size|ETF|NextShares\n" +
+				"AAPL|Apple Inc.|Q|N|N|100|N|N\n" +
+				"ZVZZT|NASDAQ TEST STOCK|G|Y|N|100|N|N\n" +
+				"File Creation Time: 101420261530|||||||";
+			// @ts-expect-error - access private for test
+			const rows = marketSymbols.parseNasdaqListed(text);
+			expect(rows.map((r: { symbol: string }) => r.symbol)).toEqual(["AAPL"]);
+		});
+
+		it("skips header, footer and test issues in otherlisted", () => {
+			const text =
+				"ACT Symbol|Security Name|Exchange|CQS Symbol|ETF|Round Lot Size|Test Issue|NASDAQ Symbol\n" +
+				"A|Agilent|N|A|N|100|N|A\n" +
+				"SPY|SPDR|P|SPY|Y|100|N|SPY\n" +
+				"ZTST|Test|N|ZTST|N|100|Y|ZTST\n" +
+				"File Creation Time: 101420261530|||||||";
+			// @ts-expect-error - access private for test
+			const rows = marketSymbols.parseOtherListed(text);
+			expect(
+				rows.map((r: { symbol: string; class: string }) => [r.symbol, r.class]),
+			).toEqual([
+				["A", "stocks"],
+				["SPY", "etf"],
+			]);
+		});
+	});
+
+	describe("Initialization hardening", () => {
+		it("creates the database once for two concurrent get() calls", async () => {
+			let release: (v: unknown) => void = () => undefined;
+			vi.mocked(corelib.createDatabase).mockImplementation(
+				() =>
+					new Promise((resolve) => {
+						release = () => resolve(mockDb as any);
+					}),
+			);
+			const p1 = marketSymbols.get("AAPL");
+			const p2 = marketSymbols.get("MSFT");
+			await vi.waitFor(() =>
+				expect(corelib.createDatabase).toHaveBeenCalledTimes(1),
+			);
+			release(undefined);
+			await Promise.all([p1, p2]);
+			expect(corelib.createDatabase).toHaveBeenCalledTimes(1);
+		});
+
+		it("retries initialization after a failed first attempt", async () => {
+			vi.mocked(corelib.createDatabase)
+				.mockRejectedValueOnce(new Error("boom"))
+				.mockResolvedValue(mockDb as any);
+			await marketSymbols.get("AAPL"); // init fails, get() degrades to null
+			await marketSymbols.get("AAPL");
+			expect(corelib.createDatabase).toHaveBeenCalledTimes(2);
+			expect(mockDbQuery).toHaveBeenCalledWith(
+				expect.stringContaining("CREATE TABLE IF NOT EXISTS nasdaq_symbols"),
+			);
+		});
+
+		it("retries initialization after a failed first refresh with no data", async () => {
+			mockDbQuery.mockImplementation(() =>
+				Promise.resolve({ status: "success", value: { rows: [] } }),
+			);
+			vi.mocked(corelib.endPoints)
+				.mockRejectedValueOnce(new Error("down"))
+				.mockResolvedValue(directoryResponses(1200));
+			await marketSymbols.get("AAPL");
+			expect(mockDbTransaction).not.toHaveBeenCalled();
+			await marketSymbols.get("AAPL");
+			expect(mockDbTransaction).toHaveBeenCalledTimes(1);
+		});
+
+		it("serves stale data without waiting for the refresh (and its retries)", async () => {
+			mockDbQuery.mockImplementation((query: string) => {
+				if (query.includes("MAX(ts)")) {
+					return Promise.resolve({
+						status: "success",
+						value: { rows: [{ max_ts: 1 }] }, // stale
+					});
+				}
+				if (query.includes("COUNT")) {
+					return Promise.resolve({
+						status: "success",
+						value: { rows: [{ count: 11000 }] },
+					});
+				}
+				if (query.includes("SELECT symbol, type")) {
+					return Promise.resolve({
+						status: "success",
+						value: {
+							rows: [
+								{
+									symbol: "AAPL",
+									name: "Apple",
+									type: "rt",
+									class: "stocks",
+									ts: 1,
+									active: true,
+								},
+							],
+						},
+					});
+				}
+				return Promise.resolve({ status: "success", value: { rows: [] } });
+			});
+			// The download never completes: a blocking implementation would hang here.
+			vi.mocked(corelib.endPoints).mockReturnValue(
+				new Promise(() => undefined),
+			);
+
+			const row = await marketSymbols.get("AAPL");
+			expect(row?.symbol).toBe("AAPL");
+			expect(corelib.endPoints).toHaveBeenCalled();
+		});
+
+		it("re-checks freshness at most hourly on get() without blocking", async () => {
+			vi.useFakeTimers();
+			try {
+				await marketSymbols.get("AAPL");
+				const maxTsCalls = () =>
+					mockDbQuery.mock.calls.filter((c) =>
+						String(c[0]).includes("SELECT MAX(ts)"),
+					).length;
+				const before = maxTsCalls();
+				await marketSymbols.get("AAPL");
+				expect(maxTsCalls()).toBe(before); // within the hour: no re-check
+				vi.setSystemTime(Date.now() + 3_700_000);
+				await marketSymbols.get("AAPL");
+				await vi.waitFor(() => expect(maxTsCalls()).toBe(before + 1));
+			} finally {
+				vi.useRealTimers();
+			}
+		});
+	});
 });

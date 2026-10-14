@@ -147,12 +147,13 @@ describe("NasdaqPolling", () => {
 			poller.start(); // Call 1 (immediate)
 
 			const newInterval = 2000;
-			poller.setApiInterval(newInterval); // Call 2 (immediate restart)
+			// The restart's immediate poll is skipped: call 1 is still in flight (no overlap).
+			poller.setApiInterval(newInterval);
 
-			expect(mockApiInstance.getNasdaqQuote).toHaveBeenCalledTimes(2);
+			expect(mockApiInstance.getNasdaqQuote).toHaveBeenCalledTimes(1);
 
 			await vi.advanceTimersByTimeAsync(newInterval);
-			expect(mockApiInstance.getNasdaqQuote).toHaveBeenCalledTimes(3);
+			expect(mockApiInstance.getNasdaqQuote).toHaveBeenCalledTimes(2);
 		});
 	});
 
@@ -248,6 +249,47 @@ describe("NasdaqPolling", () => {
 			// @ts-expect-error
 			await poller.poll();
 			expect(mockApiInstance.getNasdaqQuote).not.toHaveBeenCalled();
+		});
+	});
+
+	describe("Hardening", () => {
+		it("does not throw or reject when a quote fails and nobody listens for 'error'", async () => {
+			mockApiInstance.getNasdaqQuote.mockResolvedValue([
+				{ status: "error", reason: "Network Timeout" },
+			]);
+			poller.subscribe(["AAPL"]);
+			// @ts-expect-error - private
+			await expect(poller.poll()).resolves.toBeUndefined();
+			expect(mockError).toHaveBeenCalled();
+		});
+
+		it("does not throw when the fetch itself rejects and nobody listens for 'error'", async () => {
+			mockApiInstance.getNasdaqQuote.mockRejectedValue(new Error("boom"));
+			poller.subscribe(["AAPL"]);
+			// @ts-expect-error - private
+			await expect(poller.poll()).resolves.toBeUndefined();
+			expect(mockError).toHaveBeenCalledWith(
+				expect.stringContaining("Polling execution failed"),
+				expect.any(Object),
+			);
+		});
+
+		it("does not start a second poll while one is in flight", async () => {
+			let resolveFetch: (v: unknown[]) => void = () => undefined;
+			mockApiInstance.getNasdaqQuote.mockImplementation(
+				() =>
+					new Promise((resolve) => {
+						resolveFetch = resolve;
+					}),
+			);
+			poller.subscribe(["AAPL"]);
+			poller.start(); // initial poll, stays pending
+			await vi.advanceTimersByTimeAsync(interval * 3);
+			expect(mockApiInstance.getNasdaqQuote).toHaveBeenCalledTimes(1);
+
+			resolveFetch([]);
+			await vi.advanceTimersByTimeAsync(interval);
+			expect(mockApiInstance.getNasdaqQuote).toHaveBeenCalledTimes(2);
 		});
 	});
 });
