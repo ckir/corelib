@@ -120,8 +120,9 @@ export const DEFAULT_REQUEST_OPTIONS: KyOptions = {
 		},
 	},
 	method: "get",
+	// No default content-type: a blanket "application/json" overwrote FormData's multipart boundary and
+	// made every GET a non-simple request for CORS. See the string-body rule in endPoint().
 	headers: {
-		"content-type": "application/json",
 		accept: "application/json",
 	},
 	hooks: {
@@ -246,6 +247,15 @@ export async function endPoint<T = unknown>(
 			},
 		},
 	) as KyOptions;
+
+	// Back-compat: callers forward JSON.stringify(...) bodies and relied on the old blanket default.
+	// Anything else sets its own content-type: the `json` option (ky), FormData, URLSearchParams, Blob.
+	if (typeof kyOptions.body === "string") {
+		const finalHeaders = kyOptions.headers as Record<string, string>;
+		if (!("content-type" in finalHeaders)) {
+			finalHeaders["content-type"] = "application/json";
+		}
+	}
 
 	try {
 		const responseObject = await ky(url, kyOptions);

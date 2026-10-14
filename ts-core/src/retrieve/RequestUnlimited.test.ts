@@ -223,6 +223,7 @@ describe("RequestUnlimited", () => {
 				http.get("https://api.test.com/headers-test", ({ request }) => {
 					return HttpResponse.json({
 						contentType: request.headers.get("content-type"),
+						accept: request.headers.get("accept"),
 						custom: request.headers.get("x-custom-header"),
 					});
 				}),
@@ -235,7 +236,8 @@ describe("RequestUnlimited", () => {
 			expect(result.status).toBe("success");
 			if (result.status === "success") {
 				expect(result.value.body).toEqual({
-					contentType: "application/json", // from defaults
+					contentType: null, // no blanket default: a body-less GET carries none
+					accept: "application/json", // from defaults
 					custom: "test-value",
 				});
 			}
