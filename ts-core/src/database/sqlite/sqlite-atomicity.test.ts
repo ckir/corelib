@@ -4,11 +4,15 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { type DatabaseResult, wrapSuccess } from "./../core/result.js";
 import { createDatabase } from "../index.js";
 
 type Db = Awaited<ReturnType<typeof createDatabase>>;
+
+// File-backed libsql on Windows runners is occasionally slow to release its write lock (one run took 5.8s
+// for a test that normally takes ~60ms), so give this file more headroom than the 5s default.
+vi.setConfig({ testTimeout: 30_000 });
 
 const dir = mkdtempSync(join(tmpdir(), "sqlite-atomicity-"));
 // Best-effort temp cleanup: on Windows the native libsql handle can outlive disconnect() for a moment and

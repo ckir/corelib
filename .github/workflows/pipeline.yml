@@ -15,6 +15,10 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    # Weekly release rehearsal: builds every release artifact without publishing, so a broken
+    # release path is found on a quiet Monday rather than on release day.
+    - cron: '0 6 * * 1'
   release:
     types: [published]
 
@@ -224,15 +228,68 @@ jobs:
         uses: actions/deploy-pages@v4
 
   # ---------------------------------------------------------
-  # 4. RELEASE (only on tags v*) - restored from the v0.2.0 flow that shipped releases:
-  #    build-ts + build-rust -> release (GitHub Release assets) -> publish-npm.
+  # 4. RELEASE (publishes only on tags v*; everything before `release` is also a REHEARSAL)
+  #    check-version -> build-ts + build-rust -> verify-assets -> release -> publish-npm
+  # Rehearsal (no publishing) runs on pull requests that touch release-relevant paths, weekly,
+  # and on manual dispatch, so the release path is exercised long before a tag is pushed.
   # Assets: 3 TS tarballs, 4 native modules (.node), 3 CLI binaries x 4 targets.
   # The Rust toolchain comes from rust-toolchain.toml via ./.github/actions/setup-rust.
   # ---------------------------------------------------------
+  changes:
+    name: Detect release-relevant changes
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.detect.outputs.release }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - id: detect
+        shell: bash
+        run: |
+          # Tags (the real release), the weekly schedule and manual dispatch always run the release
+          # build. Plain pushes to main skip it (the full test matrix already ran); pull requests
+          # run it only when they touch release-relevant paths.
+          case "${{ github.event_name }}" in
+            schedule|workflow_dispatch) echo "release=true" >> "$GITHUB_OUTPUT"; exit 0 ;;
+            push)
+              if [[ "${{ github.ref }}" == refs/tags/v* ]]; then echo "release=true"; else echo "release=false"; fi >> "$GITHUB_OUTPUT"
+              exit 0 ;;
+          esac
+          FILES=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+          echo "$FILES"
+          if echo "$FILES" | grep -qE '^(rust/|ts-core/|ts-markets/|ts-cloud/|\.github/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|rust-toolchain\.toml$)'; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  check-version:
+    name: Check tag matches manifests
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Compare tag with every manifest version
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME#v}"
+          bad=0
+          check() { # label actual
+            if [[ "$2" != "$TAG" ]]; then echo "::error::$1 is $2 but the tag is $TAG"; bad=1; else echo "ok  $1 = $2"; fi
+          }
+          for f in package.json ts-core/package.json ts-markets/package.json ts-cloud/package.json; do
+            check "$f" "$(node -p "require('./$f').version")"
+          done
+          check "rust/Cargo.toml" "$(sed -n 's/^version = "\(.*\)"/\1/p' rust/Cargo.toml | head -1)"
+          check "rust/Cargo.lock (corelib-rust)" "$(awk '/^name = "corelib-rust"$/{getline; gsub(/version = |"/,""); print; exit}' rust/Cargo.lock)"
+          exit $bad
+
   build-ts:
     name: Pack TS Packages
-    needs: test
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [test, changes, check-version]
+    if: ${{ !cancelled() && !failure() && needs.changes.outputs.release == 'true' && github.event_name != 'release' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -262,8 +319,8 @@ jobs:
 
   build-rust:
     name: Build Rust (${{ matrix.artifact_name }})
-    needs: test
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [test, changes, check-version]
+    if: ${{ !cancelled() && !failure() && needs.changes.outputs.release == 'true' && github.event_name != 'release' }}
     strategy:
       fail-fast: false
       matrix:
@@ -325,7 +382,7 @@ jobs:
             mv rust/target/release/nasdaq_polling ${{ matrix.bin_polling }}
             mv rust/target/release/alpaca_streamer ${{ matrix.bin_alpaca }}
           fi
-      # One artifact per matrix leg; the release job merges them all (merge-multiple).
+      # One artifact per matrix leg; later jobs merge them all (merge-multiple).
       - uses: actions/upload-artifact@v7
         with:
           name: rust-${{ matrix.artifact_name }}
@@ -337,19 +394,49 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  # Runs on rehearsals AND releases: proves the artifact set is complete and well-formed before
+  # anything is published, using the same inputs the release job will use.
+  verify-assets:
+    name: Verify release assets
+    needs: [build-ts, build-rust]
+    if: ${{ !cancelled() && !failure() && needs.build-ts.result == 'success' && needs.build-rust.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Check the 19 expected assets and tarball versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          missing=0
+          expect() { if [[ -s "artifacts/$1" ]]; then echo "ok  $1"; else echo "::error::missing or empty: $1"; missing=1; fi; }
+          for pkg in corelib corelib-markets corelib-cloud; do expect "ckirg-$pkg-$VERSION.tgz"; done
+          for t in linux-x64 darwin-x64 darwin-arm64 win32-x64; do
+            expect "corelib-rust-$t.node"
+            for b in yahoo_streamer nasdaq_polling alpaca_streamer; do
+              ext=""; [[ "$t" == win32-x64 ]] && ext=".exe"
+              expect "$b-$t$ext"
+            done
+          done
+          for f in artifacts/ckirg-*.tgz; do
+            v=$(tar -xOzf "$f" package/package.json | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version")
+            [[ "$v" == "$VERSION" ]] || { echo "::error::$f contains version $v, expected $VERSION"; missing=1; }
+          done
+          exit $missing
+
   release:
     name: Create GitHub Release
-    needs: [build-ts, build-rust]
+    needs: [verify-assets]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v8
-        with:
-          name: ts-packages
-          path: artifacts
       - uses: actions/download-artifact@v8
         with:
           path: artifacts
@@ -363,16 +450,19 @@ jobs:
           generate_release_notes: true
 
   # ---------------------------------------------------------
-  # 5. NPM PUBLISH (only after a successful GitHub Release)
-  # Publishes the exact tarballs the release built, so npm == release assets. Runs AFTER `release`
-  # so the native binaries are on the GitHub Release before the npm package (whose postinstall
-  # downloads them) is consumable. Requires the repo secret NPM_TOKEN (npm "Automation" token).
+  # 5. NPM PUBLISH (only after a successful GitHub Release, and only after a human approves the
+  #    `npm-publish` environment). Publishes the exact tarballs the release built, so npm == release
+  #    assets. Runs AFTER `release` so the native binaries are on the GitHub Release before the npm
+  #    package (whose postinstall downloads them) is consumable. Idempotent: versions already on
+  #    npm are skipped, so a re-run after a partial failure finishes the job instead of erroring.
+  #    Requires the repo secret NPM_TOKEN: an npm Automation (2FA-bypass) token.
   # ---------------------------------------------------------
   publish-npm:
     name: Publish to npm
     needs: release
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-')
     runs-on: ubuntu-latest
+    environment: npm-publish
     steps:
       - uses: actions/setup-node@v6
         with:
@@ -382,14 +472,21 @@ jobs:
         with:
           name: ts-packages
           path: artifacts
-      - name: Publish packages in dependency order
+      - name: Publish packages in dependency order (skipping versions already on npm)
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
           # Leading ./ is REQUIRED: `npm publish artifacts/x.tgz` is read as a GitHub repo spec
           # (owner/repo); `./artifacts/x.tgz` is read as a local tarball.
           # Base package first (markets/cloud depend on it); [0-9] avoids matching -markets/-cloud.
-          npm publish ./artifacts/ckirg-corelib-[0-9]*.tgz     --access public
-          npm publish ./artifacts/ckirg-corelib-markets-*.tgz  --access public
-          npm publish ./artifacts/ckirg-corelib-cloud-*.tgz    --access public
+          for f in ./artifacts/ckirg-corelib-[0-9]*.tgz ./artifacts/ckirg-corelib-markets-*.tgz ./artifacts/ckirg-corelib-cloud-*.tgz; do
+            meta=$(tar -xOzf "$f" package/package.json | node -e "const p=JSON.parse(require('fs').readFileSync(0,'utf8'));console.log(p.name+'@'+p.version)")
+            if npm view "$meta" version >/dev/null 2>&1; then
+              echo "skip $meta (already published)"
+            else
+              echo "publish $meta"
+              npm publish "$f" --access public
+            fi
+          done

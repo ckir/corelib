@@ -29,3 +29,15 @@ The full engineering rules live in [AGENTS.md](AGENTS.md); this is the short ver
 - Changing a payload type that crosses the FFI? The equality tests against `rust/index.d.ts` must still pass.
 - Update the relevant README for any behaviour or API change. Bug fixes need a regression test.
 - Commits follow conventional style: `fix(ts-core): ...`, `feat(ts-markets): ...`, `ci: ...`, one logical change each.
+
+## Releasing
+
+Releases are cut from `main` by pushing an annotated `vX.Y.Z` tag; `.github/workflows/pipeline.yml` does the rest.
+
+1. Bump the version in lockstep: the four `package.json` files, `rust/Cargo.toml` and the `corelib-rust` entry in `rust/Cargo.lock`. Commit as `chore: release vX.Y.Z` and push `main`.
+2. Push the tag: `git tag -a vX.Y.Z -m "Release vX.Y.Z" && git push origin vX.Y.Z`.
+3. The pipeline runs `check-version` (tag equals every manifest), `build-ts` and `build-rust` (3 tarballs, 4 native modules, 12 CLI binaries), `verify-assets` (all 19 present, tarball versions match), then `release` (GitHub Release) and `publish-npm`.
+4. `publish-npm` waits for approval of the `npm-publish` environment. Approve it in the Actions UI; it skips versions already on npm, so a failed run can simply be re-run.
+
+The same build runs without publishing on pull requests that touch `rust/`, the packages, `.github/` or the lockfiles, every Monday, and on manual dispatch (Actions -> Corelib Pipeline -> Run workflow). A red rehearsal means the next release would fail: fix it before tagging.
+`NPM_TOKEN` must be an npm **Automation** (2FA-bypass) token with publish rights on `@ckirg`.
