@@ -9,6 +9,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use futures_util::StreamExt;
 use reqwest::Url;
 use serde::de::DeserializeOwned;
 
@@ -264,7 +265,7 @@ impl RequestProxied {
                 .collect();
         }
 
-        // Assign each URL a proxy from the shared rotation, then run all requests concurrently.
+        // Assign each URL a proxy from the shared rotation, then run them with bounded concurrency.
         // Each outcome is recorded against the proxy that served it (same success/failure
         // classification as `end_point`), so failing proxies are ejected by batch use too.
         let jobs: Vec<(Option<String>, Result<String, String>)> = urls
@@ -291,7 +292,10 @@ impl RequestProxied {
             }
         });
 
-        futures_util::future::join_all(futures)
+        // Same bound as `unlimited::end_points`; `buffered` yields results in input order.
+        futures_util::stream::iter(futures)
+            .buffered(unlimited::END_POINTS_CONCURRENCY)
+            .collect::<Vec<_>>()
             .await
             .into_iter()
             .map(|(proxy_base, result)| {
@@ -635,5 +639,42 @@ mod tests {
             }
             _ => panic!("Expected immediate fail if no proxies exist"),
         }
+    }
+
+    #[tokio::test]
+    async fn end_points_bounds_concurrency_through_the_proxy() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let cur = Arc::new(AtomicUsize::new(0));
+        let max = Arc::new(AtomicUsize::new(0));
+        let (c2, m2) = (cur.clone(), max.clone());
+        tokio::spawn(async move {
+            loop {
+                let (mut sock, _) = listener.accept().await.unwrap();
+                let (c, m) = (c2.clone(), m2.clone());
+                tokio::spawn(async move {
+                    let n = c.fetch_add(1, Ordering::SeqCst) + 1;
+                    m.fetch_max(n, Ordering::SeqCst);
+                    let mut buf = [0u8; 4096];
+                    let _ = sock.read(&mut buf).await;
+                    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                    let resp = "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 1\r\nconnection: close\r\n\r\n1";
+                    let _ = sock.write_all(resp.as_bytes()).await;
+                    c.fetch_sub(1, Ordering::SeqCst);
+                });
+            }
+        });
+        let proxied = RequestProxied::new(vec![format!("http://{addr}")]).unwrap();
+        let urls: Vec<String> = (0..40).map(|i| format!("https://t{i}.com")).collect();
+        let refs: Vec<&str> = urls.iter().map(|s| s.as_str()).collect();
+        let out = proxied.end_points::<u32>(&refs, "", None).await;
+        assert_eq!(out.len(), 40);
+        assert!(out.iter().all(|r| matches!(r, ApiResponse::Success { .. })));
+        let peak = max.load(Ordering::SeqCst);
+        assert!(peak <= unlimited::END_POINTS_CONCURRENCY, "peak {peak}");
+        assert!(peak >= 2, "expected real concurrency, peak {peak}");
     }
 }

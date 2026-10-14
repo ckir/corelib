@@ -193,8 +193,8 @@ pub async fn end_point<T: DeserializeOwned>(
                     }
                 }
             }
-            // HEAD (and typically OPTIONS) responses have no body: deserialize `null` (works for `Value`/`Option<_>`).
-            if allow_empty_body && bytes.is_empty() {
+            // HEAD/OPTIONS responses and 204/205 statuses have no body: deserialize `null` (works for `Value`/`Option<_>`).
+            if (allow_empty_body || matches!(status_code, 204 | 205)) && bytes.is_empty() {
                 bytes = b"null".to_vec();
             }
 
@@ -607,5 +607,44 @@ mod tests {
         let peak = max.load(Ordering::SeqCst);
         assert!(peak <= END_POINTS_CONCURRENCY, "peak {peak}");
         assert!(peak >= 2, "expected real concurrency, peak {peak}");
+    }
+
+    #[tokio::test]
+    async fn empty_204_response_to_delete_is_success() {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .and(path("/item"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&server)
+            .await;
+        let opts = RequestOptions {
+            method: Some(Method::DELETE),
+            retry_limit: Some(0),
+            ..Default::default()
+        };
+        let res =
+            end_point::<serde_json::Value>(&format!("{}/item", server.uri()), Some(opts)).await;
+        match res {
+            ApiResponse::Success { value } => {
+                assert_eq!(value.status, 204);
+                assert!(value.body.is_null());
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn empty_200_response_to_get_is_still_an_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+        let opts = RequestOptions {
+            retry_limit: Some(0),
+            ..Default::default()
+        };
+        let res = end_point::<serde_json::Value>(&server.uri(), Some(opts)).await;
+        assert!(matches!(res, ApiResponse::Error { .. }), "{res:?}");
     }
 }
