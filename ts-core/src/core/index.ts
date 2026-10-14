@@ -20,6 +20,7 @@ const coreLogger = logger.child({ section: "Core" });
 
 const runtime = detectRuntime();
 // CJS require returns an untyped module — any on the return is intentional
+// biome-ignore lint/suspicious/noExplicitAny: CJS require returns an untyped module
 type RequireFn = (id: string) => any;
 let _require: RequireFn | undefined;
 

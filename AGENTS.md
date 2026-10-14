@@ -32,6 +32,8 @@ This document defines the foundational architectural rules and development stand
 
 - **Linting & Formatting**: Biome is the source of truth. 
     - Run `pnpm lint-all` (which executes `biome check`) before any commit. This enforces both linting and formatting.
+    - `noExplicitAny` and `noConsole` are **errors** in non-test source (tests, `test-utils/` and `probes/` are exempt; the logger sink files `ts-core/src/loggers/implementations/**` and `ts-cloud/src/core/logger.ts` may use `console`). For a justified exception use an inline `// biome-ignore lint/suspicious/<rule>: <reason>`.
+    - `pnpm lint-all` runs `biome check --write --unsafe`, which silently *deletes* `console.*` calls instead of reporting them. `pnpm lint:strict` (`biome ci`, read-only) is the check that enforces the rules above; it runs in pre-commit, `verify:fast` and CI.
 - **Testing**:
     - Use **Vitest** for all TypeScript tests and **MSW** for network mocks.
     - Maintain 100% pass rate for `pnpm test-all` across **Ubuntu, macOS, and Windows**.

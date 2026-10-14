@@ -1,7 +1,11 @@
 {
 	"$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
 	"files": {
-		"includes": ["**/*.ts", "!ts-core/docs", "!rust"]
+		"includes": [
+			"**/*.ts",
+			"!ts-core/docs",
+			"!rust"
+		]
 	},
 	"vcs": {
 		"enabled": true,
@@ -13,11 +17,43 @@
 		"rules": {
 			"recommended": true,
 			"suspicious": {
-				"noExplicitAny": "off"
+				"noExplicitAny": "error",
+				"noConsole": "error"
 			}
 		}
 	},
 	"formatter": {
 		"enabled": true
-	}
+	},
+	"overrides": [
+		{
+			"includes": [
+				"**/*.test.ts",
+				"**/test-utils/**",
+				"tests/**",
+				"probes/**"
+			],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noExplicitAny": "off",
+						"noConsole": "off"
+					}
+				}
+			}
+		},
+		{
+			"includes": [
+				"ts-core/src/loggers/implementations/**",
+				"ts-cloud/src/core/logger.ts"
+			],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noConsole": "off"
+					}
+				}
+			}
+		}
+	]
 }

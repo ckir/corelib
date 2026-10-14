@@ -17,6 +17,7 @@ if (typeof __EDGE_RUNTIME__ === "undefined" || !__EDGE_RUNTIME__) {
 }
 
 // CJS require returns an untyped module — any on the return is intentional
+// biome-ignore lint/suspicious/noExplicitAny: CJS require returns an untyped module
 type RequireFn = (id: string) => any;
 let _require: RequireFn | undefined;
 const getRequire = () => {

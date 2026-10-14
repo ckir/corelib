@@ -18,6 +18,7 @@ if (typeof __EDGE_RUNTIME__ === "undefined" || !__EDGE_RUNTIME__) {
 
 const utilsLogger = logger.child({ section: "Utils" });
 
+// biome-ignore lint/suspicious/noExplicitAny: backs the exported getRequire(), whose inferred return type is any
 let _require: any;
 
 /**

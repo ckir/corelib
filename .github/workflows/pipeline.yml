@@ -67,6 +67,12 @@ jobs:
       - name: Run Biome check (lint + format)
         run: pnpm lint-all
 
+      # lint-all runs biome with --write --unsafe, which silently deletes console.* calls (an
+      # "unsafe" fix) instead of reporting them. This read-only pass is what enforces
+      # noConsole / noExplicitAny in CI.
+      - name: Strict lint (read-only)
+        run: pnpm lint:strict
+
       # No build needed: tsconfig.base.json paths resolve workspace imports to source.
       - name: Typecheck
         run: pnpm typecheck-all
