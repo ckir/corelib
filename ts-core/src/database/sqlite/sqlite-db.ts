@@ -138,14 +138,22 @@ export class SqliteDb {
 		const existingDriver = getActiveTransaction(this) as
 			| SqliteDriver
 			| undefined;
-		const driver = existingDriver || this.driver;
+		let driver = existingDriver || this.driver;
 		const isNested = !!existingDriver;
+		let reserved = false; // true once reserve() resolved: only then is there a transaction to roll back
 		const txId = nextCid();
 		const savepointName = `sp_${txId}`;
 		this.config.logger?.trace("tx: begin", { txId, isNested });
 		const releaseLock = isNested ? undefined : await this.acquireTxLock();
 
 		try {
+			// A top-level transaction owns one connection (client.transaction) so its statements and
+			// COMMIT/ROLLBACK cannot land on different pooled connections, which the libsql pool would
+			// otherwise roll back as soon as each execute() returns.
+			if (!isNested) {
+				driver = await this.driver.reserve();
+				reserved = true;
+			}
 			await driver.connect();
 			if (isNested) {
 				const spResult = await driver.query(`SAVEPOINT ${savepointName}`);
@@ -195,7 +203,8 @@ export class SqliteDb {
 			try {
 				if (isNested) {
 					await driver.query(`ROLLBACK TO SAVEPOINT ${savepointName}`);
-				} else {
+				} else if (reserved) {
+					// Nothing to roll back if reserve() itself failed (driver is still the shared one).
 					await driver.rollbackTransaction();
 				}
 			} catch (rollbackErr) {
@@ -206,8 +215,12 @@ export class SqliteDb {
 			return wrapError(e);
 		} finally {
 			try {
-				if (!isNested && this.config.mode === "stateless") {
-					await driver.disconnect();
+				if (!isNested) {
+					// Idempotent: commit/rollback already settled the handle on the normal paths.
+					await driver.release();
+					if (this.config.mode === "stateless") {
+						await this.driver.disconnect();
+					}
 				}
 			} finally {
 				releaseLock?.();

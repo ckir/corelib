@@ -18,6 +18,8 @@ vi.mock("./sqlite/sqlite-driver.js", () => ({
 		}
 		connect = vi.fn().mockResolvedValue(undefined);
 		disconnect = vi.fn().mockResolvedValue(undefined);
+		reserve = vi.fn().mockImplementation(async () => this);
+		release = vi.fn().mockResolvedValue(undefined);
 		query = vi.fn().mockImplementation(async (sql: string) => {
 			this.log.push(sql);
 			return wrapSuccess({ rows: [], affectedRows: 0 });

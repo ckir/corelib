@@ -12,6 +12,8 @@ vi.mock("./sqlite/sqlite-driver.js", () => {
 		SqliteDriver: class {
 			connect = vi.fn().mockResolvedValue(undefined);
 			disconnect = vi.fn().mockResolvedValue(undefined);
+			reserve = vi.fn().mockImplementation(async () => this);
+			release = vi.fn().mockResolvedValue(undefined);
 			query = vi
 				.fn()
 				.mockResolvedValue(

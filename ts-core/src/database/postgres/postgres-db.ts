@@ -122,6 +122,7 @@ export class PostgresDb {
 			| undefined;
 		let driver = existingDriver || this.driver;
 		const isNested = !!existingDriver;
+		let reserved = false; // true once reserve() resolved: only then is there a transaction to roll back
 		const txId = nextCid();
 		const savepointName = `sp_${txId}`;
 		this.config.logger?.trace("tx: begin", { txId, isNested });
@@ -129,7 +130,10 @@ export class PostgresDb {
 		try {
 			// A top-level transaction owns one reserved connection so BEGIN, its statements and
 			// COMMIT/ROLLBACK cannot be spread across the pool.
-			if (!isNested) driver = await this.driver.reserve();
+			if (!isNested) {
+				driver = await this.driver.reserve();
+				reserved = true;
+			}
 			await driver.connect();
 			if (isNested) {
 				const spResult = await driver.query(`SAVEPOINT ${savepointName}`);
@@ -179,7 +183,7 @@ export class PostgresDb {
 			try {
 				if (isNested) {
 					await driver.query(`ROLLBACK TO SAVEPOINT ${savepointName}`);
-				} else if (driver !== this.driver) {
+				} else if (reserved) {
 					// Only a reserved connection has a transaction to roll back. If reserve() itself failed,
 					// driver is still the shared pool and a ROLLBACK would hit an arbitrary pooled connection.
 					await driver.rollbackTransaction();

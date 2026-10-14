@@ -70,7 +70,7 @@ function makeDriverClass(withReserve: boolean) {
 }
 
 vi.mock("./sqlite/sqlite-driver.js", () => ({
-	SqliteDriver: makeDriverClass(false),
+	SqliteDriver: makeDriverClass(true),
 }));
 vi.mock("./postgres/postgres-driver.js", () => ({
 	PostgresDriver: makeDriverClass(true),
