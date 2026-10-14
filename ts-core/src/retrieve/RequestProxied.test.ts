@@ -154,6 +154,88 @@ describe("RequestProxied (Exhaustive)", () => {
 	});
 
 	// ===================================================================
+	// Proxy-failure classification + suffix validation
+	// ===================================================================
+	describe("target responses vs proxy failures", () => {
+		const target404 = {
+			status: "error",
+			reason: { ok: false, status: 404, statusText: "Not Found", body: "" },
+		};
+
+		it("does not evict a proxy after three target 404s and returns after one attempt", async () => {
+			mockEndPoint.mockResolvedValue(target404);
+			for (let i = 0; i < 3; i++) {
+				const r = await proxied.endPoint("https://t.com/missing");
+				expect(r).toBe(target404);
+			}
+			expect(mockEndPoint).toHaveBeenCalledTimes(3); // one attempt each
+			expect((proxied as any).activeProxies).toEqual([PROXY1, PROXY2, PROXY3]);
+		});
+
+		it("still treats a 502 as a proxy failure (rotates and evicts)", async () => {
+			mockEndPoint.mockResolvedValue({
+				status: "error",
+				reason: { ok: false, status: 502, statusText: "Bad Gateway", body: "" },
+			});
+			await proxied.endPoint("https://t.com");
+			expect(mockEndPoint).toHaveBeenCalledTimes(3);
+			for (let i = 0; i < 6; i++) await proxied.endPoint("https://t.com");
+			expect((proxied as any).activeProxies.length).toBe(0);
+		});
+
+		it("still treats a network error as a proxy failure", async () => {
+			mockEndPoint.mockResolvedValue({
+				status: "error",
+				reason: { name: "TypeError", message: "fetch failed" },
+			});
+			await proxied.endPoint("https://t.com");
+			expect(mockEndPoint).toHaveBeenCalledTimes(3);
+		});
+
+		it("endPoints: target 404s never evict, 503s do", async () => {
+			mockEndPoints.mockResolvedValue([target404]);
+			for (let i = 0; i < 4; i++) await proxied.endPoints(["https://t.com"]);
+			expect((proxied as any).activeProxies.length).toBe(3);
+
+			mockEndPoints.mockResolvedValue([
+				{ status: "error", reason: { status: 503 } },
+			]);
+			for (let i = 0; i < 3; i++) await proxied.endPoints(["https://t.com"]);
+			expect((proxied as any).activeProxies).toEqual([PROXY2, PROXY3]);
+		});
+	});
+
+	describe("suffix validation", () => {
+		it.each([
+			"https://evil/",
+			"//evil",
+			"\\\\evil",
+			"/\\evil",
+			" //evil",
+		])("endPoint rejects suffix %j without sending a request", async (suffix) => {
+			const r = await proxied.endPoint("https://t.com", suffix, {
+				headers: { authorization: "secret" },
+			});
+			expect(r.status).toBe("error");
+			expect(mockEndPoint).not.toHaveBeenCalled();
+		});
+
+		it("endPoints rejects a hostile suffix for every url", async () => {
+			const r = await proxied.endPoints(["https://a", "https://b"], "//evil");
+			expect(r.map((x) => x.status)).toEqual(["error", "error"]);
+			expect(mockEndPoints).not.toHaveBeenCalled();
+		});
+
+		it("accepts a normal path with a query", async () => {
+			const r = await proxied.endPoint("https://t.com", "/path?q=1");
+			expect(r.status).toBe("success");
+			expect(mockEndPoint.mock.calls[0][0]).toContain(
+				`${PROXY1}/path?q=1&url=`,
+			);
+		});
+	});
+
+	// ===================================================================
 	// endPoints – Load Balancing
 	// ===================================================================
 	describe("endPoints()", () => {

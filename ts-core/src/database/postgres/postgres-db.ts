@@ -1,6 +1,6 @@
-import { serializeError } from "serialize-error";
 import { nextCid } from "../../utils/flight-recorder";
 import { type DatabaseResult, wrapError } from "../core/result";
+import { safeDbError } from "../core/safe-error";
 import {
 	getActiveTransaction,
 	getActiveTxId,
@@ -71,8 +71,7 @@ export class PostgresDb {
 					errorMsg: result.reason?.message ?? "unknown error",
 				});
 				this.config.logger?.error("Query execution failed", {
-					sql,
-					reason: result.reason,
+					reason: safeDbError(result.reason),
 				});
 			}
 			if (result.status === "success") {
@@ -95,8 +94,7 @@ export class PostgresDb {
 				errorMsg: e instanceof Error ? e.message : String(e),
 			});
 			this.config.logger?.error("Query catastrophic failure", {
-				sql,
-				error: serializeError(e),
+				error: safeDbError(e),
 			});
 			return wrapError(e);
 		} finally {
@@ -123,7 +121,7 @@ export class PostgresDb {
 		let driver = existingDriver || this.driver;
 		const isNested = !!existingDriver;
 		const txId = nextCid();
-		const savepointName = `sp_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+		const savepointName = `sp_${txId}`;
 		this.config.logger?.trace("tx: begin", { txId, isNested });
 
 		try {
@@ -155,7 +153,7 @@ export class PostgresDb {
 				} else {
 					this.config.logger?.warn("Transaction rollback initiated", {
 						txId,
-						reason: result.reason,
+						reason: safeDbError(result.reason),
 						isNested,
 					});
 					if (isNested) {
@@ -168,7 +166,7 @@ export class PostgresDb {
 			});
 		} catch (e) {
 			this.config.logger?.error("Transaction failed due to exception", {
-				error: serializeError(e),
+				error: safeDbError(e),
 				isNested,
 			});
 			try {
@@ -179,7 +177,7 @@ export class PostgresDb {
 				}
 			} catch (rollbackErr) {
 				this.config.logger?.error("Failed to rollback transaction", {
-					error: serializeError(rollbackErr),
+					error: safeDbError(rollbackErr),
 				});
 			}
 			return wrapError(e);

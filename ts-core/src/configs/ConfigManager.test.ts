@@ -33,6 +33,22 @@ describe("ConfigManager", () => {
 		expect(ConfigManager.get("test.key")).toBe("test-value");
 	});
 
+	it("rejects prototype-polluting paths before mutating anything", () => {
+		expect(() => cm.updateValue("__proto__.polluted", 1)).toThrow(/unsafe/);
+		expect(() => cm.updateValue("a.constructor.prototype.x", 1)).toThrow(
+			/unsafe/,
+		);
+		expect(() => cm.updateValue("safe.first.__proto__", 1)).toThrow(/unsafe/);
+		expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+		expect(({} as Record<string, unknown>).x).toBeUndefined();
+		expect(cm.get("safe.first")).toBeUndefined(); // nothing created before the throw
+	});
+
+	it("still sets normal nested paths", () => {
+		cm.updateValue("db.mysql.port", 3306);
+		expect(cm.get("db.mysql.port")).toBe(3306);
+	});
+
 	it("should return undefined for non-existent keys", () => {
 		expect(ConfigManager.get("non.existent.key")).toBeUndefined();
 	});

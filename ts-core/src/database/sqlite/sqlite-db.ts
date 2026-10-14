@@ -1,6 +1,6 @@
-import { serializeError } from "serialize-error";
 import { nextCid } from "../../utils/flight-recorder";
 import { type DatabaseResult, wrapError } from "../core/result";
+import { safeDbError } from "../core/safe-error";
 import {
 	getActiveTransaction,
 	getActiveTxId,
@@ -17,6 +17,8 @@ import { SqliteDriver } from "./sqlite-driver";
  */
 export class SqliteDb {
 	private driver: SqliteDriver;
+	/** Tail of the top-level transaction queue (promise-chain mutex). */
+	private txTail: Promise<void> = Promise.resolve();
 
 	constructor(private config: SqliteConfig) {
 		this.driver = new SqliteDriver(config);
@@ -70,8 +72,7 @@ export class SqliteDb {
 					errorMsg: result.reason?.message ?? "unknown error",
 				});
 				this.config.logger?.error("Query execution failed", {
-					sql,
-					reason: result.reason,
+					reason: safeDbError(result.reason),
 				});
 			}
 			if (result.status === "success") {
@@ -94,8 +95,7 @@ export class SqliteDb {
 				errorMsg: e instanceof Error ? e.message : String(e),
 			});
 			this.config.logger?.error("Query catastrophic failure", {
-				sql,
-				error: serializeError(e),
+				error: safeDbError(e),
 			});
 			return wrapError(e);
 		} finally {
@@ -113,7 +113,24 @@ export class SqliteDb {
 	}
 
 	/**
+	 * Waits for every earlier top-level transaction to finish and returns the
+	 * function that releases the lock for the next one. All top-level
+	 * transactions share one driver client, so BEGIN must not interleave.
+	 */
+	private async acquireTxLock(): Promise<() => void> {
+		let release!: () => void;
+		const done = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const previous = this.txTail;
+		this.txTail = previous.then(() => done);
+		await previous;
+		return release;
+	}
+
+	/**
 	 * Executes operations within a transaction using AsyncLocalStorage for context.
+	 * Top-level transactions are serialised; nested calls (savepoints) never wait.
 	 */
 	async transaction<T>(
 		callback: () => Promise<DatabaseResult<T>>,
@@ -122,8 +139,9 @@ export class SqliteDb {
 		const driver = existingDriver || this.driver;
 		const isNested = !!existingDriver;
 		const txId = nextCid();
-		const savepointName = `sp_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+		const savepointName = `sp_${txId}`;
 		this.config.logger?.trace("tx: begin", { txId, isNested });
+		const releaseLock = isNested ? undefined : await this.acquireTxLock();
 
 		try {
 			await driver.connect();
@@ -151,7 +169,7 @@ export class SqliteDb {
 				} else {
 					this.config.logger?.warn("Transaction rollback initiated", {
 						txId,
-						reason: result.reason,
+						reason: safeDbError(result.reason),
 						isNested,
 					});
 					if (isNested) {
@@ -164,7 +182,7 @@ export class SqliteDb {
 			});
 		} catch (e) {
 			this.config.logger?.error("Transaction failed due to exception", {
-				error: serializeError(e),
+				error: safeDbError(e),
 				isNested,
 			});
 			try {
@@ -175,13 +193,17 @@ export class SqliteDb {
 				}
 			} catch (rollbackErr) {
 				this.config.logger?.error("Failed to rollback transaction", {
-					error: serializeError(rollbackErr),
+					error: safeDbError(rollbackErr),
 				});
 			}
 			return wrapError(e);
 		} finally {
-			if (!isNested && this.config.mode === "stateless") {
-				await driver.disconnect();
+			try {
+				if (!isNested && this.config.mode === "stateless") {
+					await driver.disconnect();
+				}
+			} finally {
+				releaseLock?.();
 			}
 		}
 	}

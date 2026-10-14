@@ -36,10 +36,13 @@ const leafMerger = deepmergeCustom({
  * Rejects override keys whose dot/kebab segments would pollute the prototype
  * chain (__proto__, constructor, prototype) before they reach setPath.
  */
+const isSafeSegment = (segment: string): boolean =>
+	segment !== "__proto__" &&
+	segment !== "constructor" &&
+	segment !== "prototype";
+
 const isSafeKey = (key: string): boolean =>
-	!key
-		.split(/[.-]/)
-		.some((p) => p === "__proto__" || p === "constructor" || p === "prototype");
+	key.split(/[.-]/).every(isSafeSegment);
 
 /**
  * In-place deep mutator. Makes `target` structurally equal to `source` WITHOUT
@@ -560,6 +563,12 @@ export class ConfigManager extends EventEmitter {
 					.toLowerCase()
 					.replace(/_/g, ".");
 				ConfigManager._logger.debug("env override", { key: configPath });
+				if (!configPath.split(".").every(isSafeSegment)) {
+					ConfigManager._logger.warn(
+						`Dropped unsafe env override key "${envKey}" (prototype-pollution guard)`,
+					);
+					return;
+				}
 				const value = this.parseValue(env[envKey]);
 				this.setPath(target, configPath, value);
 			}
@@ -613,12 +622,19 @@ export class ConfigManager extends EventEmitter {
 		value: unknown,
 	): void {
 		const keys = path.split(".");
+		// Validate every segment BEFORE mutating anything.
+		const bad = keys.find((k) => !isSafeSegment(k));
+		if (bad !== undefined) {
+			throw new Error(
+				`ConfigManager: refusing to set unsafe config path "${path}" (segment "${bad}")`,
+			);
+		}
 		let current: Record<string, unknown> = obj;
 
 		while (keys.length > 1) {
 			const key = keys.shift() as string;
 			if (
-				!(key in current) ||
+				!Object.hasOwn(current, key) ||
 				typeof current[key] !== "object" ||
 				current[key] === null
 			) {

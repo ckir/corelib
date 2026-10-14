@@ -23,6 +23,38 @@ import {
 
 const requestProxiedLogger = logger.child({ section: "RequestProxied" });
 
+/** Gateway statuses that originate from the proxy rather than the target. */
+const PROXY_GATEWAY_STATUSES = new Set([502, 503, 504]);
+
+/**
+ * True when a failed result reflects a problem with the proxy itself: a
+ * network-level error (no HTTP response) or a proxy-originated gateway status.
+ * Other 4xx/5xx responses were produced by the target and say nothing about
+ * proxy health.
+ */
+function isProxyFailure(result: RequestResult<unknown>): boolean {
+	if (result.status === "success") return false;
+	const reason = result.reason as { status?: unknown } | null | undefined;
+	const httpStatus =
+		reason && typeof reason.status === "number" ? reason.status : undefined;
+	if (httpStatus === undefined) return true;
+	return PROXY_GATEWAY_STATUSES.has(httpStatus);
+}
+
+/**
+ * True when `suffix` stays on the proxy host. Absolute ("https://evil/") and
+ * protocol-relative ("//evil", "/\\evil") suffixes would replace the proxy host
+ * and send the request (with caller headers) elsewhere.
+ */
+function isSuffixAllowed(suffix: string): boolean {
+	const base = "https://proxy.invalid/";
+	try {
+		return new URL(suffix, base).origin === new URL(base).origin;
+	} catch {
+		return false;
+	}
+}
+
 /**
  * Proxied HTTP client with automatic rotation, fallback, and load-balancing.
  *
@@ -121,6 +153,17 @@ export class RequestProxied {
 		suffix: string = "",
 		options: KyOptions = {},
 	): Promise<RequestResult<T>> {
+		if (!isSuffixAllowed(suffix)) {
+			requestProxiedLogger.error(
+				"Rejected proxy suffix that leaves the proxy host",
+			);
+			return {
+				status: "error",
+				reason: serializeError(new Error("Invalid proxy suffix")),
+				cid: nextCid(),
+			};
+		}
+
 		if (this.activeProxies.length === 0) {
 			requestProxiedLogger.error("No active proxies left");
 			return {
@@ -150,6 +193,12 @@ export class RequestProxied {
 			const result = await unlimitedEndPoint<T>(proxyUrl, options);
 
 			if (result.status === "success") {
+				this.trackSuccess(proxyBase);
+				return result;
+			}
+
+			if (!isProxyFailure(result)) {
+				// The target answered (e.g. 404): the proxy is healthy. Return as-is.
 				this.trackSuccess(proxyBase);
 				return result;
 			}
@@ -186,6 +235,17 @@ export class RequestProxied {
 		suffix: string = "",
 		options: KyOptions = {},
 	): Promise<RequestResult<T>[]> {
+		if (!isSuffixAllowed(suffix)) {
+			requestProxiedLogger.error(
+				"Rejected proxy suffix that leaves the proxy host",
+			);
+			return urls.map(() => ({
+				status: "error" as const,
+				reason: serializeError(new Error("Invalid proxy suffix")),
+				cid: nextCid(),
+			}));
+		}
+
 		if (this.activeProxies.length === 0 || urls.length === 0) {
 			return urls.map(() => {
 				const noProxiesReason = serializeError(new Error("No active proxies"));
@@ -221,10 +281,10 @@ export class RequestProxied {
 		for (let i = 0; i < results.length; i++) {
 			const proxyBase = proxyAssignments[i];
 			const result = results[i];
-			if (result.status === "success") {
-				this.trackSuccess(proxyBase);
-			} else {
+			if (isProxyFailure(result)) {
 				this.trackFailure(proxyBase);
+			} else {
+				this.trackSuccess(proxyBase);
 			}
 		}
 

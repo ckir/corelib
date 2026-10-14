@@ -137,12 +137,21 @@ export const DEFAULT_REQUEST_OPTIONS: KyOptions = {
  * @returns Normalized headers with lowercase keys.
  */
 function toLowercaseKeys(
-	obj: Record<string, string | undefined>,
+	init: KyOptions["headers"] | Record<string, string | undefined>,
 ): Record<string, string> {
 	const newObj: Record<string, string> = {};
-	for (const key in obj) {
-		if (Object.hasOwn(obj, key) && obj[key] !== undefined) {
-			newObj[key.toLowerCase()] = obj[key] as string;
+	if (!init) return newObj;
+	if (init instanceof Headers || Array.isArray(init)) {
+		// Headers.forEach already yields lower-cased names.
+		new Headers(init as HeadersInit).forEach((value, key) => {
+			newObj[key.toLowerCase()] = value;
+		});
+		return newObj;
+	}
+	for (const key of Object.keys(init)) {
+		const value = (init as Record<string, string | undefined>)[key];
+		if (value !== undefined && value !== null) {
+			newObj[key.toLowerCase()] = value;
 		}
 	}
 	return newObj;
@@ -161,11 +170,11 @@ export async function endPoint<T = unknown>(
 ): Promise<RequestResult<T>> {
 	// 1. Normalize headers
 	const normalizedDefaultHeaders = toLowercaseKeys(
-		(DEFAULT_REQUEST_OPTIONS.headers || {}) as Record<string, string>,
+		DEFAULT_REQUEST_OPTIONS.headers || {},
 	);
 
 	const normalizedInputHeaders = options.headers
-		? toLowercaseKeys(options.headers as Record<string, string>)
+		? toLowercaseKeys(options.headers)
 		: {};
 
 	// 2. Separate headers and hooks from options to handle them manually
@@ -220,6 +229,8 @@ export async function endPoint<T = unknown>(
 		{
 			headers: { ...normalizedDefaultHeaders, ...normalizedInputHeaders },
 			hooks: {
+				// Preserve caller beforeRequest/afterResponse/beforeError hooks.
+				...hooks,
 				beforeRetry: [
 					...(DEFAULT_REQUEST_OPTIONS.hooks?.beforeRetry || []),
 					// Per-call so the retry trace correlates to this request's cid.
@@ -252,11 +263,13 @@ export async function endPoint<T = unknown>(
 			cid,
 		};
 	} catch (error: unknown) {
-		// @ts-expect-error - ky error property
-		if (error instanceof HTTPError || error.response) {
+		const errResponse =
+			typeof error === "object" && error !== null && "response" in error
+				? (error as { response?: Response }).response
+				: undefined;
+		if (error instanceof HTTPError || errResponse) {
 			const errorResponse = await serializeResponse<T>(
-				// @ts-expect-error - ky error property
-				error.response,
+				error instanceof HTTPError ? error.response : errResponse,
 			);
 
 			requestUnlimitedLogger.trace("endPoint: error", {
@@ -268,7 +281,7 @@ export async function endPoint<T = unknown>(
 			requestUnlimitedLogger.warn("HTTP Error", {
 				cid,
 				status: errorResponse?.status,
-				url: url.toString(),
+				url: safeUrl(url),
 			});
 
 			return {
