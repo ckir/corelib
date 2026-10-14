@@ -188,11 +188,17 @@ export interface YahooPricingData {
 	volume?: number;
 }
 
+/**
+ * Finnhub trade payload delivered to the native pricing callback. Must equal the typing napi generates
+ * for the Rust struct (rust/index.d.ts); ffi-types.test.ts enforces that at typecheck time.
+ */
 export interface FinnhubPricingData {
 	symbol: string;
+	messageType: string;
 	price: number;
+	volume: number;
 	timestamp: number;
-	volume?: number;
+	conditions?: string[];
 }
 
 export interface StreamingEvent {
