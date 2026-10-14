@@ -110,7 +110,7 @@ export interface FinnhubStreamingNative {
 	init(config: {
 		token?: string;
 		name?: string;
-		base_url?: string;
+		baseUrl?: string;
 	}): Promise<void>;
 	start(): Promise<void>;
 	subscribe(symbols: string[]): Promise<void>;

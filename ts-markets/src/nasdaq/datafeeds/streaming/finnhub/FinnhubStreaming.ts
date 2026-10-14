@@ -71,7 +71,7 @@ export class FinnhubStreaming extends EventEmitter {
 		await this.rust.init({
 			token: config.token ?? undefined,
 			name: config.name ?? undefined,
-			base_url: config.baseUrl ?? undefined,
+			baseUrl: config.baseUrl ?? undefined,
 		});
 		this.initialized = true;
 	}

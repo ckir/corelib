@@ -114,6 +114,13 @@ describe("FinnhubStreaming", () => {
 		expect(() => mockRust.on_market(null, "not-valid-json")).not.toThrow();
 	});
 
+	it("forwards baseUrl to native under its camelCase key (napi exposes base_url as baseUrl)", async () => {
+		await stream.init({ token: "tok", baseUrl: "wss://example.test/ws" });
+		const sent = mockRust.init.mock.calls[0][0] as Record<string, unknown>;
+		expect(sent.baseUrl).toBe("wss://example.test/ws");
+		expect(Object.keys(sent)).not.toContain("base_url");
+	});
+
 	it("should forward init()", async () => {
 		await stream.init({ token: "tok", name: "test" });
 		expect(mockRust.init).toHaveBeenCalledWith({ token: "tok", name: "test" });
