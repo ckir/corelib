@@ -15,6 +15,7 @@
         "build": "tsup",
         "postbuild": "node -e \"const fs=require('fs');const path=require('path');const awsDir=path.join('dist','aws');const crDir=path.join('dist','cloudrun');[awsDir, crDir].forEach(d => { if(!fs.existsSync(d)) fs.mkdirSync(d, {recursive:true}); const candidates=['../ts-core/corelib-rust.node','../ts-core/dist/corelib-rust.node','../../ts-core/corelib-rust.node']; for(const rust of candidates){ if(fs.existsSync(rust)){ fs.copyFileSync(rust, path.join(d,'corelib-rust.node')); console.log('✅ Copied corelib-rust.node from ' + rust + ' to ' + d); break; } } });\"",
         "watch": "tsup --watch",
+        "package:lambda": "bash ../scripts/package-lambda.sh",
         "test": "vitest",
         "test:run": "vitest run",
         "test:coverage": "vitest run --coverage",

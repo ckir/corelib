@@ -187,15 +187,12 @@ PLATFORM = "cloudflare"
 
 ### AWS Lambda
 
-No `samconfig` is included — deploy using the AWS CLI after building:
+The SAM template is `sam-corelib/template.yaml` (function `corelib`, `nodejs24.x`, handler `handler.handler`). Build the deployment package with `scripts/package-lambda.sh`; see [Deployment](#aws-lambda-1).
 
-```bash
-pnpm run build
-cd dist/aws && zip -r function.zip handler.js
-aws lambda update-function-code --function-name YOUR_FUNCTION_NAME --zip-file fileb://function.zip
-```
+Set these as Lambda environment variables (the template wires them from stack parameters):
 
-Set `CORELIB_TURSO_URL` and `CORELIB_TURSO_TOKEN` as Lambda environment variables in the console or via `aws lambda update-function-configuration`.
+- `CORELIB_API_TOKEN` (**required**): bearer token for every `/api/v1` request. Left unset, `/api/v1/*` answers 503 (fail closed); `/health` stays open.
+- `CORELIB_TURSO_URL`, `CORELIB_TURSO_TOKEN`: only for `/api/v1/sql`.
 
 ### Google Cloud Run
 
@@ -241,14 +238,26 @@ This generates:
 ## Deployment
 
 ### Cloudflare Workers
+Run from `ts-cloud/`; wrangler is a dev dependency and reads `wrangler.toml`:
 ```bash
-pnpm exec wrangler deploy src/platform/cloudflare/worker.ts
+pnpm exec wrangler login                     # once; or export CLOUDFLARE_API_TOKEN
+pnpm exec wrangler secret put CORELIB_API_TOKEN
+pnpm exec wrangler deploy
 ```
+Without the `CORELIB_API_TOKEN` secret, `/api/v1/*` answers 503. Roll back with `pnpm exec wrangler rollback`.
 
 ### AWS Lambda
-1. Build the bundle: `pnpm run build`
-2. Zip the output: `cd dist/aws && zip -r function.zip handler.js`
-3. Update Lambda code: `aws lambda update-function-code --function-name YOUR_FUNC --zip-file fileb://function.zip`
+The package is more than `handler.js`: it is `handler.mjs`, its chunk files and the native module `corelib-rust.node`. Build it with the script, not by hand:
+
+```bash
+scripts/package-lambda.sh        # from the repo root; needs docker, pnpm, zip
+aws lambda update-function-code --function-name corelib \
+  --zip-file fileb://ts-cloud/dist/function.zip
+```
+
+**Why a script:** Lambda's runtime (Amazon Linux 2023) has glibc 2.34, while a `corelib-rust.node` built on a current Linux host, or the `corelib-rust-linux-x64.node` release asset (built on `ubuntu-latest`), needs glibc 2.38 and cannot be loaded there. `loadFFI()` catches the failure and disables the Rust features, so the function still deploys and `/health` still answers 200. The script builds the module inside `amazonlinux:2023` with the toolchain pinned in `rust-toolchain.toml`, fails if the binary needs glibc newer than 2.34, and loads it in the `public.ecr.aws/lambda/nodejs:24` image (native module plus `GET /health`) before it writes `ts-cloud/dist/function.zip`.
+
+`update-function-code` leaves the function's configuration alone, so the stack in `sam-corelib/` drifts until the next `sam deploy`; pass the same `ApiToken` then or the deployed token is overwritten. Keep the previous package (`aws lambda get-function --query Code.Location`) if you may need to roll back.
 
 ### Google Cloud Run
 Deploy from the generated bundle:
