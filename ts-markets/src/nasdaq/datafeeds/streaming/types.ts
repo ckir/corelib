@@ -60,7 +60,7 @@ export interface YahooPricingData {
 /** Finnhub trade payload as typed by this package. */
 export interface FinnhubPricingData {
 	symbol: string;
-	message_type: string;
+	messageType: string;
 	price: number;
 	volume: number;
 	timestamp: number;
