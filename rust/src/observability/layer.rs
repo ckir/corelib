@@ -73,9 +73,26 @@ pub fn init_flight_recorder() {
     });
 }
 
+/// True iff `file` (a panic `Location::file()`) belongs to this crate's own sources.
+/// The crate-source prefix is derived from this file's own `file!()` (same compilation unit, so
+/// the same path mapping, relative or absolute, `--remap-path-prefix` included).
+fn is_own_panic_file(file: &str) -> bool {
+    let me = file!();
+    match me.rfind("observability") {
+        Some(i) => file.starts_with(&me[..i]),
+        None => false,
+    }
+}
+
 fn install_panic_dump_hook() {
     let prev = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
+        // Only drain the ring for panics raised in THIS crate; a host-process panic elsewhere
+        // must not consume the flight log. Always chain to the previous hook.
+        if !info.location().is_some_and(|l| is_own_panic_file(l.file())) {
+            prev(info);
+            return;
+        }
         // Pop per-event straight to stderr (no Vec/batch built during unwind →
         // minimal alloc, can't OOM-double-panic). ArrayQueue can't poison → safe.
         use std::io::Write as _;
@@ -97,6 +114,20 @@ fn install_panic_dump_hook() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn panic_file_filter_matches_only_this_crate() {
+        assert!(is_own_panic_file(file!()));
+        assert!(is_own_panic_file(&file!().replace(
+            "observability/layer.rs",
+            "utils/include_exclude_cron.rs"
+        )));
+        assert!(!is_own_panic_file(
+            "/home/u/.cargo/registry/src/index/other-1.0.0/src/lib.rs"
+        ));
+        assert!(!is_own_panic_file("/rustc/abc/library/core/src/option.rs"));
+        assert!(!is_own_panic_file("tests/flight_panic.rs"));
+    }
+
     #[test]
     fn emitted_trace_event_lands_in_ring() {
         init_flight_recorder();

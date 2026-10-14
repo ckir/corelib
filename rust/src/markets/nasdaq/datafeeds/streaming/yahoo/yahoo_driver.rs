@@ -135,7 +135,7 @@ use crate::markets::nasdaq::datafeeds::streaming::core::handshake::{
 };
 use crate::markets::nasdaq::datafeeds::streaming::core::schema::{ProviderKind, ProviderStatus};
 use crate::markets::nasdaq::datafeeds::streaming::core::types::{CoreEvent, RawPricing};
-use futures::future::{BoxFuture, FutureExt};
+use futures_util::future::{BoxFuture, FutureExt};
 use futures_util::{SinkExt, StreamExt};
 use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
 use std::sync::Arc;

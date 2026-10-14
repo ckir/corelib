@@ -74,7 +74,7 @@ pub async fn run_supervisor<D: ProviderDriver>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures::future::{BoxFuture, FutureExt};
+    use futures_util::future::{BoxFuture, FutureExt};
 
     struct Invalid;
     impl ProviderDriver for Invalid {

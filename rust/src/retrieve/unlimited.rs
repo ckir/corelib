@@ -9,12 +9,18 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use futures::future::join_all;
+use futures_util::stream::{self, StreamExt};
 use reqwest::Method;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::retrieve::ky;
+
+/// Maximum number of requests `end_points` keeps in flight at once.
+pub const END_POINTS_CONCURRENCY: usize = 16;
+
+/// Maximum response body size read by `end_point` (10 MiB).
+pub const MAX_BODY_BYTES: usize = 10 * 1024 * 1024;
 
 /// Standardized structure for serialized HTTP responses.
 ///
@@ -92,12 +98,23 @@ pub async fn end_point<T: DeserializeOwned>(
     let method = opts.method.unwrap_or(Method::GET);
 
     // Initialize the appropriate ky builder based on the specified HTTP method
+    let allow_empty_body = matches!(method, Method::HEAD | Method::OPTIONS);
     let mut builder = match method {
+        Method::GET => ky::get(url),
+        Method::HEAD => ky::head(url),
+        Method::OPTIONS => ky::options(url),
         Method::POST => ky::post(url),
         Method::PUT => ky::put(url),
         Method::PATCH => ky::patch(url),
         Method::DELETE => ky::delete(url),
-        _ => ky::get(url),
+        other => {
+            return ApiResponse::Error {
+                reason: serde_json::json!({
+                    "message": "Unsupported HTTP method",
+                    "method": other.as_str(),
+                }),
+            };
+        }
     };
 
     // Apply custom headers if provided
@@ -128,7 +145,7 @@ pub async fn end_point<T: DeserializeOwned>(
     match result {
         Ok(ky_res) => {
             // Successfully received a response (2xx). Extract properties before consuming the body.
-            let inner_res = ky_res.into_inner();
+            let mut inner_res = ky_res.into_inner();
             let status = inner_res.status();
             let ok = status.is_success();
             let status_code = status.as_u16();
@@ -141,8 +158,48 @@ pub async fn end_point<T: DeserializeOwned>(
                 headers.insert(k.as_str().to_string(), v.to_str().unwrap_or("").to_string());
             }
 
+            // Read the body with a hard size cap (declared length first, then while streaming).
+            let too_large = |declared: Option<u64>| ApiResponse::Error {
+                reason: serde_json::json!({
+                    "message": "Response body too large",
+                    "limit": MAX_BODY_BYTES,
+                    "declared": declared,
+                    "status": status_code,
+                }),
+            };
+            if let Some(len) = inner_res.content_length() {
+                if len > MAX_BODY_BYTES as u64 {
+                    return too_large(Some(len));
+                }
+            }
+            let mut bytes: Vec<u8> = Vec::new();
+            loop {
+                match inner_res.chunk().await {
+                    Ok(Some(chunk)) => {
+                        if bytes.len() + chunk.len() > MAX_BODY_BYTES {
+                            return too_large(None);
+                        }
+                        bytes.extend_from_slice(&chunk);
+                    }
+                    Ok(None) => break,
+                    Err(e) => {
+                        return ApiResponse::Error {
+                            reason: serde_json::json!({
+                                "message": "Failed to read response body",
+                                "error": e.to_string(),
+                                "status": status_code,
+                            }),
+                        };
+                    }
+                }
+            }
+            // HEAD (and typically OPTIONS) responses have no body: deserialize `null` (works for `Value`/`Option<_>`).
+            if allow_empty_body && bytes.is_empty() {
+                bytes = b"null".to_vec();
+            }
+
             // Attempt to deserialize the response body as the requested type T
-            match inner_res.json::<T>().await {
+            match serde_json::from_slice::<T>(&bytes) {
                 Ok(body) => ApiResponse::Success {
                     value: SerializedResponse {
                         ok,
@@ -195,7 +252,7 @@ pub async fn end_point<T: DeserializeOwned>(
 
 /// Makes parallel HTTP requests to multiple URLs concurrently.
 ///
-/// All requests are executed simultaneously using `futures::future::join_all`.
+/// At most `END_POINTS_CONCURRENCY` (16) requests are in flight at once (`buffered`).
 /// The order of results in the returned vector matches the order of input URLs.
 ///
 /// # Arguments
@@ -217,8 +274,11 @@ pub async fn end_points<T: DeserializeOwned>(
         async move { end_point::<T>(url, Some(cloned_opts)).await }
     });
 
-    // Execute all futures concurrently and await their completion
-    join_all(futures).await
+    // Run with bounded concurrency; `buffered` yields results in input order.
+    stream::iter(futures)
+        .buffered(END_POINTS_CONCURRENCY)
+        .collect()
+        .await
 }
 
 // =============================================
@@ -420,5 +480,132 @@ mod tests {
             }
             _ => panic!("Expected parsing Error, got {:?}", res),
         }
+    }
+
+    #[tokio::test]
+    async fn head_and_options_are_sent_as_such() {
+        for (m, name) in [(Method::HEAD, "HEAD"), (Method::OPTIONS, "OPTIONS")] {
+            let server = MockServer::start().await;
+            Mock::given(method(name))
+                .respond_with(ResponseTemplate::new(200))
+                .mount(&server)
+                .await;
+            let opts = RequestOptions {
+                method: Some(m),
+                ..Default::default()
+            };
+            let res = end_point::<Value>(&server.uri(), Some(opts)).await;
+            let reqs = server.received_requests().await.unwrap();
+            assert_eq!(reqs.len(), 1);
+            assert_eq!(reqs[0].method.as_str(), name);
+            assert!(
+                matches!(res, ApiResponse::Success { .. }),
+                "{name}: {res:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn unknown_method_is_an_error_and_sends_nothing() {
+        let server = MockServer::start().await;
+        let opts = RequestOptions {
+            method: Some(Method::from_bytes(b"TRACE").unwrap()),
+            ..Default::default()
+        };
+        let res = end_point::<Value>(&server.uri(), Some(opts)).await;
+        match res {
+            ApiResponse::Error { reason } => {
+                assert_eq!(reason["message"], "Unsupported HTTP method");
+                assert_eq!(reason["method"], "TRACE");
+            }
+            other => panic!("expected Error, got {other:?}"),
+        }
+        assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn oversized_body_is_an_error() {
+        let server = MockServer::start().await;
+        let big = format!("\"{}\"", "a".repeat(MAX_BODY_BYTES + 1));
+        Mock::given(method("GET"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "application/json")
+                    .set_body_string(big),
+            )
+            .mount(&server)
+            .await;
+        match end_point::<Value>(&server.uri(), None).await {
+            ApiResponse::Error { reason } => {
+                assert_eq!(reason["message"], "Response body too large");
+            }
+            ApiResponse::Success { .. } => panic!("expected Error, got Success"),
+        }
+    }
+
+    #[tokio::test]
+    async fn body_at_the_limit_is_accepted() {
+        let server = MockServer::start().await;
+        // `"` + payload + `"` == MAX_BODY_BYTES exactly.
+        let ok = format!("\"{}\"", "a".repeat(MAX_BODY_BYTES - 2));
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(ok))
+            .mount(&server)
+            .await;
+        let res = end_point::<Value>(&server.uri(), None).await;
+        assert!(matches!(res, ApiResponse::Success { .. }));
+    }
+
+    #[tokio::test]
+    async fn end_points_bounds_concurrency_and_preserves_order() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let cur = Arc::new(AtomicUsize::new(0));
+        let max = Arc::new(AtomicUsize::new(0));
+        let (c2, m2) = (cur.clone(), max.clone());
+        tokio::spawn(async move {
+            loop {
+                let (mut sock, _) = listener.accept().await.unwrap();
+                let (c, m) = (c2.clone(), m2.clone());
+                tokio::spawn(async move {
+                    let n = c.fetch_add(1, Ordering::SeqCst) + 1;
+                    m.fetch_max(n, Ordering::SeqCst);
+                    let mut buf = [0u8; 2048];
+                    let k = sock.read(&mut buf).await.unwrap_or(0);
+                    let req = String::from_utf8_lossy(&buf[..k]).to_string();
+                    let id: u32 = req
+                        .split("/r")
+                        .nth(1)
+                        .and_then(|r| r.split(' ').next())
+                        .and_then(|r| r.parse().ok())
+                        .unwrap_or(9999);
+                    tokio::time::sleep(Duration::from_millis(150)).await;
+                    let body = id.to_string();
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    let _ = sock.write_all(resp.as_bytes()).await;
+                    c.fetch_sub(1, Ordering::SeqCst);
+                });
+            }
+        });
+        let urls: Vec<String> = (0..40).map(|i| format!("http://{addr}/r{i}")).collect();
+        let refs: Vec<&str> = urls.iter().map(|s| s.as_str()).collect();
+        let out = end_points::<u32>(&refs, None).await;
+        assert_eq!(out.len(), 40);
+        for (i, r) in out.iter().enumerate() {
+            match r {
+                ApiResponse::Success { value } => assert_eq!(value.body, i as u32),
+                other => panic!("{i}: {other:?}"),
+            }
+        }
+        let peak = max.load(Ordering::SeqCst);
+        assert!(peak <= END_POINTS_CONCURRENCY, "peak {peak}");
+        assert!(peak >= 2, "expected real concurrency, peak {peak}");
     }
 }

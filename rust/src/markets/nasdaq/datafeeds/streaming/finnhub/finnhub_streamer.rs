@@ -137,6 +137,7 @@ type BoundedTsfn<T> = ThreadsafeFunction<T, Unknown<'static>, T, Status, true, f
 #[napi(object)]
 #[derive(Clone, Serialize, Deserialize)]
 pub struct FinnhubConfig {
+    #[serde(skip_serializing)]
     pub token: Option<String>,
     pub name: Option<String>,
     pub base_url: Option<String>,
@@ -369,5 +370,21 @@ impl FinnhubStreaming {
     #[napi]
     pub async fn clean(&self) -> napi::Result<()> {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod secret_tests {
+    use super::*;
+
+    #[test]
+    fn serialized_config_never_contains_token() {
+        let c = FinnhubConfig {
+            token: Some("TOPSECRET".into()),
+            name: None,
+            base_url: None,
+        };
+        let j = serde_json::to_string(&c).unwrap();
+        assert!(!j.contains("TOPSECRET"), "{j}");
     }
 }

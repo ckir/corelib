@@ -12,10 +12,9 @@ napi-derive = "3.5.6"
 chrono = { version = "0.4.45", features = ["clock", "serde"] }
 cron = "0.16.0"
 thiserror = "2.0.18"
-futures = "0.3.32"
 
 # === YAHOO STREAMING ===
-tokio = { version = "1.52.3", features = ["full"] }
+tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "time", "sync", "net", "signal"] }
 tokio-tungstenite = { version = "0.29.0", features = ["rustls-tls-webpki-roots"] }
 redb = "4.1.0"
 base64 = "0.22.1"
@@ -33,9 +32,9 @@ http = "1.4.1"
 clap = { version = "4.6.1", features = ["derive"], optional = true }
 
 # === OBSERVABILITY (Epic 4 flight recorder) ===
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-crossbeam-queue = "0.3"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+crossbeam-queue = "0.3.12"
 
 [features]
 default = ["finnhub", "napi"]
@@ -48,8 +47,7 @@ napi = []
 
 [dev-dependencies]
 wiremock = "0.6.5"
-tokio = { version = "1.52.3", features = ["test-util"] }
-tracing = "0.1"
+tokio = { version = "1.52.3", features = ["test-util", "io-util"] }
 
 [build-dependencies]
 napi-build = "2.3.2"

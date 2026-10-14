@@ -39,11 +39,16 @@ pub struct AlpacaConfig {
     pub db_path: Option<String>,
     /// Threshold in seconds for silence detection before triggering a reconnect (default 60).
     pub silence_seconds: Option<u32>,
-    /// Optional override for the WebSocket URL (defaults to IEX stream or `APCA_API_BASE_URL`).
+    /// Optional override for the market-data WebSocket URL; must be `wss://` (`ws://` only for
+    /// loopback hosts). Defaults to the IEX stream (`wss://stream.data.alpaca.markets/v2/iex`).
+    /// When unset, the `APCA_API_BASE_URL` env var is used as a fallback; NOTE that in Alpaca's own
+    /// convention that variable is the REST URL (`https://paper-api...`), which is rejected at
+    /// `start` with a validation error (an `https://` value is never a valid stream URL).
     pub base_url: Option<String>,
     /// Alpaca API Key ID. Falls back to `APCA_API_KEY_ID` environment variable.
     pub key_id: Option<String>,
     /// Alpaca API Secret Key. Falls back to `APCA_API_SECRET_KEY` environment variable.
+    #[serde(skip_serializing)]
     pub secret_key: Option<String>,
 }
 
@@ -73,6 +78,25 @@ impl std::fmt::Debug for AlpacaConfig {
                 &self.secret_key.as_ref().map(|_| "<redacted>"),
             )
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod secret_tests {
+    use super::*;
+
+    #[test]
+    fn serialized_config_never_contains_secret() {
+        let c = AlpacaConfig {
+            db_path: None,
+            silence_seconds: None,
+            base_url: None,
+            key_id: Some("KEYID".into()),
+            secret_key: Some("TOPSECRET".into()),
+        };
+        let j = serde_json::to_string(&c).unwrap();
+        assert!(!j.contains("TOPSECRET"), "{j}");
+        assert!(!j.contains("secret_key"), "{j}");
     }
 }
 

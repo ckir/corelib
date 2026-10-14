@@ -8,7 +8,7 @@
 
 use crate::markets::nasdaq::api_nasdaq_unlimited::nasdaq_end_point;
 use crate::retrieve::unlimited::ApiResponse;
-use futures::future::join_all;
+use futures_util::future::join_all;
 use serde_json::Value;
 use std::str::FromStr;
 

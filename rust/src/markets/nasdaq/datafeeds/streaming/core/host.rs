@@ -484,7 +484,7 @@ mod flight_tests {
 mod lifecycle_tests {
     use super::*;
     use crate::markets::nasdaq::datafeeds::streaming::core::driver::AttemptOutcome;
-    use futures::future::{BoxFuture, FutureExt};
+    use futures_util::future::{BoxFuture, FutureExt};
     use std::sync::atomic::AtomicUsize;
     use std::time::Duration;
 

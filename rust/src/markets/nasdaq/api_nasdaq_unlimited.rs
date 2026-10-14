@@ -167,7 +167,7 @@ pub async fn nasdaq_end_points<T: DeserializeOwned + Serialize>(
     });
 
     // Execute all futures concurrently and wait for all to complete
-    futures::future::join_all(futures).await
+    futures_util::future::join_all(futures).await
 }
 
 // =============================================

@@ -65,12 +65,13 @@ use crate::markets::nasdaq::datafeeds::streaming::core::driver::{
     AttemptOutcome, ProviderDriver, SubRequest,
 };
 use crate::markets::nasdaq::datafeeds::streaming::core::handshake::{
-    connect_with_stop, HandshakeError, HANDSHAKE_TIMEOUT,
+    connect_with_stop, percent_encode_component, validate_ws_endpoint, HandshakeError,
+    HANDSHAKE_TIMEOUT,
 };
 use crate::markets::nasdaq::datafeeds::streaming::core::schema::{ProviderKind, ProviderStatus};
 use crate::markets::nasdaq::datafeeds::streaming::core::types::{CoreEvent, RawPricing};
 use crate::markets::nasdaq::datafeeds::streaming::finnhub::finnhub_streamer::market_event_to_finnhub_pricing;
-use futures::future::{BoxFuture, FutureExt};
+use futures_util::future::{BoxFuture, FutureExt};
 use futures_util::{SinkExt, StreamExt};
 use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
 use std::sync::Arc;
@@ -88,7 +89,8 @@ const FINNHUB_WS: &str = "wss://ws.finnhub.io";
 /// Scheme/query formatting is byte-identical to the legacy hardcoded form when `base_url` is None.
 fn finnhub_ws_url(base_url: Option<&str>, token: &str) -> String {
     let base = base_url.unwrap_or(FINNHUB_WS);
-    format!("{base}?token={token}")
+    let sep = if base.contains('?') { '&' } else { '?' };
+    format!("{base}{sep}token={}", percent_encode_component(token))
 }
 
 pub struct FinnhubDriver {
@@ -121,9 +123,12 @@ impl FinnhubDriver {
 impl ProviderDriver for FinnhubDriver {
     fn validate(&self) -> Result<(), String> {
         if self.token.is_empty() {
-            Err("FINNHUB_API_KEY / token is required".into())
-        } else {
-            Ok(())
+            return Err("FINNHUB_API_KEY / token is required".into());
+        }
+        // The token travels in the URL query: never send it over plaintext to a remote host.
+        match self.base_url.as_deref() {
+            Some(u) => validate_ws_endpoint(u),
+            None => Ok(()),
         }
     }
 
@@ -242,6 +247,36 @@ mod tests {
             finnhub_ws_url(Some("ws://127.0.0.1:9001"), "TOK"),
             "ws://127.0.0.1:9001?token=TOK"
         );
+    }
+
+    #[test]
+    fn finnhub_token_is_percent_encoded_and_query_merged() {
+        assert_eq!(
+            finnhub_ws_url(Some("ws://127.0.0.1:1"), "a&b#c d"),
+            "ws://127.0.0.1:1?token=a%26b%23c%20d"
+        );
+        assert_eq!(
+            finnhub_ws_url(Some("ws://127.0.0.1:1/p?x=1"), "T"),
+            "ws://127.0.0.1:1/p?x=1&token=T"
+        );
+    }
+
+    #[test]
+    fn finnhub_validate_rejects_plaintext_remote() {
+        let d = |u: Option<&str>| FinnhubDriver {
+            token: "T".into(),
+            name: "f".into(),
+            base_url: u.map(String::from),
+            db: Arc::new(
+                redb::Database::builder()
+                    .create_with_backend(redb::backends::InMemoryBackend::new())
+                    .unwrap(),
+            ),
+            table: "finnhub_subscriptions",
+        };
+        assert!(d(Some("ws://example.com")).validate().is_err());
+        assert!(d(Some("ws://127.0.0.1:9")).validate().is_ok());
+        assert!(d(None).validate().is_ok());
     }
 
     #[test]

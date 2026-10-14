@@ -208,6 +208,16 @@ impl Ky {
         self.request(Method::DELETE, url)
     }
 
+    /// Initiates a HEAD request to the specified URL.
+    pub fn head<U: IntoUrl>(&self, url: U) -> KyRequestBuilder {
+        self.request(Method::HEAD, url)
+    }
+
+    /// Initiates an OPTIONS request to the specified URL.
+    pub fn options<U: IntoUrl>(&self, url: U) -> KyRequestBuilder {
+        self.request(Method::OPTIONS, url)
+    }
+
     /// Internal helper to create a `KyRequestBuilder` for a given method and URL.
     fn request<U: IntoUrl>(&self, method: Method, url: U) -> KyRequestBuilder {
         KyRequestBuilder {
@@ -238,6 +248,14 @@ pub fn patch<U: IntoUrl>(url: U) -> KyRequestBuilder {
 /// Shorthand function for initiating a DELETE request using the default client.
 pub fn delete<U: IntoUrl>(url: U) -> KyRequestBuilder {
     Ky::default().delete(url)
+}
+/// Shorthand function for initiating a HEAD request using the default client.
+pub fn head<U: IntoUrl>(url: U) -> KyRequestBuilder {
+    Ky::default().head(url)
+}
+/// Shorthand function for initiating an OPTIONS request using the default client.
+pub fn options<U: IntoUrl>(url: U) -> KyRequestBuilder {
+    Ky::default().options(url)
 }
 
 /// A chainable request builder that mimics `ky`'s API.
@@ -310,14 +328,9 @@ impl KyRequestBuilder {
             // If try_clone returns None, it usually means the request body is a stream and cannot be retried.
             let builder_clone = current_builder.try_clone();
 
-            // Execute the request
-            let res = if let Some(ref b) = builder_clone {
-                // Use a second clone for the actual send to keep builder_clone for future retries
-                b.try_clone().unwrap().send().await
-            } else {
-                // If it can't be cloned, consume it completely in this first attempt
-                current_builder.send().await
-            };
+            // Execute the request. The single clone above is kept for any retry; the original
+            // builder is consumed here (a non-cloneable streaming body simply cannot be retried).
+            let res = current_builder.send().await;
 
             match res {
                 Ok(response) => {

@@ -291,7 +291,7 @@ impl RequestProxied {
             }
         });
 
-        futures::future::join_all(futures)
+        futures_util::future::join_all(futures)
             .await
             .into_iter()
             .map(|(proxy_base, result)| {

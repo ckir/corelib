@@ -48,5 +48,5 @@ pub trait ProviderDriver: Send + Sync + 'static {
         tx: &'a mpsc::Sender<CoreEvent>,
         sub_rx: &'a mut mpsc::Receiver<SubRequest>,
         stop_rx: &'a mut mpsc::Receiver<()>,
-    ) -> futures::future::BoxFuture<'a, AttemptOutcome>;
+    ) -> futures_util::future::BoxFuture<'a, AttemptOutcome>;
 }

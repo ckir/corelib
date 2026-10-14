@@ -59,14 +59,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Credentials: CLI flag strictly overrides the environment variable.
-    let key = args
-        .key
-        .or_else(|| env::var("APCA_API_KEY_ID").ok())
-        .expect("Fatal: Missing APCA_API_KEY_ID in environment and --key CLI argument");
-    let secret = args
-        .secret
-        .or_else(|| env::var("APCA_API_SECRET_KEY").ok())
-        .expect("Fatal: Missing APCA_API_SECRET_KEY in environment and --secret CLI argument");
+    if args.secret.is_some() {
+        eprintln!(
+            "Warning: --secret is visible to other users in process listings; prefer the APCA_API_SECRET_KEY environment variable."
+        );
+    }
+    let Some(key) = args.key.or_else(|| env::var("APCA_API_KEY_ID").ok()) else {
+        eprintln!("Fatal: Missing APCA_API_KEY_ID in environment and --key CLI argument");
+        std::process::exit(2);
+    };
+    let Some(secret) = args.secret.or_else(|| env::var("APCA_API_SECRET_KEY").ok()) else {
+        eprintln!("Fatal: Missing APCA_API_SECRET_KEY in environment and --secret CLI argument");
+        std::process::exit(2);
+    };
 
     let symbols: Vec<String> = args
         .symbols

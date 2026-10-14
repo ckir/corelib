@@ -70,6 +70,59 @@ where
     }
 }
 
+/// Validate a configured WebSocket endpoint: the scheme must be `ws`/`wss`, and plaintext `ws`
+/// is only allowed for loopback hosts (credentials are sent over this connection).
+///
+/// An `http(s)://` URL is rejected (NOT rewritten to `ws(s)://`): such a value is almost always
+/// Alpaca's REST base (`APCA_API_BASE_URL=https://paper-api.alpaca.markets`), whose host does not
+/// serve the data stream, so a scheme rewrite would still connect to the wrong endpoint.
+pub fn validate_ws_endpoint(url: &str) -> Result<(), String> {
+    let (scheme, rest) = url
+        .split_once("://")
+        .ok_or_else(|| "base_url must be a ws:// or wss:// WebSocket URL".to_string())?;
+    match scheme.to_ascii_lowercase().as_str() {
+        "wss" => Ok(()),
+        "ws" => {
+            let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+            let hostport = authority.rsplit('@').next().unwrap_or("");
+            let host = if let Some(v6) = hostport.strip_prefix('[') {
+                v6.split(']').next().unwrap_or("")
+            } else {
+                hostport.split(':').next().unwrap_or("")
+            };
+            let loopback = host.eq_ignore_ascii_case("localhost")
+                || host
+                    .parse::<std::net::IpAddr>()
+                    .is_ok_and(|ip| ip.is_loopback());
+            if loopback {
+                Ok(())
+            } else {
+                Err("plaintext ws:// is only allowed for loopback hosts; use wss:// (credentials are sent over this connection)".into())
+            }
+        }
+        "http" | "https" => Err(format!(
+            "base_url must be a ws:// or wss:// WebSocket URL, but an {scheme}:// URL was given \
+             (APCA_API_BASE_URL is Alpaca's REST URL, not the data-stream WebSocket URL)"
+        )),
+        other => Err(format!(
+            "base_url must be a ws:// or wss:// WebSocket URL (got scheme `{other}`)"
+        )),
+    }
+}
+
+/// Percent-encode `s` for use as a URL query component (RFC 3986 unreserved set is kept).
+pub fn percent_encode_component(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~') {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -143,5 +196,44 @@ mod tests {
             .unwrap();
         let r = next_text_with_stop(&mut ws, &mut stop_rx, Duration::from_secs(5)).await;
         assert_eq!(r, Ok("hi".to_string()));
+    }
+
+    #[test]
+    fn endpoint_validation_scheme_and_loopback() {
+        for ok in [
+            "wss://stream.data.alpaca.markets/v2/iex",
+            "wss://ws.finnhub.io",
+            "ws://127.0.0.1:9001",
+            "ws://localhost:1/x",
+            "ws://[::1]:8080/",
+            "ws://127.0.0.1",
+        ] {
+            assert!(validate_ws_endpoint(ok).is_ok(), "{ok}");
+        }
+        for bad in [
+            "ws://example.com/stream",
+            "ws://10.0.0.5:80",
+            "ws://localhost@evil.com/",
+            "ws://127.0.0.1.evil.com/",
+            "ftp://x",
+            "not a url",
+        ] {
+            assert!(validate_ws_endpoint(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn endpoint_validation_flags_rest_https_url() {
+        let e = validate_ws_endpoint("https://paper-api.alpaca.markets").unwrap_err();
+        assert!(e.contains("https"), "{e}");
+        assert!(e.contains("REST"), "{e}");
+        assert!(validate_ws_endpoint("http://paper-api.alpaca.markets").is_err());
+    }
+
+    #[test]
+    fn percent_encode_reserved_chars() {
+        assert_eq!(percent_encode_component("a&b#c d"), "a%26b%23c%20d");
+        assert_eq!(percent_encode_component("AZaz09-._~"), "AZaz09-._~");
+        assert_eq!(percent_encode_component("é="), "%C3%A9%3D");
     }
 }

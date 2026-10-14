@@ -2,7 +2,7 @@ use crate::markets::nasdaq::datafeeds::streaming::core::driver::{
     AttemptOutcome, ProviderDriver, SubRequest,
 };
 use crate::markets::nasdaq::datafeeds::streaming::core::handshake::{
-    connect_with_stop, next_text_with_stop, HandshakeError, HANDSHAKE_TIMEOUT,
+    connect_with_stop, next_text_with_stop, validate_ws_endpoint, HandshakeError, HANDSHAKE_TIMEOUT,
 };
 use crate::markets::nasdaq::datafeeds::streaming::core::schema::{
     AlpacaQuoteExtras, AlpacaTradeExtras, MarketEvent, ProviderKind, ProviderStatus, Quote,
@@ -12,7 +12,7 @@ use crate::markets::nasdaq::datafeeds::streaming::core::types::{
     AlpacaPricingData, CoreEvent, RawPricing,
 };
 use chrono::{DateTime, Utc};
-use futures::future::{BoxFuture, FutureExt};
+use futures_util::future::{BoxFuture, FutureExt};
 use futures_util::{SinkExt, StreamExt};
 use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
 use std::sync::Arc;
@@ -214,9 +214,13 @@ impl AlpacaDriver {
 impl ProviderDriver for AlpacaDriver {
     fn validate(&self) -> Result<(), String> {
         if self.key_id.is_empty() || self.secret_key.is_empty() {
-            Err("APCA_API_KEY_ID / APCA_API_SECRET_KEY required".into())
-        } else {
-            Ok(())
+            return Err("APCA_API_KEY_ID / APCA_API_SECRET_KEY required".into());
+        }
+        // The key/secret are sent in the auth frame: require wss for non-loopback hosts and a
+        // ws(s) scheme (a REST https URL, e.g. from APCA_API_BASE_URL, can never connect).
+        match self.base_url.as_deref() {
+            Some(u) => validate_ws_endpoint(u),
+            None => Ok(()),
         }
     }
 
@@ -423,6 +427,26 @@ mod driver_tests {
                 .as_nanos()
         ));
         Arc::new(redb::Database::create(path).unwrap())
+    }
+
+    #[test]
+    fn validate_checks_base_url_scheme_and_tls() {
+        let mk = |u: Option<&str>| AlpacaDriver {
+            name: "a".into(),
+            base_url: u.map(String::from),
+            key_id: "k".into(),
+            secret_key: "s".into(),
+            silence_seconds: 60,
+            db: tmp_db(),
+            table: "alpaca_subscriptions",
+        };
+        let e = mk(Some("https://paper-api.alpaca.markets"))
+            .validate()
+            .unwrap_err();
+        assert!(e.contains("REST"), "{e}");
+        assert!(mk(Some("ws://example.com")).validate().is_err());
+        assert!(mk(Some("ws://127.0.0.1:9")).validate().is_ok());
+        assert!(mk(None).validate().is_ok());
     }
 
     #[test]
