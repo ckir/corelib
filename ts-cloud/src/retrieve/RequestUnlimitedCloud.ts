@@ -52,22 +52,26 @@ kyRouter.post("/", async (c: Context<AppEnv>): Promise<Response> => {
 			const tooMany = rejectOversizedBulk(c, body.endPoints);
 			if (tooMany) return tooMany;
 			const results: RequestResult[] = await Promise.all(
-				body.endPoints.map(async (ep: { url: string; options?: KyOptions }) => {
-					if (!ep.url) {
-						return {
-							status: "error",
-							reason: { message: "Missing URL in bulk request" },
-						};
-					}
-					const blocked = checkProxyTarget(ep.url);
-					if (blocked) {
-						return {
-							status: "error",
-							reason: { message: blocked, status: 400 },
-						};
-					}
-					return await endPoint(ep.url, ep.options || {});
-				}),
+				body.endPoints.map(
+					async (
+						ep: { url: string; options?: KyOptions } | null | undefined,
+					) => {
+						if (!ep?.url) {
+							return {
+								status: "error",
+								reason: { message: "Missing URL in bulk request" },
+							};
+						}
+						const blocked = checkProxyTarget(ep.url);
+						if (blocked) {
+							return {
+								status: "error",
+								reason: { message: blocked, status: 400 },
+							};
+						}
+						return await endPoint(ep.url, ep.options || {});
+					},
+				),
 			);
 			return c.json(results, 200);
 		}

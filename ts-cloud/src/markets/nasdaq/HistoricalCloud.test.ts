@@ -220,4 +220,16 @@ describe("HistoricalCloud Router", () => {
 
 		expect(res.status).toBe(500);
 	});
+
+	it("answers 200 with a per-item error for a null entry in a bulk request", async () => {
+		const res = await historicalRouter.request("/", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ requests: [null] }),
+		});
+		expect(res.status).toBe(200);
+		const json = (await res.json()) as Array<{ status: string }>;
+		expect(json).toHaveLength(1);
+		expect(json[0]?.status).toBe("error");
+	});
 });

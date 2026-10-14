@@ -62,8 +62,8 @@ historicalRouter.post("/", async (c: Context<AppEnv>): Promise<Response> => {
 			const tooMany = rejectOversizedBulk(c, body.requests);
 			if (tooMany) return tooMany;
 			const results: HistoricalResult[] = await Promise.all(
-				body.requests.map(async (req: HistoricalRequest) => {
-					if (req.symbol && req.options) {
+				body.requests.map(async (req: HistoricalRequest | null | undefined) => {
+					if (req?.symbol && req.options) {
 						return await Historical.getData(req.symbol, req.options);
 					}
 					return {

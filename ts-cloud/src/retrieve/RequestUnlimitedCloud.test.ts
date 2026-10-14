@@ -124,6 +124,18 @@ describe("RequestUnlimitedCloud (kyRouter)", () => {
 		});
 	});
 
+	describe("Bulk payload with malformed entries", () => {
+		it("answers 200 with a per-item error for a null entry, keeping its siblings", async () => {
+			const res = await performPost({
+				endPoints: [null, { url: "http://169.254.169.254/" }],
+			});
+			expect(res.status).toBe(200);
+			const json = (await res.json()) as RequestResult<unknown>[];
+			expect(json).toHaveLength(2);
+			expect(json.map((r) => r.status)).toEqual(["error", "error"]);
+		});
+	});
+
 	describe("Validation & Error Handling", () => {
 		it("should return 400 if neither 'url' nor 'endPoints' is provided", async () => {
 			const res = await performPost({ something: "else" });

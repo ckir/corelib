@@ -1,4 +1,5 @@
 import type { StrictLogger } from "@ckirg/corelib";
+import { serializeError } from "serialize-error";
 
 /** Numeric severity per level; a message is emitted when its value >= the logger's level value. */
 const LEVELS = {
@@ -50,7 +51,9 @@ export function createEdgeLogger(
 				msg,
 				time: new Date().toISOString(),
 				...bindings,
-				...(extras ? { extras } : {}),
+				// Error objects stringify to {} (non-enumerable fields) and cyclic ones throw; AGENTS.md
+				// promises that raw Errors in extras are serialized deeply and cycle-safely.
+				...(extras ? { extras: serializeError(extras) } : {}),
 				...(uptimeS !== undefined ? { telemetry: { uptimeS } } : {}),
 			}),
 		);

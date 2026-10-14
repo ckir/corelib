@@ -118,3 +118,31 @@ describe("createEdgeLogger", () => {
 		expect(callback).toHaveBeenCalled();
 	});
 });
+
+describe("createEdgeLogger error serialization", () => {
+	const logged = (spy: { mock: { calls: unknown[][] } }) =>
+		JSON.parse(String(spy.mock.calls.at(-1)?.[0])) as {
+			extras: { error: { message?: string; name?: string; stack?: string } };
+		};
+
+	it("keeps message, name and stack of an Error passed in extras", () => {
+		const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+		createEdgeLogger().error("failed", { error: new Error("boom") });
+		const { extras } = logged(spy);
+		expect(extras.error.message).toBe("boom");
+		expect(extras.error.name).toBe("Error");
+		expect(extras.error.stack).toContain("boom");
+		spy.mockRestore();
+	});
+
+	it("does not throw on a self-referencing Error and still logs its message", () => {
+		const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+		const e = new Error("circular") as Error & { self?: unknown };
+		e.self = e;
+		expect(() =>
+			createEdgeLogger().error("failed", { error: e }),
+		).not.toThrow();
+		expect(logged(spy).extras.error.message).toBe("circular");
+		spy.mockRestore();
+	});
+});

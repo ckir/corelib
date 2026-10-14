@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createEdgeLogger } from "./logger";
 import { createRouter } from "./router";
 
 describe("Router", () => {
@@ -165,5 +166,25 @@ describe("Router logging hygiene", () => {
 		expect(call?.[1].error).toBe(boom);
 		expect(call?.[1]).not.toHaveProperty("stack");
 		expect(call?.[1].path).toBe("/boom");
+	});
+});
+
+describe("Router error handler with the real edge logger (AWS Lambda path)", () => {
+	it("logs the message and stack of an unhandled error, not an empty object", async () => {
+		const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+		const app = createRouter(createEdgeLogger());
+		app.get("/boom", () => {
+			throw new Error("kaboom");
+		});
+		const res = await app.request("/boom");
+		const line = spy.mock.calls
+			.map((c) => String(c[0]))
+			.find((l) => l.includes("Unhandled Router Error"));
+		spy.mockRestore();
+		expect(res.status).toBe(500);
+		expect(line).toBeDefined();
+		const { extras } = JSON.parse(line as string);
+		expect(extras.error.message).toBe("kaboom");
+		expect(extras.error.stack).toContain("kaboom");
 	});
 });
