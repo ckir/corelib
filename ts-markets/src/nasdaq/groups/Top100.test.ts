@@ -5,7 +5,7 @@
  */
 
 import { logger } from "@ckirg/corelib";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Fixed relative path: Top100.test.ts is in 'groups/', ApiNasdaqUnlimited is in '../'
 import { ApiNasdaqUnlimited } from "../ApiNasdaqUnlimited";
 
@@ -175,5 +175,57 @@ describe("Top100 Module", () => {
 		const secondResult = await getSymbolsTop100();
 		expect(secondResult).toEqual(["AMD"]);
 		expect(ApiNasdaqUnlimited.endPoint).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe("Top100 TTL and deterministic sort", () => {
+	let getSymbolsTop100: () => Promise<string[]>;
+
+	beforeEach(async () => {
+		vi.clearAllMocks();
+		vi.resetModules();
+		vi.mocked(ApiNasdaqUnlimited.endPoint).mockReset();
+		vi.useFakeTimers({ toFake: ["Date"] });
+		vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+		getSymbolsTop100 = (await import("./Top100")).getSymbolsTop100;
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	const ok = (symbols: string[]) =>
+		({
+			status: "success",
+			value: { data: { rows: symbols.map((symbol) => ({ symbol })) } },
+		}) as never;
+
+	it("serves the cache within the 1 hour TTL and refetches after it", async () => {
+		vi.mocked(ApiNasdaqUnlimited.endPoint)
+			.mockResolvedValueOnce(ok(["AAPL"]))
+			.mockResolvedValueOnce(ok(["MSFT"]));
+
+		expect(await getSymbolsTop100()).toEqual(["AAPL"]);
+		vi.setSystemTime(new Date("2026-01-01T00:59:59Z"));
+		expect(await getSymbolsTop100()).toEqual(["AAPL"]);
+		expect(ApiNasdaqUnlimited.endPoint).toHaveBeenCalledTimes(1);
+
+		vi.setSystemTime(new Date("2026-01-01T01:00:01Z"));
+		expect(await getSymbolsTop100()).toEqual(["MSFT"]);
+		expect(ApiNasdaqUnlimited.endPoint).toHaveBeenCalledTimes(2);
+	});
+
+	it("sorts by code unit, independent of locale", async () => {
+		vi.mocked(ApiNasdaqUnlimited.endPoint).mockResolvedValue(
+			ok(["b", "A", "a", "B", "BRKB", "BRK.B"]),
+		);
+		expect(await getSymbolsTop100()).toEqual([
+			"A",
+			"B",
+			"BRK.B",
+			"BRKB",
+			"a",
+			"b",
+		]);
 	});
 });

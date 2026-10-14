@@ -20,9 +20,9 @@ export const NATIVE_EVENT_TYPES: ReadonlySet<string> = new Set([
 
 type NativeCallback<T> = (err: unknown, value: T) => void;
 
-export interface NativeCallbacks {
+export interface NativeCallbacks<P = unknown> {
 	onLog: NativeCallback<unknown>;
-	onPricing: NativeCallback<unknown>;
+	onPricing: NativeCallback<P>;
 	onEvent: NativeCallback<
 		{ type?: unknown; data?: unknown } | null | undefined
 	>;
@@ -37,11 +37,11 @@ export interface NativeCallbacks {
  * - Event types are whitelisted; `error` is only emitted when somebody listens
  *   (an unlistened `error` emit throws inside the native callback); unknown types are logged and dropped.
  */
-export function createNativeCallbacks(
+export function createNativeCallbacks<P = unknown>(
 	emitter: EventEmitter,
 	health: Pick<StreamHealthTracker, "recordTick">,
 	log: StrictLogger,
-): NativeCallbacks {
+): NativeCallbacks<P> {
 	return {
 		onLog: (err, record) => {
 			if (err) {
@@ -100,4 +100,30 @@ export function createNativeCallbacks(
 			emitter.emit("market", parsed);
 		},
 	};
+}
+
+/**
+ * Runs `onSuccess` once a native call has succeeded. Native streamer methods are async (they
+ * return a Promise), but the synchronous wrappers cannot await them without changing their
+ * return type; a rejection is therefore logged (instead of surfacing as an unhandled
+ * rejection) and `onSuccess` is NOT run. A non-thenable result counts as immediate success.
+ * A synchronous throw from the native call propagates before this helper is reached.
+ */
+export function afterNativeSuccess(
+	result: unknown,
+	onSuccess: () => void,
+	log: StrictLogger,
+	operation: string,
+): void {
+	if (
+		result !== null &&
+		typeof result === "object" &&
+		typeof (result as PromiseLike<unknown>).then === "function"
+	) {
+		(result as PromiseLike<unknown>).then(onSuccess, (error: unknown) => {
+			log.error(`Native ${operation} failed`, { error });
+		});
+		return;
+	}
+	onSuccess();
 }

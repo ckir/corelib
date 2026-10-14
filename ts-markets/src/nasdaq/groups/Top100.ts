@@ -48,9 +48,15 @@ interface Nasdaq100ResponseData {
 // ---------------------------------------------------------------------------
 
 /**
- * In-memory cache for the symbols, persisting for the lifetime of the process.
+ * In-memory cache for the symbols, valid for {@link CACHE_TTL_MS}.
  */
 let cachedSymbols: string[] | null = null;
+
+/** Epoch ms at which `cachedSymbols` was populated. */
+let cachedAt = 0;
+
+/** Cached symbols are refetched once they are older than this (1 hour). */
+const CACHE_TTL_MS = 3_600_000;
 
 /**
  * Stores the active request promise to collapse concurrent calls (Thundering Herd protection).
@@ -65,7 +71,7 @@ let activeFetchPromise: Promise<string[]> | null = null;
  * Retrieves the list of Nasdaq 100 symbols, sorted alphabetically.
  *
  * @remarks
- * - If the data is already cached, it returns the cached list immediately.
+ * - If the data is cached and younger than one hour, it returns the cached list immediately.
  * - If a request is already in progress, it returns the existing promise.
  * - In case of failure or empty data, it logs a warning via StrictLogger and returns an empty array.
  *
@@ -73,7 +79,7 @@ let activeFetchPromise: Promise<string[]> | null = null;
  */
 export async function getSymbolsTop100(): Promise<string[]> {
 	// 1. Check if we have a valid cache
-	if (cachedSymbols !== null) {
+	if (cachedSymbols !== null && Date.now() - cachedAt < CACHE_TTL_MS) {
 		top100Logger.debug("top100: cache hit", { count: cachedSymbols.length });
 		return cachedSymbols;
 	}
@@ -116,10 +122,11 @@ export async function getSymbolsTop100(): Promise<string[]> {
 			// Extract symbols and perform standard alphabetical sort (A-Z)
 			const symbols = rows
 				.map((row) => row.symbol)
-				.sort((a, b) => a.localeCompare(b));
+				.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 
 			// Update persistent cache
 			cachedSymbols = symbols;
+			cachedAt = Date.now();
 			top100Logger.debug("top100: populated", { count: symbols.length });
 
 			return symbols;

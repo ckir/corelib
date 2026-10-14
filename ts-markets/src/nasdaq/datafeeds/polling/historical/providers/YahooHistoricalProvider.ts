@@ -15,8 +15,27 @@ import type {
 	HistoricalResult,
 } from "../common/types";
 
+/** A single row returned by yahoo-finance2's `historical()`. */
+export interface YahooHistoricalRow {
+	date: Date;
+	open: number;
+	high: number;
+	low: number;
+	close: number;
+	volume: number;
+	adjClose?: number | null;
+}
+
+/** The subset of the yahoo-finance2 client used by this provider. */
+export interface YahooHistoricalClient {
+	historical(
+		symbol: string,
+		options: Record<string, unknown>,
+	): Promise<YahooHistoricalRow[]>;
+}
+
 export class YahooHistoricalProvider implements HistoricalProvider {
-	constructor(private yf: any) {}
+	constructor(private yf: YahooHistoricalClient) {}
 
 	public async getHistoricalData(
 		symbol: string,
@@ -42,10 +61,10 @@ export class YahooHistoricalProvider implements HistoricalProvider {
 			if (options.interval) queryOptions.interval = options.interval;
 
 			// This underlying call now routes automatically through the custom fetch in the yf instance
-			const data = await this.yf.historical(symbol, queryOptions as any);
+			const data = await this.yf.historical(symbol, queryOptions);
 
 			// Transform to strictly standardized JSON format
-			const value: HistoricalQuote[] = data.map((item: any) => ({
+			const value: HistoricalQuote[] = data.map((item) => ({
 				symbol,
 				date:
 					DateTime.fromJSDate(item.date).toUTC().toISO() ||

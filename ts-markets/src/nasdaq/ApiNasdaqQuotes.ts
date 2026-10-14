@@ -13,6 +13,27 @@ const apiNasdaqQuotesLogger = logger.child({ section: "ApiNasdaqQuotes" });
 const DEFAULT_CONCURRENCY_LIMIT = 5;
 
 /**
+ * Runs `fn` over `items` with at most `limit` calls in flight. Results are written by the
+ * callback itself (via the index), so output order never depends on completion order.
+ */
+async function mapWithConcurrency<T>(
+	items: readonly T[],
+	limit: number,
+	fn: (item: T, index: number) => Promise<void>,
+): Promise<void> {
+	let next = 0;
+	const worker = async () => {
+		while (next < items.length) {
+			const i = next++;
+			await fn(items[i], i);
+		}
+	};
+	await Promise.all(
+		Array.from({ length: Math.min(limit, items.length) }, worker),
+	);
+}
+
+/**
  * Configuration options for the ApiNasdaqQuotes module.
  */
 export interface ApiNasdaqQuotesOptions {
@@ -90,35 +111,49 @@ export class ApiNasdaqQuotes {
 		const results: NasdaqResult<T>[] = new Array(symbols.length);
 		const fetchQueue: { symbol: string; url: string; index: number }[] = [];
 
-		// 1. Resolve Asset Classes and prepare the fetch queue
-		for (let i = 0; i < symbols.length; i++) {
-			const symbol = symbols[i].toUpperCase();
-			try {
-				const symbolData = await this.marketSymbols.get(symbol);
-				if (!symbolData) {
+		// 1. Resolve Asset Classes (bounded concurrency; order is preserved via the index)
+		const resolved = new Array<{ symbol: string; url: string } | undefined>(
+			symbols.length,
+		);
+		await mapWithConcurrency(
+			symbols,
+			Math.max(1, this.concurrencyLimit),
+			async (raw, i) => {
+				const symbol = raw.toUpperCase();
+				try {
+					const symbolData = await this.marketSymbols.get(symbol);
+					if (!symbolData) {
+						results[i] = {
+							status: "error",
+							reason: {
+								message: `Symbol ${symbol} not found in MarketSymbols`,
+							},
+						};
+						return;
+					}
+
+					const assetClass = symbolData.class || "stocks";
+					const url = `https://api.nasdaq.com/api/quote/${encodeURIComponent(symbol)}/info?assetclass=${encodeURIComponent(assetClass.toLowerCase())}`;
+					resolved[i] = { symbol, url };
+				} catch (error: unknown) {
+					const message =
+						error instanceof Error ? error.message : String(error);
+					this.logger.warn("Error resolving asset class", {
+						symbol,
+						error: message,
+					});
 					results[i] = {
 						status: "error",
-						reason: { message: `Symbol ${symbol} not found in MarketSymbols` },
+						reason: {
+							message: `Internal error during symbol resolution: ${message}`,
+						},
 					};
-					continue;
 				}
-
-				const assetClass = symbolData.class || "stocks";
-				const url = `https://api.nasdaq.com/api/quote/${symbol}/info?assetclass=${assetClass.toLowerCase()}`;
-				fetchQueue.push({ symbol, url, index: i });
-			} catch (error: unknown) {
-				const message = error instanceof Error ? error.message : String(error);
-				this.logger.warn("Error resolving asset class", {
-					symbol,
-					error: message,
-				});
-				results[i] = {
-					status: "error",
-					reason: {
-						message: `Internal error during symbol resolution: ${message}`,
-					},
-				};
-			}
+			},
+		);
+		for (let i = 0; i < resolved.length; i++) {
+			const r = resolved[i];
+			if (r) fetchQueue.push({ symbol: r.symbol, url: r.url, index: i });
 		}
 
 		if (fetchQueue.length === 0) return results;

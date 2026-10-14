@@ -7,10 +7,20 @@
 
 import { EventEmitter } from "node:events";
 import { coreFFI, getMode, getTempDir, logger, nextCid } from "@ckirg/corelib";
-import { createNativeCallbacks } from "../nativeCallbacks.js";
+import {
+	afterNativeSuccess,
+	createNativeCallbacks,
+} from "../nativeCallbacks.js";
 import { StreamHealthTracker } from "../StreamHealthTracker.js";
+import type {
+	YahooPricingData,
+	YahooStreamingNative,
+	YahooStreamingNativeConstructor,
+} from "../types.js";
 
-const RustYahoo = (coreFFI as any)?.YahooStreaming;
+const RustYahoo = (
+	coreFFI as { YahooStreaming?: YahooStreamingNativeConstructor } | null
+)?.YahooStreaming;
 const yahooStreamingLogger = logger.child({ section: "YahooStreaming" });
 
 /**
@@ -24,7 +34,7 @@ const yahooStreamingLogger = logger.child({ section: "YahooStreaming" });
  * db paths resolve.
  */
 export class YahooStreaming extends EventEmitter {
-	private rust: any;
+	private rust: YahooStreamingNative;
 	private initialized = false;
 	private readonly health = new StreamHealthTracker(
 		"yahoo",
@@ -40,7 +50,11 @@ export class YahooStreaming extends EventEmitter {
 			);
 		}
 
-		const cb = createNativeCallbacks(this, this.health, yahooStreamingLogger);
+		const cb = createNativeCallbacks<YahooPricingData>(
+			this,
+			this.health,
+			yahooStreamingLogger,
+		);
 		try {
 			this.rust = new RustYahoo(
 				cb.onLog,
@@ -99,12 +113,18 @@ export class YahooStreaming extends EventEmitter {
 	 * @param {string[]} symbols - Array of trading symbols.
 	 */
 	subscribe(symbols: string[]) {
-		this.health.recordSubscribe(symbols);
-		yahooStreamingLogger.trace("stream: subscribe", {
-			feed: "yahoo",
-			symbols: this.health.symbolCount,
-		});
-		this.rust.subscribe(symbols);
+		afterNativeSuccess(
+			this.rust.subscribe(symbols),
+			() => {
+				this.health.recordSubscribe(symbols);
+				yahooStreamingLogger.trace("stream: subscribe", {
+					feed: "yahoo",
+					symbols: this.health.symbolCount,
+				});
+			},
+			yahooStreamingLogger,
+			"subscribe",
+		);
 	}
 
 	/**
@@ -112,12 +132,18 @@ export class YahooStreaming extends EventEmitter {
 	 * @param {string[]} symbols - Array of trading symbols.
 	 */
 	unsubscribe(symbols: string[]) {
-		this.health.recordUnsubscribe(symbols);
-		yahooStreamingLogger.trace("stream: unsubscribe", {
-			feed: "yahoo",
-			symbols: this.health.symbolCount,
-		});
-		this.rust.unsubscribe(symbols);
+		afterNativeSuccess(
+			this.rust.unsubscribe(symbols),
+			() => {
+				this.health.recordUnsubscribe(symbols);
+				yahooStreamingLogger.trace("stream: unsubscribe", {
+					feed: "yahoo",
+					symbols: this.health.symbolCount,
+				});
+			},
+			yahooStreamingLogger,
+			"unsubscribe",
+		);
 	}
 
 	/**
@@ -138,7 +164,7 @@ export class YahooStreaming extends EventEmitter {
 }
 
 // Events emitted:
-// - pricing (JsPricingData)
+// - pricing (YahooPricingData)
 // - log ({level, msg, extras?})
 // - market (unified MarketEvent JSON, parsed object)
 // - connected, disconnected, reconnecting, error

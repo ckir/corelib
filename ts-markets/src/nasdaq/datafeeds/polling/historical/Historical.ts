@@ -5,11 +5,15 @@ import { endPoint } from "@ckirg/corelib";
 import yahooFinance from "@gadicc/yahoo-finance2";
 import type { Options as KyOptions } from "ky";
 import type { HistoricalOptions } from "./common/types";
-import { YahooHistoricalProvider } from "./providers/YahooHistoricalProvider";
+import {
+	type YahooHistoricalClient,
+	YahooHistoricalProvider,
+} from "./providers/YahooHistoricalProvider";
 
 // Polyfill Deno for the JSR version of yahoo-finance2 when running in Node.js
-if (typeof (globalThis as any).Deno === "undefined") {
-	(globalThis as any).Deno = {
+const denoHost = globalThis as { Deno?: unknown };
+if (typeof denoHost.Deno === "undefined") {
+	denoHost.Deno = {
 		stdout: {
 			isTerminal: () => false,
 		},
@@ -84,7 +88,11 @@ async function corelibFetchAdapter(
 }
 
 // Instantiate yahooFinance with the custom fetch interceptor (v3 API)
-const yf = new (yahooFinance as any)({
+const yf = new (
+	yahooFinance as unknown as new (
+		options: Record<string, unknown>,
+	) => YahooHistoricalClient
+)({
 	fetch: corelibFetchAdapter,
 	suppressNotices: ["ripHistorical"],
 	versionCheck: false,

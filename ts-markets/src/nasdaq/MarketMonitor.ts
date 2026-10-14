@@ -26,6 +26,20 @@ const DEFAULT_WARN_INTERVAL_SEC = 60;
 export type MarketPhase = "open" | "pre-market" | "after-hours" | "closed";
 
 /**
+ * Configuration options for {@link MarketMonitor}.
+ */
+export interface MarketMonitorOptions {
+	/** Polling interval in seconds when the market is active. */
+	liveIntervalSec?: number;
+	/** Polling interval in seconds when the market is closed. */
+	closedIntervalSec?: number;
+	/** Interval in seconds for logging fetch failure warnings. */
+	warnIntervalSec?: number;
+	/** Optional array of proxy URLs for status fetching. */
+	proxies?: string[];
+}
+
+/**
  * MarketMonitor – resilient, adaptive market status poller.
  *
  * Long-running task that:
@@ -73,14 +87,7 @@ export class MarketMonitor extends EventEmitter {
 	 * @param {number} [options.warnIntervalSec] - Interval for logging fetch failure warnings.
 	 * @param {string[]} [options.proxies] - Optional array of proxy URLs for status fetching.
 	 */
-	constructor(
-		options: {
-			liveIntervalSec?: number;
-			closedIntervalSec?: number;
-			warnIntervalSec?: number;
-			proxies?: string[];
-		} = {},
-	) {
+	constructor(options: MarketMonitorOptions = {}) {
 		super();
 		this.liveIntervalSec =
 			options.liveIntervalSec ??

@@ -188,6 +188,69 @@ describe("ApiNasdaqQuotes", () => {
 		});
 	});
 
+	describe("getNasdaqQuote() - resolution and URL safety", () => {
+		it("resolves symbols with bounded concurrency and preserves order", async () => {
+			const mockSymbols = new MarketSymbols() as any;
+			let active = 0;
+			let maxActive = 0;
+			mockSymbols.get.mockImplementation(async (sym: string) => {
+				active++;
+				maxActive = Math.max(maxActive, active);
+				await new Promise((r) => setTimeout(r, 10 + (sym.charCodeAt(0) % 3)));
+				active--;
+				return { symbol: sym, class: "stocks" };
+			});
+			const urls: string[] = [];
+			vi.spyOn(ApiNasdaqUnlimited, "endPoint").mockImplementation(
+				async (input: string | URL | Request) => {
+					const url = String(input);
+					urls.push(url);
+					return {
+						status: "success",
+						value: url,
+						details: {},
+					} as any;
+				},
+			);
+
+			const api = new ApiNasdaqQuotes({
+				marketSymbols: mockSymbols,
+				concurrencyLimit: 3,
+			});
+			const syms = ["A", "B", "C", "D", "E", "F", "G", "H"];
+			const results = await api.getNasdaqQuote<string>(syms);
+
+			expect(maxActive).toBeGreaterThan(1);
+			expect(maxActive).toBeLessThanOrEqual(3);
+			expect(
+				results.map((r) => (r.status === "success" ? r.value : null)),
+			).toEqual(
+				syms.map(
+					(s) => `https://api.nasdaq.com/api/quote/${s}/info?assetclass=stocks`,
+				),
+			);
+		});
+
+		it("encodes the symbol path segment and the assetclass value", async () => {
+			const mockSymbols = new MarketSymbols() as any;
+			mockSymbols.get.mockResolvedValue({
+				symbol: "A/B",
+				class: "stocks&x=1",
+			});
+			const spy = vi
+				.spyOn(ApiNasdaqUnlimited, "endPoint")
+				.mockResolvedValue({ status: "success", value: {} } as any);
+
+			const api = new ApiNasdaqQuotes({ marketSymbols: mockSymbols });
+			await api.getNasdaqQuote(["a/b"]);
+
+			const url = new URL(spy.mock.calls[0][0] as string);
+			expect(url.pathname).toBe("/api/quote/A%2FB/info");
+			expect([...url.searchParams.keys()]).toEqual(["assetclass"]);
+			expect(url.searchParams.get("assetclass")).toBe("stocks&x=1");
+		});
+	});
+
 	describe("getNasdaqQuote() - Proxied Strategy", () => {
 		it("should use RequestProxied.endPoints for bulk fetching", async () => {
 			const mockSymbols = new MarketSymbols() as any;

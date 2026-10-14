@@ -140,7 +140,7 @@ const server = setupServer(
 
 	// 3. Transport error
 	http.get(
-		"https://production.dataviz.cnn.io/index/fearandgreed/graphdata/404",
+		"https://production.dataviz.cnn.io/index/fearandgreed/graphdata/2026-03-14",
 		() => new HttpResponse(null, { status: 404 }),
 	),
 );
@@ -216,7 +216,8 @@ describe("CnnFearAndGreed (Exhaustive)", () => {
 		});
 
 		it("transport error returns error result", async () => {
-			const res: CnnResult = await CnnFearAndGreed.getFearAndGreed("404");
+			const res: CnnResult =
+				await CnnFearAndGreed.getFearAndGreed("2026-03-14");
 
 			expect(res.status).toBe("error");
 			if (res.status === "error") {
@@ -229,14 +230,17 @@ describe("CnnFearAndGreed (Exhaustive)", () => {
 			server.use(
 				http.get("*", () =>
 					HttpResponse.json({
-						fear_and_greed: { score: 10 }, // missing other required keys when filter=full
+						fear_and_greed: { score: 10 }, // missing the requested market_volatility_vix key
 					}),
 				),
 			);
 
 			const res: CnnResult = await CnnFearAndGreed.getFearAndGreed(
 				"2026-03-15",
-				"full",
+				[
+					CnnFearAndGreedFilter.FearAndGreed,
+					CnnFearAndGreedFilter.MarketVolatilityVix,
+				],
 			);
 
 			expect(res.status).toBe("error");
@@ -247,6 +251,94 @@ describe("CnnFearAndGreed (Exhaustive)", () => {
 				expect.stringContaining("Schema validation failed"),
 				expect.any(Object),
 			);
+		});
+
+		it("validates a caller-supplied date (format and real calendar date)", async () => {
+			let hits = 0;
+			server.use(
+				http.get("*", () => {
+					hits++;
+					return HttpResponse.json(SAMPLE);
+				}),
+			);
+			for (const bad of [
+				"404",
+				"2026-3-5",
+				"2026-13-01",
+				"2026-02-30",
+				"../x",
+			]) {
+				const res = await CnnFearAndGreed.getFearAndGreed(bad);
+				expect(res.status).toBe("error");
+				if (res.status === "error") {
+					expect(res.reason.message).toContain("Invalid date");
+				}
+			}
+			expect(hits).toBe(0);
+		});
+
+		it("defaults the date to the America/New_York calendar day", async () => {
+			vi.useFakeTimers({ toFake: ["Date"] });
+			// 02:30 UTC on 16 Mar 2026 is still 15 Mar in New York (EDT)
+			vi.setSystemTime(new Date("2026-03-16T02:30:00Z"));
+			let requested = "";
+			server.use(
+				http.get("*", ({ request }) => {
+					requested = new URL(request.url).pathname;
+					return HttpResponse.json(SAMPLE);
+				}),
+			);
+			try {
+				const res = await CnnFearAndGreed.getFearAndGreed();
+				expect(res.status).toBe("success");
+				expect(requested).toBe("/index/fearandgreed/graphdata/2026-03-15");
+			} finally {
+				vi.useRealTimers();
+			}
+		});
+
+		it("does not dump the response body into the warn log", async () => {
+			server.use(
+				http.get("*", () =>
+					HttpResponse.json({ fear_and_greed: { score: 10, secret: "BODY" } }),
+				),
+			);
+			await CnnFearAndGreed.getFearAndGreed("2026-03-15", [
+				CnnFearAndGreedFilter.MarketVolatilityVix,
+			]);
+			const call = vi
+				.mocked(logger.warn)
+				.mock.calls.find((c) => String(c[0]).includes("Schema validation"));
+			expect(call).toBeDefined();
+			const extras = call?.[1] as Record<string, unknown>;
+			expect(extras).not.toHaveProperty("body");
+			expect(JSON.stringify(extras)).not.toContain("BODY");
+			expect(extras).toHaveProperty("status");
+		});
+
+		it('"full" returns whichever keys exist instead of failing', async () => {
+			server.use(
+				http.get("*", () =>
+					HttpResponse.json({
+						fear_and_greed: { score: 10 },
+						market_volatility_vix: { score: 5 },
+					}),
+				),
+			);
+			const res = await CnnFearAndGreed.getFearAndGreed("2026-03-15", "full");
+			expect(res.status).toBe("success");
+			if (res.status === "success") {
+				expect(Object.keys(res.value as object).sort()).toEqual([
+					"fear_and_greed",
+					"market_volatility_vix",
+				]);
+			}
+		});
+
+		it('"full" still errors when none of the known keys exist', async () => {
+			server.use(http.get("*", () => HttpResponse.json({ unrelated: 1 })));
+			const res = await CnnFearAndGreed.getFearAndGreed("2026-03-15", "full");
+			expect(res.status).toBe("error");
 		});
 
 		it("malformed response (not an object) returns error", async () => {

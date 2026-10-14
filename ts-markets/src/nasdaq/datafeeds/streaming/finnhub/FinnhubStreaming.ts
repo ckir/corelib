@@ -4,18 +4,19 @@ import { EventEmitter } from "node:events";
 import { coreFFI, logger, nextCid } from "@ckirg/corelib";
 import { createNativeCallbacks } from "../nativeCallbacks.js";
 import { StreamHealthTracker } from "../StreamHealthTracker.js";
+import type {
+	FinnhubPricingData,
+	FinnhubStreamingNative,
+	FinnhubStreamingNativeConstructor,
+} from "../types.js";
 
-const RustFinnhub = (coreFFI as any)?.FinnhubStreaming;
+export type { FinnhubPricingData };
+
+const RustFinnhub = (
+	coreFFI as { FinnhubStreaming?: FinnhubStreamingNativeConstructor } | null
+)?.FinnhubStreaming;
 const finnhubStreamingLogger = logger.child({ section: "FinnhubStreaming" });
 
-export interface FinnhubPricingData {
-	symbol: string;
-	message_type: string;
-	price: number;
-	volume: number;
-	timestamp: number;
-	conditions?: string[];
-}
 export interface FinnhubConfig {
 	token?: string;
 	name?: string;
@@ -33,7 +34,7 @@ export interface FinnhubConfig {
  * db paths resolve.
  */
 export class FinnhubStreaming extends EventEmitter {
-	private rust: any;
+	private rust: FinnhubStreamingNative;
 	private initialized = false;
 	private readonly health = new StreamHealthTracker(
 		"finnhub",
@@ -46,7 +47,11 @@ export class FinnhubStreaming extends EventEmitter {
 			throw new Error(
 				"FinnhubStreaming (Native) is not supported in this runtime (no FFI available).",
 			);
-		const cb = createNativeCallbacks(this, this.health, finnhubStreamingLogger);
+		const cb = createNativeCallbacks<FinnhubPricingData>(
+			this,
+			this.health,
+			finnhubStreamingLogger,
+		);
 		try {
 			this.rust = new RustFinnhub(
 				cb.onLog,
@@ -82,20 +87,20 @@ export class FinnhubStreaming extends EventEmitter {
 		this.health.start();
 	}
 	async subscribe(symbols: string[]): Promise<void> {
+		await this.rust.subscribe(symbols);
 		this.health.recordSubscribe(symbols);
 		finnhubStreamingLogger.trace("stream: subscribe", {
 			feed: "finnhub",
 			symbols: this.health.symbolCount,
 		});
-		await this.rust.subscribe(symbols);
 	}
 	async unsubscribe(symbols: string[]): Promise<void> {
+		await this.rust.unsubscribe(symbols);
 		this.health.recordUnsubscribe(symbols);
 		finnhubStreamingLogger.trace("stream: unsubscribe", {
 			feed: "finnhub",
 			symbols: this.health.symbolCount,
 		});
-		await this.rust.unsubscribe(symbols);
 	}
 	async stop(): Promise<void> {
 		finnhubStreamingLogger.trace("stream: stop", { feed: "finnhub" });

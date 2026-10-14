@@ -19,6 +19,7 @@ const cnnLogger = logger.child({ section: "CnnFearAndGreed" });
 import type { Options } from "ky";
 import { DateTime } from "luxon";
 import { serializeError } from "serialize-error";
+import { DEFAULT_CHROME_VERSION } from "./constants";
 
 /**
  * Result pattern for CNN API calls.
@@ -88,7 +89,8 @@ const ALL_KEYS = Object.values(
  */
 function getDefaultHeaders(): Record<string, string> {
 	const chromeVersion =
-		(ConfigManager.get("markets.chromeVersion") as string | undefined) ?? "146";
+		(ConfigManager.get("markets.chromeVersion") as string | undefined) ??
+		DEFAULT_CHROME_VERSION;
 	return {
 		accept: "*/*",
 		"accept-language": "en,el;q=0.9",
@@ -133,6 +135,15 @@ function log(
 }
 
 /**
+ * True when `date` is a YYYY-MM-DD string naming a real calendar date.
+ */
+function isValidDateString(date: string): boolean {
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+	const parsed = DateTime.fromISO(date, { zone: "utc" });
+	return parsed.isValid && parsed.toISODate() === date;
+}
+
+/**
  * Builds the CNN Fear & Greed API URL.
  *
  * @param {string | "Historical"} [date] - Optional date (YYYY-MM-DD) or "Historical".
@@ -142,8 +153,10 @@ function buildUrl(date?: string | "Historical"): string {
 	const url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata";
 	if (date === "Historical") return url;
 
-	// Explicit yyyy-mm-dd format (DateTime.toISODate() always returns this)
-	const finalDate = date ?? DateTime.now().toISODate();
+	// Default to the current America/New_York calendar day: the index tracks US market
+	// sessions, so the UTC/local day can run ahead of (or behind) the latest published date.
+	const finalDate =
+		date ?? DateTime.now().setZone("America/New_York").toISODate();
 	return `${url}/${finalDate}`;
 }
 
@@ -181,12 +194,15 @@ function validateKeys(
 	body: Record<string, unknown>,
 	filter: CnnFilterInput,
 ): string | null {
-	const keysToCheck =
-		filter === "full"
-			? ALL_KEYS
-			: Array.isArray(filter)
-				? filter
-				: [filter as CnnFearAndGreedFilter];
+	if (filter === "full") {
+		// "full" returns whichever keys exist; only a body with none of them is invalid.
+		return ALL_KEYS.some((k) => body[k] != null)
+			? null
+			: "Missing or null key: none of the known CNN keys are present";
+	}
+	const keysToCheck = Array.isArray(filter)
+		? filter
+		: [filter as CnnFearAndGreedFilter];
 	for (const key of keysToCheck) {
 		if (!(key in body) || body[key] == null) {
 			return `Missing or null key: ${key}`;
@@ -210,6 +226,11 @@ async function getFearAndGreed(
 ): Promise<CnnResult<unknown>> {
 	const cid = nextCid();
 	const startedAt = performance.now();
+	if (date !== undefined && date !== "Historical" && !isValidDateString(date)) {
+		const msg = `Invalid date: expected YYYY-MM-DD or "Historical"`;
+		log("warn", msg, { cid, date });
+		return { status: "error", reason: { message: msg } };
+	}
 	const url = buildUrl(date);
 	log("trace", "getFearAndGreed: start", { cid, date, filter });
 
@@ -235,7 +256,18 @@ async function getFearAndGreed(
 
 	const validationError = validateKeys(body, filter);
 	if (validationError) {
-		log("warn", "Schema validation failed", { validationError, body });
+		// Never dump the body: log only the HTTP status and the serialized length.
+		let bodyLength: number | null = null;
+		try {
+			bodyLength = JSON.stringify(body).length;
+		} catch {
+			bodyLength = null;
+		}
+		log("warn", "Schema validation failed", {
+			validationError,
+			status: val.status,
+			bodyLength,
+		});
 		return {
 			status: "error",
 			reason: {

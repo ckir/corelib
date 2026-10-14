@@ -10,12 +10,14 @@
 import type { StrictLogger } from "@ckirg/corelib";
 
 const DEFAULT_HEALTH_INTERVAL_MS = 15_000;
+const DEFAULT_CHANNEL = "default";
 
 export class StreamHealthTracker {
 	private windowTicks = 0;
 	private totalTicks = 0;
 	private lastTickAt = 0;
-	private readonly subs = new Map<string, number>();
+	/** symbol -> set of channels holding it (a single-channel feed uses the default channel). */
+	private readonly subs = new Map<string, Set<string>>();
 	private windowStart = 0;
 	private timer: ReturnType<typeof setInterval> | null = null;
 
@@ -32,23 +34,34 @@ export class StreamHealthTracker {
 		this.lastTickAt = performance.now();
 	}
 
-	/** Distinct subscribed-symbol count (refcounted across overlapping subscriptions). */
+	/** Distinct subscribed-symbol count (a symbol held on several channels counts once). */
 	get symbolCount(): number {
 		return this.subs.size;
 	}
 
-	/** Record symbols subscribed. Refcounted so a symbol on multiple streams (quotes/trades/
-	 *  bars) counts once and survives a partial unsubscribe — no undercount. */
-	recordSubscribe(symbols: string[]): void {
-		for (const s of symbols) this.subs.set(s, (this.subs.get(s) ?? 0) + 1);
+	/** Record symbols subscribed on `channel`. Idempotent per (symbol, channel), mirroring the
+	 *  native side, which stores each `channel:symbol` key in a set. A symbol on several
+	 *  channels (quotes/trades/bars) counts once and survives a partial unsubscribe.
+	 *  Call only AFTER the native subscribe succeeded. */
+	recordSubscribe(symbols: string[], channel = DEFAULT_CHANNEL): void {
+		for (const s of symbols) {
+			let channels = this.subs.get(s);
+			if (!channels) {
+				channels = new Set();
+				this.subs.set(s, channels);
+			}
+			channels.add(channel);
+		}
 	}
 
-	/** Record symbols unsubscribed. Drops a symbol only when its last subscription is gone. */
-	recordUnsubscribe(symbols: string[]): void {
+	/** Record symbols unsubscribed from `channel`. Drops a symbol once no channel holds it.
+	 *  Call only AFTER the native unsubscribe succeeded. */
+	recordUnsubscribe(symbols: string[], channel = DEFAULT_CHANNEL): void {
 		for (const s of symbols) {
-			const n = (this.subs.get(s) ?? 0) - 1;
-			if (n <= 0) this.subs.delete(s);
-			else this.subs.set(s, n);
+			const channels = this.subs.get(s);
+			if (!channels) continue;
+			channels.delete(channel);
+			if (channels.size === 0) this.subs.delete(s);
 		}
 	}
 

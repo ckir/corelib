@@ -376,6 +376,38 @@ describe("MarketSymbols - Integrated Suite", () => {
 				type: "rt",
 			});
 		});
+
+		describe("GAS ingestor validation", () => {
+			const gas = (value: Record<string, unknown>) =>
+				vi.mocked(corelib.endPoint).mockResolvedValue({
+					status: "success",
+					value: { body: { status: "success", value } },
+				} as any);
+
+			beforeEach(() => {
+				vi.mocked(ApiNasdaqUnlimited.endPoint).mockResolvedValue({
+					status: "error",
+				} as any);
+			});
+
+			it("rejects a class outside the Realtime/NonRealtime enums", async () => {
+				gas({ symbol: "AAPL", type: "rt", class: "stocks&x=1", name: "X" });
+				expect(await marketSymbols.get("AAPL")).toBeNull();
+			});
+
+			it("rejects a type that is neither rt nor eod", async () => {
+				gas({ symbol: "AAPL", type: "bogus", class: "stocks", name: "X" });
+				expect(await marketSymbols.get("AAPL")).toBeNull();
+			});
+
+			it("accepts a NonRealtime class", async () => {
+				gas({ symbol: "AAPL", type: "eod", class: "mutualfunds", name: "X" });
+				expect(await marketSymbols.get("AAPL")).toMatchObject({
+					class: "mutualfunds",
+					type: "eod",
+				});
+			});
+		});
 	});
 
 	// -----------------------------------------------------------------------

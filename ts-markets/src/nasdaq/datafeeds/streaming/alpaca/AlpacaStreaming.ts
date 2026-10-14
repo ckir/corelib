@@ -15,12 +15,16 @@ import {
 	logger,
 	nextCid,
 } from "@ckirg/corelib";
-import { createNativeCallbacks } from "../nativeCallbacks.js";
+import {
+	afterNativeSuccess,
+	createNativeCallbacks,
+} from "../nativeCallbacks.js";
 import { StreamHealthTracker } from "../StreamHealthTracker.js";
 
 const RustAlpaca = coreFFI?.AlpacaStreaming as
 	| AlpacaStreamingConstructor
 	| undefined;
+const CHANNELS = ["quotes", "trades", "bars"] as const;
 const alpacaStreamingLogger = logger.child({ section: "AlpacaStreaming" });
 
 /**
@@ -126,16 +130,19 @@ export class AlpacaStreaming extends EventEmitter {
 		input: string[] | { trades?: string[]; quotes?: string[]; bars?: string[] },
 	) {
 		const opts = Array.isArray(input) ? { quotes: input } : input;
-		this.health.recordSubscribe([
-			...(opts.quotes ?? []),
-			...(opts.trades ?? []),
-			...(opts.bars ?? []),
-		]);
-		alpacaStreamingLogger.trace("stream: subscribe", {
-			feed: "alpaca",
-			symbols: this.health.symbolCount,
-		});
-		this.rust.subscribe(opts);
+		afterNativeSuccess(
+			this.rust.subscribe(opts),
+			() => {
+				for (const channel of CHANNELS)
+					this.health.recordSubscribe(opts[channel] ?? [], channel);
+				alpacaStreamingLogger.trace("stream: subscribe", {
+					feed: "alpaca",
+					symbols: this.health.symbolCount,
+				});
+			},
+			alpacaStreamingLogger,
+			"subscribe",
+		);
 	}
 
 	/**
@@ -146,16 +153,19 @@ export class AlpacaStreaming extends EventEmitter {
 		input: string[] | { trades?: string[]; quotes?: string[]; bars?: string[] },
 	) {
 		const opts = Array.isArray(input) ? { quotes: input } : input;
-		this.health.recordUnsubscribe([
-			...(opts.quotes ?? []),
-			...(opts.trades ?? []),
-			...(opts.bars ?? []),
-		]);
-		alpacaStreamingLogger.trace("stream: unsubscribe", {
-			feed: "alpaca",
-			symbols: this.health.symbolCount,
-		});
-		this.rust.unsubscribe(opts);
+		afterNativeSuccess(
+			this.rust.unsubscribe(opts),
+			() => {
+				for (const channel of CHANNELS)
+					this.health.recordUnsubscribe(opts[channel] ?? [], channel);
+				alpacaStreamingLogger.trace("stream: unsubscribe", {
+					feed: "alpaca",
+					symbols: this.health.symbolCount,
+				});
+			},
+			alpacaStreamingLogger,
+			"unsubscribe",
+		);
 	}
 
 	/**
@@ -176,7 +186,7 @@ export class AlpacaStreaming extends EventEmitter {
 }
 
 // Events emitted:
-// - pricing (AlpacaPricingData)
+// - pricing (AlpacaPricingData, see ../types.ts)
 // - log ({level, msg, extras?})
 // - market (unified MarketEvent JSON, parsed object)
 // - connected, disconnected, reconnecting, silence-reconnect, error

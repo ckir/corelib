@@ -12,6 +12,7 @@ import {
 	ApiNasdaqUnlimited,
 	getNasdaqHeaders,
 	type NasdaqResult,
+	type NasdaqStatus,
 } from "./nasdaq/ApiNasdaqUnlimited";
 
 import {
@@ -33,6 +34,7 @@ export {
 	type CnnResult,
 	getNasdaqHeaders,
 	type NasdaqResult,
+	type NasdaqStatus,
 };
 
 /**
@@ -52,6 +54,8 @@ export const Markets = {
 };
 
 export type {
+	HistoricalOptions,
+	HistoricalProvider,
 	HistoricalQuote,
 	HistoricalResult,
 } from "./nasdaq/datafeeds/polling/historical/common/types";
@@ -63,8 +67,16 @@ export {
 	type FinnhubPricingData,
 	FinnhubStreaming,
 } from "./nasdaq/datafeeds/streaming/finnhub/FinnhubStreaming";
+export type {
+	AlpacaPricingData,
+	YahooPricingData,
+} from "./nasdaq/datafeeds/streaming/types";
 export { YahooStreaming } from "./nasdaq/datafeeds/streaming/yahoo/YahooStreaming";
 export { getSymbolsTop100 } from "./nasdaq/groups/Top100";
-export { MarketMonitor, type MarketPhase } from "./nasdaq/MarketMonitor";
+export {
+	MarketMonitor,
+	type MarketMonitorOptions,
+	type MarketPhase,
+} from "./nasdaq/MarketMonitor";
 export { MarketStatus, type NasdaqMarketInfo } from "./nasdaq/MarketStatus";
 export { type MarketSymbolRow, MarketSymbols };

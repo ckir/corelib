@@ -24,9 +24,15 @@ import {
 import { DateTime } from "luxon";
 import { serializeError } from "serialize-error";
 import { ApiNasdaqUnlimited } from "./ApiNasdaqUnlimited";
-import { Realtime } from "./AssetClass";
+import { NonRealtime, Realtime } from "./AssetClass";
 
 const marketSymbolsLogger = baseLogger.child({ section: "MarketSymbols" });
+
+/** Asset classes an ingestor may legitimately return. */
+const VALID_ASSET_CLASSES: ReadonlySet<string> = new Set<string>([
+	...Object.values(Realtime),
+	...Object.values(NonRealtime),
+]);
 
 const DEFAULT_NASDAQ_LISTED_URL =
 	"https://www.nasdaqtrader.com/dynamic/symdir/nasdaqlisted.txt";
@@ -117,7 +123,12 @@ export class MarketSymbols {
 		db?: string | { dbUrl: string; dbToken: string } | Database,
 		private readonly ingestors: string[] = [],
 	) {
-		if (db && typeof (db as any).query === "function") {
+		if (
+			db &&
+			typeof db === "object" &&
+			"query" in db &&
+			typeof db.query === "function"
+		) {
 			this.db = db as Database;
 			this.isDbOwner = false;
 			return;
@@ -322,11 +333,33 @@ export class MarketSymbols {
 				const data = body.value as Record<string, unknown>;
 
 				if (String(data.symbol).toUpperCase() === symbol.toUpperCase()) {
+					const assetClass = String(data.class || "");
+					if (
+						assetClass !== "" &&
+						!VALID_ASSET_CLASSES.has(assetClass.toLowerCase())
+					) {
+						marketSymbolsLogger.warn(
+							"Ingestor returned an invalid asset class",
+							{
+								url: baseUrl,
+								symbol,
+							},
+						);
+						return null;
+					}
+					const rowType = data.type || "eod";
+					if (rowType !== "rt" && rowType !== "eod") {
+						marketSymbolsLogger.warn("Ingestor returned an invalid type", {
+							url: baseUrl,
+							symbol,
+						});
+						return null;
+					}
 					return {
 						symbol: String(data.symbol),
 						name: String(data.name || ""),
-						type: (data.type as "rt" | "eod") || "eod",
-						class: String(data.class || ""),
+						type: rowType,
+						class: assetClass,
 						ts: Number(data.ts) || Date.now(),
 						active: typeof data.active === "boolean" ? data.active : true,
 					};

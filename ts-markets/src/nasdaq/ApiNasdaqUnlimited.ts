@@ -16,6 +16,7 @@ const nasdaqUnlimitedLogger = logger.child({ section: "ApiNasdaqUnlimited" });
 
 import type { Options } from "ky";
 import { serializeError } from "serialize-error";
+import { DEFAULT_CHROME_VERSION } from "./constants";
 
 /**
  * Standard Nasdaq API status object returned in the response body.
@@ -93,7 +94,8 @@ function log(
  */
 export function getNasdaqHeaders(url: string): Record<string, string> {
 	const chromeVersion =
-		(ConfigManager.get("markets.chromeVersion") as string | undefined) ?? "145";
+		(ConfigManager.get("markets.chromeVersion") as string | undefined) ??
+		DEFAULT_CHROME_VERSION;
 	const isCharting = url.includes("charting");
 	const headers: Record<string, string> = isCharting
 		? {
