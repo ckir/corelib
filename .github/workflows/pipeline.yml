@@ -325,13 +325,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Linux legs build in amazonlinux:2023 (glibc 2.34) instead of on the runner: a binary
+          # linked on the runner's glibc 2.39 would not load on AWS Lambda or older distros.
           - os: ubuntu-latest
             artifact_name: corelib-rust-linux-x64.node
             bin_yahoo: yahoo_streamer-linux-x64
             bin_polling: nasdaq_polling-linux-x64
             bin_alpaca: alpaca_streamer-linux-x64
-          # Built in amazonlinux:2023 (glibc 2.34) instead of on the runner: a binary linked on the
-          # runner's glibc 2.39 would not load on AWS Lambda/Graviton or older distros.
+            glibc_container: true
           - os: ubuntu-24.04-arm
             artifact_name: corelib-rust-linux-arm64.node
             bin_yahoo: yahoo_streamer-linux-arm64
