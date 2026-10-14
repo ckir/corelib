@@ -48,5 +48,5 @@ export const requireApiToken = createMiddleware<AppEnv>(async (c, next) => {
 			{ "WWW-Authenticate": 'Bearer realm="corelib"' },
 		);
 	}
-	await next();
+	return next();
 });

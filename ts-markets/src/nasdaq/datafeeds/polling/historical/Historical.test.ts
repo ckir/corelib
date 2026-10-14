@@ -80,9 +80,8 @@ const server = setupServer(
 	// 2. Mock the Historical Data Endpoint (query2 for v3)
 	http.get(
 		"https://query2.finance.yahoo.com/v8/finance/chart/:symbol",
-		({ params, request }) => {
+		({ params }) => {
 			const { symbol } = params;
-			const _url = new URL(request.url);
 
 			// Scenario: Rate Limiting (429)
 			if (symbol === "TOO_MANY_REQUESTS") {

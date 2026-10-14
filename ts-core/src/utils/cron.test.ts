@@ -38,6 +38,7 @@ describe("includeExcludeCron", () => {
 			if (pattern === "30 * * * * *") {
 				return excludeCronMock;
 			}
+			return undefined;
 		});
 
 		// We need to trigger the main job's callback
@@ -53,6 +54,7 @@ describe("includeExcludeCron", () => {
 			}
 			if (pattern === "0 * * * * *") return includeCronMock;
 			if (pattern === "30 * * * * *") return excludeCronMock;
+			return undefined;
 		});
 
 		includeExcludeCron(["0 * * * * *"], ["30 * * * * *"], handler);
@@ -111,6 +113,7 @@ describe("includeExcludeCron", () => {
 			}
 			if (pattern === "include") return includeCronMock;
 			if (pattern === "exclude") return excludeCronMock;
+			return undefined;
 		});
 
 		includeExcludeCron(["include"], ["exclude"], handler);
