@@ -24,7 +24,7 @@ import { ApiNasdaqUnlimited } from "./ApiNasdaqUnlimited";
 import { NonRealtime, Realtime } from "./AssetClass";
 import { SqlSymbolStore } from "./sqlSymbolStore";
 import { fetchSymbolFiles, type SymbolSource } from "./symbolFiles";
-import type { SymbolStore } from "./symbolStore";
+import { type SymbolStore, SymbolStoreUnavailableError } from "./symbolStore";
 
 const marketSymbolsLogger = baseLogger.child({ section: "MarketSymbols" });
 
@@ -53,6 +53,7 @@ const FRESHNESS_CHECK_INTERVAL_MS = 3_600_000; // re-check staleness at most hou
 const DEFAULT_INITIAL_BACKOFF_MS = 1_000;
 const DEFAULT_MAX_RETRY_BACKOFF_MS = 3_600_000; // 1 hour cap per retry interval
 const DEFAULT_MAX_FETCH_RETRIES = 10; // circuit breaker: give up after this many consecutive failures
+const DEFAULT_STORE_BREAKER_MS = 30_000; // how long an unreachable store is skipped
 
 /** A SymbolStore is recognised by its replaceAll method (a Database has query/transaction instead). */
 function isSymbolStore(arg: unknown): arg is SymbolStore {
@@ -109,6 +110,8 @@ export class MarketSymbols {
 	private backgroundRefresh: Promise<void> | null = null;
 	/** Last time freshness was (re)checked; drives the at-most-hourly re-check on get(). */
 	private lastFreshnessCheckAt = 0;
+	/** While Date.now() is below this, the store is treated as unreachable and is not called. */
+	private breakerOpenUntil = 0;
 
 	/**
 	 * Registry mapping URL patterns to specific ingestor methods.
@@ -354,7 +357,7 @@ export class MarketSymbols {
 		try {
 			const store = await this.ensureInitialized();
 			this.scheduleFreshnessCheck();
-			return await store.find(symbol);
+			return await this.storeCall(() => store.find(symbol));
 		} catch (e) {
 			marketSymbolsLogger.warn("SearchDb query failed", {
 				symbol,
@@ -373,6 +376,9 @@ export class MarketSymbols {
 	 * Called automatically on first use, and before any other operations.
 	 */
 	private ensureInitialized(): Promise<SymbolStore> {
+		if (this.isBreakerOpen()) {
+			return Promise.reject(this.breakerOpenError());
+		}
 		if (this.store && this.initialized) return Promise.resolve(this.store);
 		if (!this.initPromise) {
 			const attempt = this.initialize();
@@ -383,6 +389,38 @@ export class MarketSymbols {
 			});
 		}
 		return this.initPromise;
+	}
+
+	private isBreakerOpen(): boolean {
+		return Date.now() < this.breakerOpenUntil;
+	}
+
+	private breakerOpenError(): SymbolStoreUnavailableError {
+		return new SymbolStoreUnavailableError(
+			"Symbol store is unavailable (circuit breaker open)",
+		);
+	}
+
+	/**
+	 * Runs one store call behind the circuit breaker. While the breaker is open the call is not made and
+	 * SymbolStoreUnavailableError is thrown at once; a SymbolStoreUnavailableError from the store opens it.
+	 * Ordinary errors pass through untouched and never open it.
+	 */
+	private async storeCall<T>(fn: () => Promise<T>): Promise<T> {
+		if (this.isBreakerOpen()) throw this.breakerOpenError();
+		try {
+			return await fn();
+		} catch (err) {
+			if (err instanceof SymbolStoreUnavailableError) {
+				// Read lazily so a config change takes effect at the next outage.
+				const periodMs =
+					(ConfigManager.get("markets.nasdaq.symbols.breaker") as
+						| number
+						| undefined) ?? DEFAULT_STORE_BREAKER_MS;
+				this.breakerOpenUntil = Date.now() + periodMs;
+			}
+			throw err;
+		}
 	}
 
 	/** Builds the store from the constructor argument (SQL only for now). */
@@ -428,7 +466,7 @@ export class MarketSymbols {
 	private async initialize(): Promise<SymbolStore> {
 		const store = this.store ?? this.resolveStore();
 		this.store = store;
-		await store.init();
+		await this.storeCall(() => store.init());
 
 		// Auto-refresh on first use if needed. Stale data is served immediately while the
 		// refresh runs in the background; with no data at all the caller waits for the download.
@@ -490,10 +528,13 @@ export class MarketSymbols {
 	private async needsRefresh(): Promise<boolean> {
 		if (!this.store) return true;
 
+		const store = this.store;
 		let maxTs: number | null;
 		try {
-			maxTs = await this.store.lastRefreshTs();
-		} catch {
+			maxTs = await this.storeCall(() => store.lastRefreshTs());
+		} catch (err) {
+			// An unreachable store is not a stale one: propagate so callers abort instead of downloading.
+			if (err instanceof SymbolStoreUnavailableError) throw err;
 			return true;
 		}
 		if (!maxTs) return true;
@@ -562,7 +603,7 @@ export class MarketSymbols {
 			ts: now,
 		}));
 
-		await store.replaceAll(rowsArray, now);
+		await this.storeCall(() => store.replaceAll(rowsArray, now));
 	}
 
 	/**
@@ -675,9 +716,12 @@ export class MarketSymbols {
 	 */
 	private async hasExistingData(): Promise<boolean> {
 		if (!this.store) return false;
+		const store = this.store;
 		try {
-			return (await this.store.count()) > 0;
-		} catch {
+			return (await this.storeCall(() => store.count())) > 0;
+		} catch (err) {
+			// An unreachable store is not an empty one: propagate so callers abort instead of downloading.
+			if (err instanceof SymbolStoreUnavailableError) throw err;
 			return false;
 		}
 	}
