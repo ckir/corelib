@@ -155,7 +155,7 @@ own number, the forward-only flip lets the newest win, and pruning never touches
 overlapping refreshes are safe. To cut duplicate work, rely on the check `performRefresh` already makes before it
 downloads (`MarketSymbols.ts:536`, `needsRefresh()`): with a shared store it now sees a refresh done by another
 instance, which a per-container SQLite file never could. Keep that check immediately before the download. The accepted residue: simultaneous cold starts can each
-download once. A crash at any point only leaves unreachable rows that the next successful refresh prunes.
+download once. A crash at any point only leaves unreachable rows; because pruning keeps the previous generation, they are removed within the next two successful refreshes (measured by the Task 5 test).
 
 ### Connection handling
 

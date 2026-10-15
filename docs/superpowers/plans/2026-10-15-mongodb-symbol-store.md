@@ -138,7 +138,7 @@ Inputs the spec implies and no obvious test covers; each has a test in the named
   - `symbolStoreContract("MongoSymbolStore", ...)` with `poison` = a duplicate-symbol row (unique-index failure).
   - `resolveDatabaseName` table (no server needed, always runs): `mongodb://h` → fallback; `mongodb://h/` → fallback; `mongodb://h/?x=1` → fallback; `mongodb://h/real` → `real`; `mongodb+srv://u:p@c.example/real?x=1` → `real`; `mongodb://h1:1,h2:2/real` → `real`; explicit wins over the URI path.
   - `overlapping refreshes: writer A paused at onBeforeFlip, writer B completes, then A resumes → currentGen is B's, readers saw only complete sets, A's rows are deleted`
-  - `a refresh that dies before the flip leaves the old set visible and the orphan rows are pruned by the next successful refresh`
+  - `a refresh that dies before the flip leaves the old set visible and the orphan rows are unreachable at once and are removed within two successful refreshes (pruning keeps the previous generation)`
   - `prune keeps the previous generation and never deletes the meta document or a newer generation`
   - `find on a store whose cached generation was pruned still returns the symbol (one re-read)`
   - `two stores on one URI: closing one leaves the other working; closing both drops __clientRegistrySize() to 0`
