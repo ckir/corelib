@@ -40,7 +40,12 @@ cp -r ts-cloud/dist/aws/. "$PKG/"
 cp "$WORK/out/corelib-rust.node" "$PKG/corelib-rust.node"
 find "$PKG" -name '*.map' -delete
 
-echo "==> Smoke test in $RUN_IMAGE (loads the native module, calls GET /health)"
+# The MongoDB driver is bundled (noExternal) into a lazily loaded chunk; find it by a driver-only symbol.
+MONGO_CHUNK=$(grep -l "MongoServerSelectionError" "$PKG"/*.mjs | head -n 1 || true)
+[ -n "$MONGO_CHUNK" ] || { echo "no bundled mongodb driver chunk found in $PKG" >&2; exit 1; }
+MONGO_CHUNK_NAME=$(basename "$MONGO_CHUNK")
+
+echo "==> Smoke test in $RUN_IMAGE (loads the native module, calls GET /health, loads the mongodb chunk)"
 cat >"$PKG/_smoke.mjs" <<'EOF'
 import { createRequire } from "node:module";
 const native = createRequire(import.meta.url)("/var/task/corelib-rust.node");
@@ -60,8 +65,11 @@ const res = await handler(
 );
 if (res.statusCode !== 200) throw new Error(`/health returned ${res.statusCode}`);
 console.log("smoke ok: native module loaded, /health 200");
+const mongo = await import(`/var/task/${process.argv[2]}`);
+if (Object.keys(mongo).length === 0) throw new Error("mongodb chunk loaded but exports nothing");
+console.log("smoke ok: bundled mongodb driver chunk loads");
 EOF
-docker run --rm --entrypoint node -v "$PKG:/var/task:ro" "$RUN_IMAGE" /var/task/_smoke.mjs
+docker run --rm --entrypoint node -v "$PKG:/var/task:ro" "$RUN_IMAGE" /var/task/_smoke.mjs "$MONGO_CHUNK_NAME"
 rm "$PKG/_smoke.mjs"
 
 echo "==> Zipping"
