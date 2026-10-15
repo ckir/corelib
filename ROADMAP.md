@@ -135,6 +135,14 @@ than one global audit.
   low reachability of a silent regression; the browser-bundle check is exercised end to end by CI.
   *Revive when:* one of them changes behaviour or a regression escapes through it.
 
+- **MongoDB symbol store tested against a real server**
+  **Status:** SHIPPED 2026-10-15 - `MarketSymbols` can store symbols in MongoDB (`markets.nasdaq.symbols.store`);
+  its suites run against a real MongoDB, on the Linux CI leg (pinned `mongo:8.0.34` container) and locally via
+  `scripts/mongod-test.sh`; macOS and Windows legs skip them visibly. Open fact: MongoDB 8 does not start on
+  Linux kernel 6.19+ (SERVER-121912), so the container image is unproven on the runner until a CI run shows it;
+  fallback is a pinned `mongod` tarball. The repository has no CHANGELOG file; this entry and the git history
+  are the record.
+
 ## Tooling / dev-workflow
 
 - **CI-offload + AI auto-fix workflow — SHIPPED** (2026-06-13, merged to `main` `303dcfa`, CI-fix `bcf6b86`;

@@ -151,6 +151,31 @@ jobs:
           docker cp corelib-temp:/app/rust/corelib-rust.node ts-core/corelib-rust.node
           docker rm -f corelib-temp
 
+      # Real-MongoDB suites (ts-markets) run on the Linux leg only: the other legs leave both variables
+      # unset, so those suites skip visibly there. No `services:` block: service containers exist only on
+      # Linux runners and cannot be switched per matrix leg. The variables go to $GITHUB_ENV so the
+      # coverage step below also runs the Mongo suites (ts-markets coverage floors count them).
+      # CAVEAT: MongoDB 8 refuses to start on Linux kernel 6.19 or newer (SERVER-121912). The pinned image
+      # must be proven on the runner; if it fails to start, fall back to a pinned `mongod` tarball
+      # installed on the runner instead of this container.
+      - name: Start MongoDB for the real-MongoDB tests (Linux only)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          docker run -d --name mongo-test -p 27017:27017 mongo:8.0.34
+          # mongosh is not on the host runner: ping from INSIDE the container (60 s at most).
+          for i in $(seq 1 60); do
+            if [ "$(docker exec mongo-test mongosh --quiet --eval 'db.runCommand({ping:1}).ok' 2>/dev/null)" = "1" ]; then
+              echo "MongoDB answered after ${i} attempt(s)"
+              echo "CORELIB_TEST_MONGODB_URI=mongodb://127.0.0.1:27017" >> "$GITHUB_ENV"
+              echo "CORELIB_REQUIRE_MONGODB=1" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::MongoDB did not answer a ping within 60 s"
+          docker logs mongo-test
+          exit 1
+
       - name: Run all tests
         run: pnpm test-all:run
         env:
