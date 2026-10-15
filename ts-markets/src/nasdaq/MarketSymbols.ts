@@ -14,7 +14,6 @@ import {
 	type Database,
 	detectRuntime,
 	endPoint,
-	getTempDir,
 	nextCid,
 	sleep,
 } from "@ckirg/corelib";
@@ -22,9 +21,9 @@ import { DateTime } from "luxon";
 import { serializeError } from "serialize-error";
 import { ApiNasdaqUnlimited } from "./ApiNasdaqUnlimited";
 import { NonRealtime, Realtime } from "./AssetClass";
-import { SqlSymbolStore } from "./sqlSymbolStore";
 import { fetchSymbolFiles, type SymbolSource } from "./symbolFiles";
 import { type SymbolStore, SymbolStoreUnavailableError } from "./symbolStore";
+import { createSymbolStore } from "./symbolStoreFactory";
 
 const marketSymbolsLogger = baseLogger.child({ section: "MarketSymbols" });
 
@@ -423,44 +422,9 @@ export class MarketSymbols {
 		}
 	}
 
-	/** Builds the store from the constructor argument (SQL only for now). */
+	/** Builds the store from the constructor argument, else from configuration (see symbolStoreFactory). */
 	private resolveStore(): SymbolStore {
-		const db = this.db;
-		if (isSymbolStore(db)) return db;
-		if (
-			db &&
-			typeof db === "object" &&
-			"query" in db &&
-			typeof db.query === "function"
-		) {
-			return SqlSymbolStore.fromDatabase(db as Database);
-		}
-		if (!db) {
-			const path = `${getTempDir()}/NasdaqSymbols.sqlite`;
-			return SqlSymbolStore.fromConfig({
-				dialect: "sqlite",
-				url: `file:${path}`,
-				mode: "stateful",
-			});
-		}
-		if (typeof db === "string") {
-			return SqlSymbolStore.fromConfig({
-				dialect: "sqlite",
-				url:
-					db.startsWith("libsql://") || db.startsWith("file:")
-						? db
-						: `file:${db}`,
-				mode: "stateful",
-			});
-		}
-		// This branch handles { dbUrl: string; dbToken: string }
-		const turso = db as { dbUrl: string; dbToken: string };
-		return SqlSymbolStore.fromConfig({
-			dialect: "sqlite",
-			url: turso.dbUrl,
-			authToken: turso.dbToken,
-			mode: "stateful",
-		});
+		return createSymbolStore(this.db);
 	}
 
 	private async initialize(): Promise<SymbolStore> {
