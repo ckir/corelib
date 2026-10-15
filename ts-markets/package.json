@@ -41,6 +41,7 @@
         "basic-ftp": "^6.2.3",
         "ky": "^2.2.0",
         "luxon": "^3.7.2",
+        "mongodb": "^7.7.0",
         "serialize-error": "^13.0.2"
     }
 }

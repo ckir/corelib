@@ -28,5 +28,17 @@
     "why": "Builds the Linux FFI binary exactly as CI does (rust/Dockerfile.linux).",
     "install": "https://docs.docker.com/engine/install/",
     "in_path": "docker"
+  },
+  {
+    "name": "mongod",
+    "why": "Real-MongoDB integration tests for the ts-markets symbol store (scripts/mongod-test.sh).",
+    "install": "https://www.mongodb.com/docs/manual/installation/",
+    "in_path": "mongod"
+  },
+  {
+    "name": "mongosh",
+    "why": "Readiness probe used by scripts/mongod-test.sh for the ts-markets store tests.",
+    "install": "https://www.mongodb.com/docs/mongodb-shell/install/",
+    "in_path": "mongosh"
   }
 ]
