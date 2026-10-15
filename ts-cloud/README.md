@@ -37,6 +37,16 @@ src/
     └── cloudrun/      # Google Cloud Run (Node.js) server
 ```
 
+## Using the package
+
+`@ckirg/corelib-cloud` is both a library and a set of deployable bundles:
+
+```ts
+import { Cloud, createRouter } from "@ckirg/corelib-cloud"; // Hono routers + factory (ESM, typed)
+```
+
+The platform bundles are exposed as subpaths (`@ckirg/corelib-cloud/aws`, `/cloudflare`, `/cloudrun`, plus `/dist/*`). Installing the package needs `@jsr:registry=https://npm.jsr.io` in your `.npmrc` (its `@ckirg/corelib-markets` dependency pulls `@gadicc/yahoo-finance2` from JSR).
+
 ## API Endpoints
 
 ### Core Endpoints

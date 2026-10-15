@@ -432,7 +432,7 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
-      - name: Check the 23 expected assets and tarball versions
+      - name: Check the 23 expected assets, tarball versions and package entry points
         shell: bash
         run: |
           set -euo pipefail
@@ -451,6 +451,7 @@ jobs:
             v=$(tar -xOzf "$f" package/package.json | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version")
             [[ "$v" == "$VERSION" ]] || { echo "::error::$f contains version $v, expected $VERSION"; missing=1; }
           done
+          node scripts/check-package-entries.mjs artifacts/ckirg-*.tgz || missing=1
           exit $missing
 
   release:

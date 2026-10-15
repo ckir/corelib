@@ -7,6 +7,17 @@
     "main": "dist/index.js",
     "type": "module",
     "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        },
+        "./aws": "./dist/aws/handler.mjs",
+        "./cloudflare": "./dist/cloudflare/worker.js",
+        "./cloudrun": "./dist/cloudrun/server.js",
+        "./dist/*": "./dist/*",
+        "./package.json": "./package.json"
+    },
     "files": [
         "dist"
     ],

@@ -1,6 +1,18 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig([
+	// Library entry (`import { Cloud } from "@ckirg/corelib-cloud"`): ESM + types, dependencies stay
+	// external (tsup externalizes package.json dependencies). Must not clean: the platform bundles
+	// below write into subdirectories of the same dist/.
+	{
+		entry: { index: "src/index.ts" },
+		format: ["esm"],
+		target: "es2022",
+		dts: true,
+		clean: false,
+		outDir: "dist",
+		platform: "neutral",
+	},
 	{
 		entry: { worker: "src/platform/cloudflare/worker.ts" },
 		format: ["esm"],
