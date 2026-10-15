@@ -11,6 +11,16 @@ import { MarketSymbols } from "./MarketSymbols";
 // ---------------------------------------------------------------------------
 // 1. Mock External Dependencies
 // ---------------------------------------------------------------------------
+// FTP is the primary source now; a fast-failing client keeps these tests off the network and sends
+// every download through the mocked HTTPS fallback.
+vi.mock("basic-ftp", () => ({
+	Client: class {
+		access = vi.fn().mockRejectedValue(new Error("ftp unavailable (test)"));
+		downloadTo = vi.fn();
+		close = vi.fn();
+	},
+}));
+
 vi.mock("@ckirg/corelib", async (importOriginal) => {
 	const actual = await importOriginal<typeof corelib>();
 	return {
@@ -57,7 +67,12 @@ function directoryResponses(n: number) {
 	).join("\n");
 	return [
 		{ status: "success", value: { body: `${header}${nasdaq}\n` } },
-		{ status: "success", value: { body: `Symbol|Name|x|x|ETF\n${other}\n` } },
+		{
+			status: "success",
+			value: {
+				body: `ACT Symbol|Security Name|Exchange|CQS Symbol|ETF|Round Lot Size|Test Issue|NASDAQ Symbol\n${other}\n`,
+			},
+		},
 	] as any;
 }
 
@@ -183,6 +198,31 @@ describe("MarketSymbols - Integrated Suite", () => {
 				}
 				return Promise.resolve({ status: "success", value: { rows: [{}] } });
 			});
+			// Valid files, but only 3 symbols each: far below the minimum, so the table must not be rewritten
+			vi.mocked(corelib.endPoints).mockResolvedValue(directoryResponses(3));
+
+			await marketSymbols.refresh();
+
+			expect(corelib.endPoints).toHaveBeenCalled();
+			expect(mockDbTransaction).not.toHaveBeenCalled();
+		});
+
+		it("treats a bot-challenge HTML page as a failed download and leaves the symbol table alone (existing data)", async () => {
+			mockDbQuery.mockImplementation((query: string) => {
+				if (query.includes("MAX(ts)")) {
+					return Promise.resolve({
+						status: "success",
+						value: { rows: [{ max_ts: 1 }] }, // stale: forces a refresh
+					});
+				}
+				if (query.includes("COUNT")) {
+					return Promise.resolve({
+						status: "success",
+						value: { rows: [{ count: 11000, c: 11000, n: 11000 }] },
+					});
+				}
+				return Promise.resolve({ status: "success", value: { rows: [{}] } });
+			});
 			// 200 OK but an HTML error page instead of the directory file
 			vi.mocked(corelib.endPoints).mockResolvedValue([
 				{
@@ -205,12 +245,24 @@ describe("MarketSymbols - Integrated Suite", () => {
 			mockDbQuery.mockImplementation(() =>
 				Promise.resolve({ status: "success", value: { rows: [] } }),
 			);
-			vi.mocked(corelib.endPoints).mockResolvedValue([
-				{ status: "success", value: { body: "" } },
-				{ status: "success", value: { body: "" } },
-			] as any);
+			vi.mocked(corelib.endPoints).mockResolvedValue(directoryResponses(0));
 
 			await expect(marketSymbols.refresh()).rejects.toThrow(/parsed to 0 rows/);
+			expect(mockDbTransaction).not.toHaveBeenCalled();
+		});
+
+		it("rejects an HTML page as 'not a symbol directory file' instead of parsing it to zero rows (no existing data)", async () => {
+			mockDbQuery.mockImplementation(() =>
+				Promise.resolve({ status: "success", value: { rows: [] } }),
+			);
+			vi.mocked(corelib.endPoints).mockResolvedValue([
+				{ status: "success", value: { body: "<html>challenge</html>" } },
+				{ status: "success", value: { body: "<html>challenge</html>" } },
+			] as any);
+
+			await expect(marketSymbols.refresh()).rejects.toThrow(
+				/did not return a symbol directory file/,
+			);
 			expect(mockDbTransaction).not.toHaveBeenCalled();
 		});
 
@@ -529,7 +581,8 @@ describe("MarketSymbols - Integrated Suite", () => {
 
 			const row = await marketSymbols.get("AAPL");
 			expect(row?.symbol).toBe("AAPL");
-			expect(corelib.endPoints).toHaveBeenCalled();
+			// The background refresh tries FTP (mocked to fail) before it reaches the HTTPS fallback.
+			await vi.waitFor(() => expect(corelib.endPoints).toHaveBeenCalled());
 		});
 
 		it("re-checks freshness at most hourly on get() without blocking", async () => {

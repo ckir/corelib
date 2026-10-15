@@ -28,16 +28,17 @@
         "@types/luxon": "^3.7.6",
         "@types/node": "catalog:",
         "@types/ws": "catalog:",
+        "@vitest/coverage-v8": "catalog:",
         "bun-types": "^1.4.2",
         "happy-dom": "^20.14.6",
         "msw": "^2.14.6",
         "typedoc": "^0.28.20",
-        "@vitest/coverage-v8": "catalog:",
         "vitest": "catalog:"
     },
     "dependencies": {
         "@ckirg/corelib": "workspace:*",
         "@gadicc/yahoo-finance2": "jsr:^3.15.2",
+        "basic-ftp": "^6.2.3",
         "ky": "^2.2.0",
         "luxon": "^3.7.2",
         "serialize-error": "^13.0.2"

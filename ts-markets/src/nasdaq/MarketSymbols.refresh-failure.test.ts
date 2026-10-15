@@ -4,6 +4,16 @@ import { createDatabase, endPoints } from "@ckirg/corelib";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MarketSymbols } from "./MarketSymbols";
 
+// FTP is the primary source now; a fast-failing client keeps these tests off the network and sends
+// every download through the mocked HTTPS fallback.
+vi.mock("basic-ftp", () => ({
+	Client: class {
+		access = vi.fn().mockRejectedValue(new Error("ftp unavailable (test)"));
+		downloadTo = vi.fn();
+		close = vi.fn();
+	},
+}));
+
 vi.mock("@ckirg/corelib", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("@ckirg/corelib")>();
 	return { ...actual, endPoints: vi.fn() };
@@ -26,7 +36,9 @@ function directoryResponses(n: number) {
 		},
 		{
 			status: "success",
-			value: { body: `Symbol|Name|x|x|ETF\n${other}\n` },
+			value: {
+				body: `ACT Symbol|Security Name|Exchange|CQS Symbol|ETF|Round Lot Size|Test Issue|NASDAQ Symbol\n${other}\n`,
+			},
 		},
 	] as never;
 }

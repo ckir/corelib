@@ -185,6 +185,7 @@ compatibility_flags = ["nodejs_compat"]
 "@google-cloud/pino-logging-gcp-config" = "./src/platform/cloudflare/server-dep-stub.mjs"
 "postgres"                            = "./src/platform/cloudflare/server-dep-stub.mjs"
 "@libsql/client"                      = "./src/platform/cloudflare/server-dep-stub.mjs"
+"basic-ftp"                           = "./src/platform/cloudflare/server-dep-stub.mjs"
 
 [dev]
 port = 3000

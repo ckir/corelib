@@ -16,7 +16,6 @@ import {
 	type DatabaseResult,
 	detectRuntime,
 	endPoint,
-	endPoints,
 	getTempDir,
 	nextCid,
 	sleep,
@@ -25,6 +24,7 @@ import { DateTime } from "luxon";
 import { serializeError } from "serialize-error";
 import { ApiNasdaqUnlimited } from "./ApiNasdaqUnlimited";
 import { NonRealtime, Realtime } from "./AssetClass";
+import { fetchSymbolFiles, type SymbolSource } from "./symbolFiles";
 
 const marketSymbolsLogger = baseLogger.child({ section: "MarketSymbols" });
 
@@ -34,9 +34,15 @@ const VALID_ASSET_CLASSES: ReadonlySet<string> = new Set<string>([
 	...Object.values(NonRealtime),
 ]);
 
+// Primary source: anonymous FTP. The HTTPS copies sit behind a bot-challenge that answers 200 with an HTML
+// page from many networks, so they are only the fallback.
 const DEFAULT_NASDAQ_LISTED_URL =
-	"https://www.nasdaqtrader.com/dynamic/symdir/nasdaqlisted.txt";
+	"ftp://ftp.nasdaqtrader.com/symboldirectory/nasdaqlisted.txt";
 const DEFAULT_OTHER_LISTED_URL =
+	"ftp://ftp.nasdaqtrader.com/symboldirectory/otherlisted.txt";
+const DEFAULT_NASDAQ_LISTED_FALLBACK_URL =
+	"https://www.nasdaqtrader.com/dynamic/symdir/nasdaqlisted.txt";
+const DEFAULT_OTHER_LISTED_FALLBACK_URL =
 	"https://www.nasdaqtrader.com/dynamic/symdir/otherlisted.txt";
 
 // The real directories hold ~11k symbols; anything far below that is an error page or a truncated file.
@@ -659,6 +665,26 @@ export class MarketSymbols {
 			(ConfigManager.get("markets.nasdaq.symbols.otherListedUrl") as
 				| string
 				| undefined) ?? DEFAULT_OTHER_LISTED_URL;
+		const nasdaqListedFallbackUrl =
+			(ConfigManager.get("markets.nasdaq.symbols.nasdaqListedFallbackUrl") as
+				| string
+				| undefined) ?? DEFAULT_NASDAQ_LISTED_FALLBACK_URL;
+		const otherListedFallbackUrl =
+			(ConfigManager.get("markets.nasdaq.symbols.otherListedFallbackUrl") as
+				| string
+				| undefined) ?? DEFAULT_OTHER_LISTED_FALLBACK_URL;
+		const sources: SymbolSource[] = [
+			{ nasdaqUrl: nasdaqListedUrl, otherUrl: otherListedUrl },
+		];
+		if (
+			nasdaqListedFallbackUrl !== nasdaqListedUrl ||
+			otherListedFallbackUrl !== otherListedUrl
+		) {
+			sources.push({
+				nasdaqUrl: nasdaqListedFallbackUrl,
+				otherUrl: otherListedFallbackUrl,
+			});
+		}
 		const maxRetryBackoffMs =
 			(ConfigManager.get("markets.nasdaq.symbols.maxRetryBackoffMs") as
 				| number
@@ -675,38 +701,14 @@ export class MarketSymbols {
 
 		while (retryCount <= maxFetchRetries) {
 			try {
-				const results = await endPoints<string>(
-					[nasdaqListedUrl, otherListedUrl],
-					{
-						headers: {
-							accept: "text/plain, */*",
-							"user-agent":
-								"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-						},
-					},
-				);
-
-				const [nasdaqResult, otherResult] = results;
-				if (nasdaqResult === undefined || otherResult === undefined) {
-					// Same failure the old code hit (TypeError inside this try) if endPoints returned < 2 results.
-					throw new Error(
-						"endPoints returned fewer results than URLs requested",
-					);
-				}
-
-				if (
-					nasdaqResult.status === "success" &&
-					otherResult.status === "success"
-				) {
+				const result = await fetchSymbolFiles(sources);
+				if (result.status === "success") {
 					return {
-						nasdaqText: nasdaqResult.value.body as string,
-						otherText: otherResult.value.body as string,
+						nasdaqText: result.nasdaqText,
+						otherText: result.otherText,
 					};
 				}
-
-				const errorResult =
-					nasdaqResult.status === "error" ? nasdaqResult : otherResult;
-				const reason = errorResult.status === "error" ? errorResult.reason : {};
+				const reason = result.reason;
 
 				marketSymbolsLogger.warn("Symbol directory fetch failed – retrying", {
 					retryCount,

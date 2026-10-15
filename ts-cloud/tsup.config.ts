@@ -39,6 +39,8 @@ export default defineConfig([
 			// DB drivers (loaded only when createDatabase() opens a connection).
 			"@libsql/client",
 			"postgres",
+			// FTP client for the symbol directory (ts-markets loads it only for ftp:// URLs, never on the edge).
+			"basic-ftp",
 		],
 		define: { __EDGE_RUNTIME__: "true" },
 		shims: true,

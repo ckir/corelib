@@ -9,8 +9,10 @@
         "warnIntervalSec": 60
       },
       "symbols": {
-        "nasdaqListedUrl": "https://www.nasdaqtrader.com/dynamic/symdir/nasdaqlisted.txt",
-        "otherListedUrl": "https://www.nasdaqtrader.com/dynamic/symdir/otherlisted.txt",
+        "nasdaqListedUrl": "ftp://ftp.nasdaqtrader.com/symboldirectory/nasdaqlisted.txt",
+        "otherListedUrl": "ftp://ftp.nasdaqtrader.com/symboldirectory/otherlisted.txt",
+        "nasdaqListedFallbackUrl": "https://www.nasdaqtrader.com/dynamic/symdir/nasdaqlisted.txt",
+        "otherListedFallbackUrl": "https://www.nasdaqtrader.com/dynamic/symdir/otherlisted.txt",
         "initialBackoffMs": 1000,
         "maxRetryBackoffMs": 3600000,
         "maxFetchRetries": 10
