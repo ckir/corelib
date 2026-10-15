@@ -22,7 +22,11 @@ import { serializeError } from "serialize-error";
 import { ApiNasdaqUnlimited } from "./ApiNasdaqUnlimited";
 import { NonRealtime, Realtime } from "./AssetClass";
 import { fetchSymbolFiles, type SymbolSource } from "./symbolFiles";
-import { type SymbolStore, SymbolStoreUnavailableError } from "./symbolStore";
+import {
+	isSymbolStore,
+	type SymbolStore,
+	SymbolStoreUnavailableError,
+} from "./symbolStore";
 import { createSymbolStore } from "./symbolStoreFactory";
 
 const marketSymbolsLogger = baseLogger.child({ section: "MarketSymbols" });
@@ -53,15 +57,6 @@ const DEFAULT_INITIAL_BACKOFF_MS = 1_000;
 const DEFAULT_MAX_RETRY_BACKOFF_MS = 3_600_000; // 1 hour cap per retry interval
 const DEFAULT_MAX_FETCH_RETRIES = 10; // circuit breaker: give up after this many consecutive failures
 const DEFAULT_STORE_BREAKER_MS = 30_000; // how long an unreachable store is skipped
-
-/** A SymbolStore is recognised by its replaceAll method (a Database has query/transaction instead). */
-function isSymbolStore(arg: unknown): arg is SymbolStore {
-	return (
-		typeof arg === "object" &&
-		arg !== null &&
-		typeof (arg as { replaceAll?: unknown }).replaceAll === "function"
-	);
-}
 
 /**
  * Represents a single row in the Nasdaq symbols database.

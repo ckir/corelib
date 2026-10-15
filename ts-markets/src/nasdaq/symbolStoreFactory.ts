@@ -14,7 +14,7 @@ import {
 } from "@ckirg/corelib";
 import { MongoSymbolStore } from "./mongoSymbolStore";
 import { SqlSymbolStore } from "./sqlSymbolStore";
-import type { SymbolStore } from "./symbolStore";
+import { isSymbolStore, type SymbolStore } from "./symbolStore";
 
 const marketSymbolsLogger = baseLogger.child({ section: "MarketSymbols" });
 
@@ -40,14 +40,6 @@ type Backend =
 	| "mongodb"
 	| "injected-database"
 	| "injected-store";
-
-function isSymbolStore(arg: unknown): arg is SymbolStore {
-	return (
-		typeof arg === "object" &&
-		arg !== null &&
-		typeof (arg as { replaceAll?: unknown }).replaceAll === "function"
-	);
-}
 
 function isDatabase(arg: unknown): arg is Database {
 	return (

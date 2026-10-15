@@ -21,6 +21,15 @@ export interface SymbolStore {
 	close(): Promise<void>;
 }
 
+/** A SymbolStore is recognised by its replaceAll method (a Database has query/transaction instead). */
+export function isSymbolStore(arg: unknown): arg is SymbolStore {
+	return (
+		typeof arg === "object" &&
+		arg !== null &&
+		typeof (arg as { replaceAll?: unknown }).replaceAll === "function"
+	);
+}
+
 /** Thrown when a backend is unreachable (as opposed to a query-level failure). */
 export class SymbolStoreUnavailableError extends Error {
 	constructor(message: string, options?: { cause?: unknown }) {
