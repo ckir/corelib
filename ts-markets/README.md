@@ -284,7 +284,8 @@ export CORELIB_TURSO_TOKEN="your-auth-token"
 - **Switching backend starts empty**: there is no migration. The new store fills from the first Nasdaq refresh.
 - **Database name**: the database in the URI path if there is one, otherwise `markets.nasdaq.symbols.mongodb.database` (default `corelib`). The collection is `markets.nasdaq.symbols.mongodb.collection` (default `nasdaq_symbols`).
 - **Circuit breaker** (`markets.nasdaq.symbols.breaker`, milliseconds, default `30000`): while the store is unreachable, lookups fall through to the Nasdaq API and no directory download is triggered.
-- **Runtimes**: MongoDB runs on Node, AWS Lambda and Google Cloud Run, but NOT on Cloudflare Workers (use Turso there); selecting it on a Worker throws.
+- **Runtimes**: MongoDB runs on Node, AWS Lambda and Google Cloud Run, but NOT on Cloudflare Workers (use Turso there); selecting it on a Worker is rejected when the store is created (see the next bullet for how that surfaces).
+- **Misconfiguration is only logged on lookups**: the store is created on first use and the factory rejects an unset or empty `MONGODB_URI` / `CORELIB_TURSO_*`, an unknown `store` value, and MongoDB on a Worker. That error is thrown from `refresh()`, but `get()` only logs a `SearchDb query failed` warning and falls through to the Nasdaq API and ingestors. If lookups unexpectedly fall back to the Nasdaq API, check the logs.
 - **Atlas and Lambda**: a Lambda outside a VPC has no fixed IP, so MongoDB Atlas must allow Lambda's traffic through its network access list, private networking, or an allow-all rule the operator chooses deliberately.
 
 #### Running the MongoDB Tests Locally

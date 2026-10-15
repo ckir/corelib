@@ -163,9 +163,10 @@ jobs:
         run: |
           docker run -d --name mongo-test -p 27017:27017 mongo:8.0.34
           # mongosh is not on the host runner: ping from INSIDE the container (60 s at most).
-          for i in $(seq 1 60); do
+          deadline=$((SECONDS+60))
+          while [ "$SECONDS" -lt "$deadline" ]; do
             if [ "$(docker exec mongo-test mongosh --quiet --eval 'db.runCommand({ping:1}).ok' 2>/dev/null)" = "1" ]; then
-              echo "MongoDB answered after ${i} attempt(s)"
+              echo "MongoDB answered after ${SECONDS}s of the step clock"
               echo "CORELIB_TEST_MONGODB_URI=mongodb://127.0.0.1:27017" >> "$GITHUB_ENV"
               echo "CORELIB_REQUIRE_MONGODB=1" >> "$GITHUB_ENV"
               exit 0

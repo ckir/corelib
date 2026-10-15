@@ -125,8 +125,10 @@ export class MarketSymbols {
 
 	/**
 	 * @param db - Optional storage configuration or existing instance:
-	 * - `undefined` → uses `${getTempDir()}/NasdaqSymbols.sqlite`
-	 * - `string` → local SQLite file path
+	 * - `undefined` → chosen by `markets.nasdaq.symbols.store` (default `sqlite`:
+	 *   `${getTempDir()}/NasdaqSymbols.sqlite`; `turso` / `mongodb` read their connection settings
+	 *   from the environment, see the ts-markets README section 7)
+	 * - `string` → local SQLite file path; a `mongodb://` or `mongodb+srv://` string → MongoDB store
 	 * - `{ dbUrl: string; dbToken: string }` → Turso/LibSQL remote
 	 * - `Database` → An existing instance of a Database driver (never disconnected by close())
 	 * - `SymbolStore` → An existing store (never closed by close())
