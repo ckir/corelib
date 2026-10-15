@@ -17,6 +17,7 @@ compatibility_flags = ["nodejs_compat"]
 "postgres" = "./src/platform/cloudflare/server-dep-stub.mjs"
 "@libsql/client" = "./src/platform/cloudflare/server-dep-stub.mjs"
 "basic-ftp" = "./src/platform/cloudflare/server-dep-stub.mjs"
+"mongodb" = "./src/platform/cloudflare/server-dep-stub.mjs"
 
 [dev]
 port = 3000

@@ -186,6 +186,7 @@ compatibility_flags = ["nodejs_compat"]
 "postgres"                            = "./src/platform/cloudflare/server-dep-stub.mjs"
 "@libsql/client"                      = "./src/platform/cloudflare/server-dep-stub.mjs"
 "basic-ftp"                           = "./src/platform/cloudflare/server-dep-stub.mjs"
+"mongodb"                             = "./src/platform/cloudflare/server-dep-stub.mjs"
 
 [dev]
 port = 3000
@@ -204,6 +205,7 @@ Set these as Lambda environment variables (the template wires them from stack pa
 
 - `CORELIB_API_TOKEN` (**required**): bearer token for every `/api/v1` request. Left unset, `/api/v1/*` answers 503 (fail closed); `/health` stays open.
 - `CORELIB_TURSO_URL`, `CORELIB_TURSO_TOKEN`: only for `/api/v1/sql`.
+- `CORELIB_MARKETS_NASDAQ_SYMBOLS_STORE=mongodb` and `MONGODB_URI`: choose MongoDB for the Nasdaq symbol store. The stock ts-cloud handler does not construct `MarketSymbols` (no route uses it), so this matters only for applications that import `@ckirg/corelib-markets` and bundle it for Lambda. The `mongodb` driver is bundled into the Lambda and Cloud Run builds and aliased out of the Worker (MongoDB is not supported on Cloudflare Workers). A Lambda outside a VPC has no fixed IP: see the Atlas network-access note in the `ts-markets` README.
 
 ### Google Cloud Run
 

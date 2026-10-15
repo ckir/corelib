@@ -240,6 +240,7 @@ Automated Nasdaq symbol directory with auto-refresh and environment-aware search
   - **Standard (Node/Bun)**: `SQLite -> Nasdaq API -> Ingestors` (Prioritizes local speed).
   - **Edge (Cloudflare/Lambda)**: `Nasdaq API -> Ingestors -> SQLite` (Prioritizes fresh API data over cold storage).
 - **Turso Support**: Supports both local SQLite and remote Turso/LibSQL databases.
+- **MongoDB Support**: Optional MongoDB store (Node, Lambda, Cloud Run; not Cloudflare Workers).
 
 #### Basic Usage
 ```typescript
@@ -259,6 +260,42 @@ const symbols = new MarketSymbols({
   dbToken: "your-auth-token"
 });
 ```
+
+#### Cloud Usage (MongoDB)
+```typescript
+const symbols = new MarketSymbols("mongodb+srv://user:pass@cluster.example.mongodb.net/corelib");
+```
+
+#### Selecting the Backend (configuration)
+With no constructor argument, `markets.nasdaq.symbols.store` decides: `sqlite` (default), `turso` or `mongodb`. A constructor argument always beats the setting (a `mongodb://` or `mongodb+srv://` string selects MongoDB).
+
+```bash
+# MongoDB
+export CORELIB_MARKETS_NASDAQ_SYMBOLS_STORE=mongodb
+export MONGODB_URI="mongodb+srv://user:pass@cluster.example.mongodb.net/corelib"
+
+# Turso
+export CORELIB_MARKETS_NASDAQ_SYMBOLS_STORE=turso
+export CORELIB_TURSO_URL="libsql://your-db.turso.io"
+export CORELIB_TURSO_TOKEN="your-auth-token"
+```
+
+- **Environment overrides**: `CORELIB_A_B_C` maps to the lower-case key `a.b.c`, so only single-word keys can be set this way: `CORELIB_MARKETS_NASDAQ_SYMBOLS_STORE`, `..._MONGODB_DATABASE`, `..._MONGODB_COLLECTION`, `..._BREAKER`. The camelCase indirection keys (`markets.nasdaq.symbols.mongodb.uriEnv`, `turso.urlEnv`, `turso.tokenEnv`) can only be set in a config file or on the command line; the defaults (`MONGODB_URI`, `CORELIB_TURSO_URL`, `CORELIB_TURSO_TOKEN`) are what a deployment normally uses.
+- **Switching backend starts empty**: there is no migration. The new store fills from the first Nasdaq refresh.
+- **Database name**: the database in the URI path if there is one, otherwise `markets.nasdaq.symbols.mongodb.database` (default `corelib`). The collection is `markets.nasdaq.symbols.mongodb.collection` (default `nasdaq_symbols`).
+- **Circuit breaker** (`markets.nasdaq.symbols.breaker`, milliseconds, default `30000`): while the store is unreachable, lookups fall through to the Nasdaq API and no directory download is triggered. The breaker applies to the MongoDB store only; SQLite and Turso errors are ordinary errors and do not open it.
+- **Runtimes**: MongoDB runs on Node, AWS Lambda and Google Cloud Run, but NOT on Cloudflare Workers (use Turso there); selecting it on a Worker is rejected when the store is created (see the next bullet for how that surfaces).
+- **Misconfiguration is only logged on lookups**: the store is created on first use and the factory rejects an unset or empty `MONGODB_URI` / `CORELIB_TURSO_*`, an unknown `store` value, and MongoDB on a Worker. That error is thrown from `refresh()`, but `get()` only logs a `SearchDb query failed` warning and falls through to the Nasdaq API and ingestors. If lookups unexpectedly fall back to the Nasdaq API, check the logs.
+- **Atlas and Lambda**: a Lambda outside a VPC has no fixed IP, so MongoDB Atlas must allow Lambda's traffic through its network access list, private networking, or an allow-all rule the operator chooses deliberately.
+
+#### Running the MongoDB Tests Locally
+The real-MongoDB suites skip unless `CORELIB_TEST_MONGODB_URI` is set; `CORELIB_REQUIRE_MONGODB=1` turns a skip into a failure. Start a throwaway server and run the suite in the same shell. A plain local coverage run (`pnpm test-all:coverage`) also needs the server, because the ts-markets coverage floors count these suites.
+```bash
+eval "$(bash scripts/mongod-test.sh start)"   # exports CORELIB_TEST_MONGODB_URI
+CORELIB_REQUIRE_MONGODB=1 pnpm test-all:coverage
+bash scripts/mongod-test.sh stop
+```
+CI runs the same suites on the Linux leg only.
 
 #### Custom Ingestors (e.g., Google Apps Script)
 The ingestor should return a `MarketSymbolRow` JSON structure.

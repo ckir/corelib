@@ -11,12 +11,9 @@
 import {
 	logger as baseLogger,
 	ConfigManager,
-	createDatabase,
 	type Database,
-	type DatabaseResult,
 	detectRuntime,
 	endPoint,
-	getTempDir,
 	nextCid,
 	sleep,
 } from "@ckirg/corelib";
@@ -25,6 +22,12 @@ import { serializeError } from "serialize-error";
 import { ApiNasdaqUnlimited } from "./ApiNasdaqUnlimited";
 import { NonRealtime, Realtime } from "./AssetClass";
 import { fetchSymbolFiles, type SymbolSource } from "./symbolFiles";
+import {
+	isSymbolStore,
+	type SymbolStore,
+	SymbolStoreUnavailableError,
+} from "./symbolStore";
+import { createSymbolStore } from "./symbolStoreFactory";
 
 const marketSymbolsLogger = baseLogger.child({ section: "MarketSymbols" });
 
@@ -53,6 +56,7 @@ const FRESHNESS_CHECK_INTERVAL_MS = 3_600_000; // re-check staleness at most hou
 const DEFAULT_INITIAL_BACKOFF_MS = 1_000;
 const DEFAULT_MAX_RETRY_BACKOFF_MS = 3_600_000; // 1 hour cap per retry interval
 const DEFAULT_MAX_FETCH_RETRIES = 10; // circuit breaker: give up after this many consecutive failures
+const DEFAULT_STORE_BREAKER_MS = 30_000; // how long an unreachable store is skipped
 
 /**
  * Represents a single row in the Nasdaq symbols database.
@@ -84,27 +88,24 @@ interface IngestorEntry {
 }
 
 /**
- * Nasdaq symbol database using ts-core SQLite (local or Turso) alongside API & Ingestor fallbacks.
+ * Nasdaq symbol directory backed by a SymbolStore (SQLite or Turso today) alongside API & Ingestor fallbacks.
  *
  * Automatically refreshes on first use or when data is older than today (NY time).
  * Modifies search hierarchy (DB vs API) dynamically based on edge vs non-edge runtimes.
  */
 export class MarketSymbols {
-	private db: Database | null = null;
+	private store: SymbolStore | null = null;
+	/** True when the caller injected the store; close() then never closes it. */
+	private readonly storeInjected: boolean;
 	private initialized = false;
 	/** In-flight initialization shared by concurrent callers; cleared on failure so the next call retries. */
-	private initPromise: Promise<Database> | null = null;
+	private initPromise: Promise<SymbolStore> | null = null;
 	/** In-flight background refresh (at most one at a time). */
 	private backgroundRefresh: Promise<void> | null = null;
 	/** Last time freshness was (re)checked; drives the at-most-hourly re-check on get(). */
 	private lastFreshnessCheckAt = 0;
-	private isDbOwner = true;
-	private readonly config?: {
-		dialect: "sqlite";
-		url: string;
-		mode: "stateful" | "stateless";
-		authToken?: string;
-	};
+	/** While Date.now() is below this, the store is treated as unreachable and is not called. */
+	private breakerOpenUntil = 0;
 
 	/**
 	 * Registry mapping URL patterns to specific ingestor methods.
@@ -118,55 +119,25 @@ export class MarketSymbols {
 	];
 
 	/**
-	 * @param db - Optional database configuration or existing instance:
-	 * - `undefined` → uses `${getTempDir()}/NasdaqSymbols.sqlite`
-	 * - `string` → local SQLite file path
+	 * @param db - Optional storage configuration or existing instance:
+	 * - `undefined` → chosen by `markets.nasdaq.symbols.store` (default `sqlite`:
+	 *   `${getTempDir()}/NasdaqSymbols.sqlite`; `turso` / `mongodb` read their connection settings
+	 *   from the environment, see the ts-markets README section 7)
+	 * - `string` → local SQLite file path; a `mongodb://` or `mongodb+srv://` string → MongoDB store
 	 * - `{ dbUrl: string; dbToken: string }` → Turso/LibSQL remote
-	 * - `Database` → An existing instance of a Database driver
+	 * - `Database` → An existing instance of a Database driver (never disconnected by close())
+	 * - `SymbolStore` → An existing store (never closed by close())
 	 * @param ingestors - Array of ingestor URLs (e.g., Google App Script endpoints) to query for missing symbols.
 	 */
 	constructor(
-		db?: string | { dbUrl: string; dbToken: string } | Database,
+		private readonly db?:
+			| string
+			| { dbUrl: string; dbToken: string }
+			| Database
+			| SymbolStore,
 		private readonly ingestors: string[] = [],
 	) {
-		if (
-			db &&
-			typeof db === "object" &&
-			"query" in db &&
-			typeof db.query === "function"
-		) {
-			this.db = db as Database;
-			this.isDbOwner = false;
-			return;
-		}
-
-		this.isDbOwner = true;
-		if (!db) {
-			const path = `${getTempDir()}/NasdaqSymbols.sqlite`;
-			this.config = {
-				dialect: "sqlite",
-				url: `file:${path}`,
-				mode: "stateful",
-			};
-		} else if (typeof db === "string") {
-			this.config = {
-				dialect: "sqlite",
-				url:
-					db.startsWith("libsql://") || db.startsWith("file:")
-						? db
-						: `file:${db}`,
-				mode: "stateful",
-			};
-		} else {
-			// This branch handles { dbUrl: string; dbToken: string }
-			const turso = db as { dbUrl: string; dbToken: string };
-			this.config = {
-				dialect: "sqlite",
-				url: turso.dbUrl,
-				authToken: turso.dbToken,
-				mode: "stateful",
-			};
-		}
+		this.storeInjected = isSymbolStore(db);
 	}
 
 	/**
@@ -227,17 +198,17 @@ export class MarketSymbols {
 	}
 
 	/**
-	 * Graceful shutdown – disconnects the database driver if it was created internally.
+	 * Graceful shutdown – closes the store unless it was injected by the caller.
 	 */
 	public async close(): Promise<void> {
-		// Let an in-flight initialization settle so it does not use a nulled-out database.
+		// Let an in-flight initialization settle so it does not use a nulled-out store.
 		await this.initPromise?.catch(() => undefined);
 		this.initPromise = null;
-		if (this.db) {
-			if (this.isDbOwner) {
-				await this.db.disconnect();
+		if (this.store) {
+			if (!this.storeInjected) {
+				await this.store.close();
 			}
-			this.db = null;
+			this.store = null;
 			this.initialized = false;
 		}
 	}
@@ -380,16 +351,9 @@ export class MarketSymbols {
 	 */
 	private async searchDb(symbol: string): Promise<MarketSymbolRow | null> {
 		try {
-			const db = await this.ensureInitialized();
+			const store = await this.ensureInitialized();
 			this.scheduleFreshnessCheck();
-			const result = await db.query<MarketSymbolRow>(
-				"SELECT symbol, type, class, name, ts, active FROM nasdaq_symbols WHERE symbol = ? AND active = true LIMIT 1",
-				[symbol.toUpperCase()],
-			);
-
-			if (result.status === "success" && result.value.rows.length > 0) {
-				return result.value.rows[0] ?? null;
-			}
+			return await this.storeCall(() => store.find(symbol));
 		} catch (e) {
 			marketSymbolsLogger.warn("SearchDb query failed", {
 				symbol,
@@ -404,13 +368,14 @@ export class MarketSymbols {
 	// -----------------------------------------------------------------------
 
 	/**
-	 * Initializes the database driver if not already done.
-	 * Creates the `nasdaq_symbols` table if it doesn't exist.
-	 * Creates an index on the `active` column if it doesn't exist.
+	 * Initializes the store if not already done (schema creation is the store's init()).
 	 * Called automatically on first use, and before any other operations.
 	 */
-	private ensureInitialized(): Promise<Database> {
-		if (this.db && this.initialized) return Promise.resolve(this.db);
+	private ensureInitialized(): Promise<SymbolStore> {
+		if (this.isBreakerOpen()) {
+			return Promise.reject(this.breakerOpenError());
+		}
+		if (this.store && this.initialized) return Promise.resolve(this.store);
 		if (!this.initPromise) {
 			const attempt = this.initialize();
 			this.initPromise = attempt;
@@ -422,31 +387,47 @@ export class MarketSymbols {
 		return this.initPromise;
 	}
 
-	private async initialize(): Promise<Database> {
-		if (!this.db) {
-			if (!this.config) {
-				throw new Error(
-					"MarketSymbols: Database instance not provided and no configuration available.",
-				);
-			}
-			this.db = await createDatabase(this.config);
-		}
-		const db = this.db;
+	private isBreakerOpen(): boolean {
+		return Date.now() < this.breakerOpenUntil;
+	}
 
-		await db.query(`
-			CREATE TABLE IF NOT EXISTS nasdaq_symbols (
-				symbol   TEXT PRIMARY KEY,
-				type     TEXT NOT NULL,
-				class    TEXT NOT NULL,
-				name     TEXT NOT NULL,
-				ts       INTEGER NOT NULL,
-				active   BOOLEAN NOT NULL DEFAULT true
-			)
-		`);
-
-		await db.query(
-			"CREATE INDEX IF NOT EXISTS idx_nasdaq_symbols_active ON nasdaq_symbols(active)",
+	private breakerOpenError(): SymbolStoreUnavailableError {
+		return new SymbolStoreUnavailableError(
+			"Symbol store is unavailable (circuit breaker open)",
 		);
+	}
+
+	/**
+	 * Runs one store call behind the circuit breaker. While the breaker is open the call is not made and
+	 * SymbolStoreUnavailableError is thrown at once; a SymbolStoreUnavailableError from the store opens it.
+	 * Ordinary errors pass through untouched and never open it.
+	 */
+	private async storeCall<T>(fn: () => Promise<T>): Promise<T> {
+		if (this.isBreakerOpen()) throw this.breakerOpenError();
+		try {
+			return await fn();
+		} catch (err) {
+			if (err instanceof SymbolStoreUnavailableError) {
+				// Read lazily so a config change takes effect at the next outage.
+				const periodMs =
+					(ConfigManager.get("markets.nasdaq.symbols.breaker") as
+						| number
+						| undefined) ?? DEFAULT_STORE_BREAKER_MS;
+				this.breakerOpenUntil = Date.now() + periodMs;
+			}
+			throw err;
+		}
+	}
+
+	/** Builds the store from the constructor argument, else from configuration (see symbolStoreFactory). */
+	private resolveStore(): SymbolStore {
+		return createSymbolStore(this.db);
+	}
+
+	private async initialize(): Promise<SymbolStore> {
+		const store = this.store ?? this.resolveStore();
+		this.store = store;
+		await this.storeCall(() => store.init());
 
 		// Auto-refresh on first use if needed. Stale data is served immediately while the
 		// refresh runs in the background; with no data at all the caller waits for the download.
@@ -460,7 +441,7 @@ export class MarketSymbols {
 
 		this.initialized = true;
 		this.lastFreshnessCheckAt = Date.now();
-		return db;
+		return store;
 	}
 
 	/**
@@ -506,15 +487,17 @@ export class MarketSymbols {
 	 * @returns {Promise<boolean>} true if the database needs to be refreshed
 	 */
 	private async needsRefresh(): Promise<boolean> {
-		if (!this.db) return true;
+		if (!this.store) return true;
 
-		const result = await this.db.query<{ max_ts: number | null }>(
-			"SELECT MAX(ts) AS max_ts FROM nasdaq_symbols LIMIT 1",
-		);
-
-		if (result.status === "error") return true;
-
-		const maxTs = result.value.rows[0]?.max_ts;
+		const store = this.store;
+		let maxTs: number | null;
+		try {
+			maxTs = await this.storeCall(() => store.lastRefreshTs());
+		} catch (err) {
+			// An unreachable store is not a stale one: propagate so callers abort instead of downloading.
+			if (err instanceof SymbolStoreUnavailableError) throw err;
+			return true;
+		}
 		if (!maxTs) return true;
 
 		const lastDate = DateTime.fromMillis(maxTs)
@@ -534,7 +517,8 @@ export class MarketSymbols {
 	 */
 	private async performRefresh(): Promise<void> {
 		if (!(await this.needsRefresh())) return;
-		if (!this.db) return;
+		const store = this.store;
+		if (!store) return;
 
 		marketSymbolsLogger.info("Starting full symbol directory refresh");
 
@@ -580,71 +564,7 @@ export class MarketSymbols {
 			ts: now,
 		}));
 
-		const refreshTx = await this.db.transaction(async () => {
-			if (!this.db) throw new Error("Database lost during transaction");
-
-			// db.query reports failures as { status: "error" } instead of throwing, and the transaction
-			// commits whenever this callback returns success. Return the first failure so the whole
-			// refresh (including the deactivation below) rolls back.
-			const deactivated = await this.db.query(
-				"UPDATE nasdaq_symbols SET active = false",
-			);
-			if (deactivated.status === "error") {
-				return {
-					status: "error" as const,
-					reason: deactivated.reason,
-				} as DatabaseResult<null>;
-			}
-
-			// Batch inserts to stay within SQLite parameter limits (max 999)
-			// We have 6 fields per row, so ~150 rows per batch
-			const BATCH_SIZE = 150;
-			for (let i = 0; i < rowsArray.length; i += BATCH_SIZE) {
-				const batch = rowsArray.slice(i, i + BATCH_SIZE);
-				const placeholders = batch
-					.map(() => "(?, ?, ?, ?, ?, true)")
-					.join(", ");
-				const params = batch.flatMap((r) => [
-					r.symbol,
-					r.type,
-					r.class,
-					r.name,
-					r.ts,
-				]);
-
-				const inserted = await this.db.query(
-					`INSERT INTO nasdaq_symbols (symbol, type, class, name, ts, active)
-					 VALUES ${placeholders}
-					 ON CONFLICT(symbol) DO UPDATE SET
-						type   = excluded.type,
-						class  = excluded.class,
-						name   = excluded.name,
-						ts     = excluded.ts,
-						active = true`,
-					params,
-				);
-				if (inserted.status === "error") {
-					return {
-						status: "error" as const,
-						reason: inserted.reason,
-					} as DatabaseResult<null>;
-				}
-			}
-
-			return {
-				status: "success" as const,
-				value: null,
-			} as DatabaseResult<null>;
-		});
-
-		if (refreshTx.status === "error") {
-			throw new Error(
-				"Symbol refresh failed; the transaction was rolled back",
-				{
-					cause: refreshTx.reason,
-				},
-			);
-		}
+		await this.storeCall(() => store.replaceAll(rowsArray, now));
 	}
 
 	/**
@@ -756,16 +676,15 @@ export class MarketSymbols {
 	 * @returns {Promise<boolean>} true if there is any existing data, false otherwise
 	 */
 	private async hasExistingData(): Promise<boolean> {
-		if (!this.db) return false;
-
-		const res = await this.db.query<{ count: number }>(
-			"SELECT COUNT(*) AS count FROM nasdaq_symbols LIMIT 1",
-		);
-
-		if (res.status === "success") {
-			return (res.value.rows[0]?.count ?? 0) > 0;
+		if (!this.store) return false;
+		const store = this.store;
+		try {
+			return (await this.storeCall(() => store.count())) > 0;
+		} catch (err) {
+			// An unreachable store is not an empty one: propagate so callers abort instead of downloading.
+			if (err instanceof SymbolStoreUnavailableError) throw err;
+			return false;
 		}
-		return false;
 	}
 
 	/**

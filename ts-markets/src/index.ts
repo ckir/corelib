@@ -79,4 +79,8 @@ export {
 	type MarketPhase,
 } from "./nasdaq/MarketMonitor";
 export { MarketStatus, type NasdaqMarketInfo } from "./nasdaq/MarketStatus";
+export {
+	type SymbolStore,
+	SymbolStoreUnavailableError,
+} from "./nasdaq/symbolStore";
 export { type MarketSymbolRow, MarketSymbols };

@@ -41,6 +41,8 @@ export default defineConfig([
 			"postgres",
 			// FTP client for the symbol directory (ts-markets loads it only for ftp:// URLs, never on the edge).
 			"basic-ftp",
+			// MongoDB driver (ts-markets loads it only for a mongodb:// symbol store, never on the edge).
+			"mongodb",
 		],
 		define: { __EDGE_RUNTIME__: "true" },
 		shims: true,

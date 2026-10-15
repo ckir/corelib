@@ -15,7 +15,18 @@
         "otherListedFallbackUrl": "https://www.nasdaqtrader.com/dynamic/symdir/otherlisted.txt",
         "initialBackoffMs": 1000,
         "maxRetryBackoffMs": 3600000,
-        "maxFetchRetries": 10
+        "maxFetchRetries": 10,
+        "breaker": 30000,
+        "store": "sqlite",
+        "turso": {
+          "urlEnv": "CORELIB_TURSO_URL",
+          "tokenEnv": "CORELIB_TURSO_TOKEN"
+        },
+        "mongodb": {
+          "uriEnv": "MONGODB_URI",
+          "database": "corelib",
+          "collection": "nasdaq_symbols"
+        }
       },
       "quotes": {
         "concurrencyLimit": 5
