@@ -277,6 +277,37 @@ describe("credential safety of the logged host", () => {
 		expect(logged).not.toContain("pa");
 		expect(logged).not.toContain("ss");
 		expect(logged).not.toContain("u:");
+		expect(mocks.info).toHaveBeenCalledWith("Symbol store selected", {
+			backend: "mongodb",
+		});
+	});
+
+	it.each([
+		["mongodb://h/db?authSource=x@y", ["x@", "@y"]],
+		["mongodb://h/?tlsCertificateKeyFilePassword=pa@ss", ["pa", "ss"]],
+		["libsql://db.turso.io?authToken=abc@def", ["abc", "def"]],
+		["mongodb://h/db#f@g", ["f@", "@g"]],
+		["mongodb://u:p@w/ss@h", ["ss"]],
+	])("logs no host when an @ follows the authority: %s", (uri, forbidden) => {
+		createSymbolStore(uri);
+		const call = mocks.info.mock.calls[0] as [string, Record<string, string>];
+		expect(call[1]).not.toHaveProperty("host");
+		const logged = JSON.stringify(call);
+		for (const f of forbidden) expect(logged).not.toContain(f);
+		expect(logged).not.toContain('"w"');
+	});
+
+	it.each([
+		["mongodb://u:p@h1:27017,h2:27017/db", "h1:27017,h2:27017"],
+		["mongodb://u:p%2Fw%40x@h1/db", "h1"],
+		["mongodb://[::1]:27017/db", "[::1]:27017"],
+		["mongodb+srv://u:p@c.example.net/db", "c.example.net"],
+		["libsql://db.turso.io?authToken=abc.def.ghi", "db.turso.io"],
+		["mongodb://h1", "h1"],
+	])("still logs the host of %s", (uri, host) => {
+		createSymbolStore(uri);
+		const call = mocks.info.mock.calls[0] as [string, Record<string, string>];
+		expect(call[1].host).toBe(host);
 	});
 
 	it("still logs the hosts of a multi-host URI with an escaped password", () => {

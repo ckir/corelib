@@ -73,9 +73,11 @@ function configString(path: string, fallback: string): string {
 function hostsOf(url: string): string | undefined {
 	const schemeEnd = url.indexOf("://");
 	const rest = schemeEnd >= 0 ? url.slice(schemeEnd + 3) : url;
-	// Credentials end at the LAST "@" (a malformed password may hold an unescaped "/", "?" or "#").
-	const afterCredentials = rest.slice(rest.lastIndexOf("@") + 1);
-	const hosts = afterCredentials.split(/[/?#]/, 1)[0] ?? "";
+	const cut = rest.search(/[/?#]/);
+	const authority = cut < 0 ? rest : rest.slice(0, cut);
+	// An "@" after the authority (path, query, fragment) means the URL is not in a shape we can trust.
+	if (cut >= 0 && rest.slice(cut).includes("@")) return undefined;
+	const hosts = authority.slice(authority.lastIndexOf("@") + 1);
 	return /^[A-Za-z0-9._\-[\]:,]+$/.test(hosts) ? hosts : undefined;
 }
 
