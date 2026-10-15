@@ -66,13 +66,17 @@ function configString(path: string, fallback: string): string {
 	return typeof v === "string" && v !== "" ? v : fallback;
 }
 
-/** Host(s) of a connection URL; never the credentials, path, query string or token. */
+/**
+ * Host(s) of a connection URL; never the credentials, path, query string or token. Anything that is not
+ * a plain host list yields no host at all (never a best-effort fragment).
+ */
 function hostsOf(url: string): string | undefined {
 	const schemeEnd = url.indexOf("://");
 	const rest = schemeEnd >= 0 ? url.slice(schemeEnd + 3) : url;
-	const authority = rest.split(/[/?#]/, 1)[0] ?? "";
-	const hosts = authority.slice(authority.lastIndexOf("@") + 1);
-	return hosts === "" ? undefined : hosts;
+	// Credentials end at the LAST "@" (a malformed password may hold an unescaped "/", "?" or "#").
+	const afterCredentials = rest.slice(rest.lastIndexOf("@") + 1);
+	const hosts = afterCredentials.split(/[/?#]/, 1)[0] ?? "";
+	return /^[A-Za-z0-9._\-[\]:,]+$/.test(hosts) ? hosts : undefined;
 }
 
 function logSelected(backend: Backend, url?: string): void {
@@ -215,5 +219,5 @@ function fromConfig(): SymbolStore {
  */
 export function createSymbolStore(arg: StoreArg): SymbolStore {
 	// An empty string was "no argument" before (falsy), so it still means the configured default.
-	return arg === undefined || arg === "" ? fromConfig() : fromArgument(arg);
+	return arg == null || arg === "" ? fromConfig() : fromArgument(arg);
 }

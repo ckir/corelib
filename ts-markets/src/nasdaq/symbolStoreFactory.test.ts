@@ -11,10 +11,24 @@ import type { SymbolStore } from "./symbolStore";
 import { createSymbolStore } from "./symbolStoreFactory";
 
 const mocks = vi.hoisted(() => ({
+	mongoCtor: vi.fn(),
 	getEnv: vi.fn(),
 	detectRuntime: vi.fn(),
 	info: vi.fn(),
 }));
+
+vi.mock("./mongoSymbolStore", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("./mongoSymbolStore")>();
+	class SpyMongoSymbolStore extends actual.MongoSymbolStore {
+		constructor(
+			options: ConstructorParameters<typeof actual.MongoSymbolStore>[0],
+		) {
+			mocks.mongoCtor(options);
+			super(options);
+		}
+	}
+	return { ...actual, MongoSymbolStore: SpyMongoSymbolStore };
+});
 
 vi.mock("@ckirg/corelib", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("@ckirg/corelib")>();
@@ -38,6 +52,7 @@ let env: Record<string, string | undefined>;
 beforeEach(() => {
 	vi.restoreAllMocks();
 	mocks.info.mockReset();
+	mocks.mongoCtor.mockReset();
 	config = {};
 	env = {};
 	mocks.getEnv.mockImplementation((k: string) => env[k]);
@@ -248,5 +263,77 @@ describe("createSymbolStore from config", () => {
 			/markets\.nasdaq\.symbols\.store.*"sqlite".*"turso".*"mongodb"|sqlite.*turso.*mongodb/s,
 		);
 		expect(() => createSymbolStore(undefined)).toThrow(/postgres/);
+	});
+});
+
+describe("credential safety of the logged host", () => {
+	it.each([
+		"mongodb://u:pa/ss@h1/db",
+		"mongodb://u:pa?ss@h1",
+		"mongodb://u:pa#ss@h1",
+	])("never logs a fragment of the credentials for %s", (uri) => {
+		createSymbolStore(uri);
+		const logged = JSON.stringify(mocks.info.mock.calls);
+		expect(logged).not.toContain("pa");
+		expect(logged).not.toContain("ss");
+		expect(logged).not.toContain("u:");
+	});
+
+	it("still logs the hosts of a multi-host URI with an escaped password", () => {
+		createSymbolStore("mongodb://u:p%2Fw@h1:27017,h2:27017/db");
+		expect(mocks.info).toHaveBeenCalledWith("Symbol store selected", {
+			backend: "mongodb",
+			host: "h1:27017,h2:27017",
+		});
+	});
+
+	it("logs the host of an srv URI", () => {
+		createSymbolStore("mongodb+srv://u:p@cluster.example.net/db");
+		expect(mocks.info).toHaveBeenCalledWith("Symbol store selected", {
+			backend: "mongodb",
+			host: "cluster.example.net",
+		});
+	});
+
+	it("omits host when the host part is not a plain host list", () => {
+		createSymbolStore("mongodb://u:p@h 1/db");
+		expect(mocks.info).toHaveBeenCalledWith("Symbol store selected", {
+			backend: "mongodb",
+		});
+	});
+});
+
+describe("null and config passthrough", () => {
+	it("treats null like no argument", () => {
+		createSymbolStore(null as unknown as undefined);
+		expect(SqlSymbolStore.fromConfig).toHaveBeenCalledWith({
+			dialect: "sqlite",
+			url: `file:${getTempDir()}/NasdaqSymbols.sqlite`,
+			mode: "stateful",
+		});
+	});
+
+	it("passes the configured database and collection to MongoSymbolStore (config form)", () => {
+		config["markets.nasdaq.symbols.store"] = "mongodb";
+		config["markets.nasdaq.symbols.mongodb.database"] = "dbX";
+		config["markets.nasdaq.symbols.mongodb.collection"] = "colY";
+		env.MONGODB_URI = "mongodb://h1/";
+		createSymbolStore(undefined);
+		expect(mocks.mongoCtor).toHaveBeenCalledWith({
+			uri: "mongodb://h1/",
+			defaultDatabase: "dbX",
+			collection: "colY",
+		});
+	});
+
+	it("passes the configured database and collection to MongoSymbolStore (string form)", () => {
+		config["markets.nasdaq.symbols.mongodb.database"] = "dbX";
+		config["markets.nasdaq.symbols.mongodb.collection"] = "colY";
+		createSymbolStore("mongodb://h1/");
+		expect(mocks.mongoCtor).toHaveBeenCalledWith({
+			uri: "mongodb://h1/",
+			defaultDatabase: "dbX",
+			collection: "colY",
+		});
 	});
 });
