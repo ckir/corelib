@@ -22,7 +22,12 @@ pid_alive() {
 	[ -f "$PIDFILE" ] || return 1
 	pid="$(cat "$PIDFILE" 2>/dev/null || true)"
 	[[ "$pid" =~ ^[0-9]+$ ]] || return 1
-	kill -0 "$pid" 2>/dev/null
+	kill -0 "$pid" 2>/dev/null || return 1
+	# A recycled PID may belong to an unrelated process: only a process named mongod counts as ours.
+	local comm
+	comm="$(ps -p "$pid" -o comm= 2>/dev/null || true)"
+	comm="${comm//[[:space:]]/}"
+	[ "$comm" = "mongod" ]
 }
 
 ping_ok() {
@@ -51,7 +56,8 @@ cmd_start() {
 		fi
 		sleep 1
 	done
-	echo "mongod did not become ready within 30 s; see $LOGFILE" >&2
+	echo "mongod did not become ready within 30 s; last log lines of $LOGFILE:" >&2
+	tail -n 20 "$LOGFILE" >&2 || true
 	cmd_stop || true
 	return 1
 }
