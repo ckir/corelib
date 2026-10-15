@@ -89,7 +89,7 @@ markets/nasdaq/status, markets/nasdaq/historical, sql, tests}` plus `/health`; p
   deps aliased to `server-dep-stub.mjs`), AWS Lambda (`platform/aws/handler.ts`),
   Cloud Run (`platform/cloudrun/server.ts` on `:3000`, own `Dockerfile`).
 
-## 7. Rust core (`rust/`, `corelib-rust v0.3.1`, edition 2021)
+## 7. Rust core (`rust/`, `corelib-rust v0.3.2`, edition 2021)
 
 - `[lib] crate-type = [cdylib, rlib]`; N-API via `napi 3.9` + `napi-derive`, `napi-build` setup
   in `build.rs`. Feature seam: `default = [finnhub, napi]` with a `compile_error!` tripwire
