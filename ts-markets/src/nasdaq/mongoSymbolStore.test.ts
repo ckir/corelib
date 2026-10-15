@@ -141,7 +141,7 @@ describeMongo("MongoSymbolStore (real MongoDB)", (uri) => {
 		expect(await reader.count()).toBe(bRows.length);
 	});
 
-	it("a refresh that dies before the flip leaves the old set visible and the orphan rows are pruned by the next successful refresh", async () => {
+	it("a refresh that dies before the flip leaves the old set visible; the orphan rows are unreachable at once and are removed within two successful refreshes (pruning keeps the previous generation)", async () => {
 		const c = nextCollection();
 		const good = make(c);
 		await good.replaceAll([row("OLD1", 1), row("OLD2", 1)], 1);
