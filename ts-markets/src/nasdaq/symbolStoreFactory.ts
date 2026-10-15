@@ -66,19 +66,24 @@ function configString(path: string, fallback: string): string {
 	return typeof v === "string" && v !== "" ? v : fallback;
 }
 
+const HOST_ENTRY = /^(?:[A-Za-z0-9._-]+|\[[0-9A-Fa-f:.]+\])(?::[0-9]+)?$/;
+
 /**
  * Host(s) of a connection URL; never the credentials, path, query string or token. Anything that is not
  * a plain host list yields no host at all (never a best-effort fragment).
  */
 function hostsOf(url: string): string | undefined {
 	const schemeEnd = url.indexOf("://");
-	const rest = schemeEnd >= 0 ? url.slice(schemeEnd + 3) : url;
+	// Without a scheme the string is not a connection URL we can reason about (it may be a bare secret).
+	if (schemeEnd < 0) return undefined;
+	const rest = url.slice(schemeEnd + 3);
 	const cut = rest.search(/[/?#]/);
 	const authority = cut < 0 ? rest : rest.slice(0, cut);
 	// An "@" after the authority (path, query, fragment) means the URL is not in a shape we can trust.
 	if (cut >= 0 && rest.slice(cut).includes("@")) return undefined;
 	const hosts = authority.slice(authority.lastIndexOf("@") + 1);
-	return /^[A-Za-z0-9._\-[\]:,]+$/.test(hosts) ? hosts : undefined;
+	// Every entry must be a hostname/IPv4 or a bracketed IPv6, optionally followed by a numeric port.
+	return hosts.split(",").every((h) => HOST_ENTRY.test(h)) ? hosts : undefined;
 }
 
 function logSelected(backend: Backend, url?: string): void {

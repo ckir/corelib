@@ -334,6 +334,42 @@ describe("credential safety of the logged host", () => {
 	});
 });
 
+describe("host is logged only for a scheme-qualified host list", () => {
+	it.each([
+		"hunter2",
+		"abc.def.ghi",
+		"admin:hunter2",
+		"mongodb://admin:hunter2",
+		"mongodb://h1:27017,h2:abc/db",
+		"mongodb://h1:/db",
+		"mongodb://[::1]:abc/db",
+		"mongodb://a,/db",
+	])("logs no host for %s", (value) => {
+		env.MONGODB_URI = value;
+		config["markets.nasdaq.symbols.store"] = "mongodb";
+		createSymbolStore(undefined);
+		const call = mocks.info.mock.calls[0] as [string, Record<string, string>];
+		expect(call[1]).not.toHaveProperty("host");
+		const logged = JSON.stringify(call);
+		for (const f of ["hunter2", "abc.def.ghi", "admin"])
+			expect(logged).not.toContain(f);
+	});
+
+	it("logs no host for a scheme-less string passed as an argument either", () => {
+		createSymbolStore("libsql:hunter2");
+		const call = mocks.info.mock.calls[0] as [string, Record<string, string>];
+		expect(call[1]).not.toHaveProperty("host");
+	});
+
+	it("still treats mongodb://secret as a plain host (indistinguishable from a hostname)", () => {
+		createSymbolStore("mongodb://secret");
+		expect(mocks.info).toHaveBeenCalledWith("Symbol store selected", {
+			backend: "mongodb",
+			host: "secret",
+		});
+	});
+});
+
 describe("null and config passthrough", () => {
 	it("treats null like no argument", () => {
 		createSymbolStore(null as unknown as undefined);
