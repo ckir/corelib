@@ -8,13 +8,13 @@ jobs:
   run-probe:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with: { ref: "${{ inputs.commit }}" }
       - name: Install pinned Rust toolchain (rust-toolchain.toml)
         uses: ./.github/actions/setup-rust
-      - uses: pnpm/action-setup@v5
+      - uses: pnpm/action-setup@v6
         with: { version: 11.5.2 }
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with: { node-version: 24, cache: 'pnpm' }
       - run: pnpm install
       - name: Run probe (prints a machine-parseable RESULT line)
