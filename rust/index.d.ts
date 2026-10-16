@@ -21,7 +21,7 @@ export declare class AlpacaStreaming {
    * Order: (on_log, on_pricing, on_event, [on_market_event]). `on_market_event` is optional —
    * pass it to also receive the unified `"market"` stream.
    */
-  constructor(onLog: ((err: Error | null, arg: LogRecord) => any), onPricing: ((err: Error | null, arg: AlpacaPricingData) => unknown), onEvent: ((err: Error | null, arg: EventRecord) => any), onMarketEvent?: (((err: Error | null, arg: string) => unknown)) | undefined | null)
+  constructor(onLog: ((err: Error | null, arg: LogRecord) => unknown), onPricing: ((err: Error | null, arg: AlpacaPricingData) => unknown), onEvent: ((err: Error | null, arg: EventRecord) => unknown), onMarketEvent?: (((err: Error | null, arg: string) => unknown)) | undefined | null)
   /** Set config (keys fall back to `APCA_API_KEY_ID` / `APCA_API_SECRET_KEY` env at `start`). */
   init(config: AlpacaConfig): Promise<void>
   /** Start streaming; the driver resumes persisted subscriptions (redb) on every (re)connect. */
@@ -53,7 +53,7 @@ export declare class FinnhubStreaming {
    * Order matches `AlpacaStreaming`: (on_log, on_pricing, on_event, [on_market_event]).
    * `on_market_event` is optional — pass it to also receive the unified `"market"` stream.
    */
-  constructor(onLog: ((err: Error | null, arg: LogRecord) => any), onPricing: ((err: Error | null, arg: FinnhubPricingData) => unknown), onEvent: ((err: Error | null, arg: EventRecord) => any), onMarketEvent?: (((err: Error | null, arg: string) => unknown)) | undefined | null)
+  constructor(onLog: ((err: Error | null, arg: LogRecord) => unknown), onPricing: ((err: Error | null, arg: FinnhubPricingData) => unknown), onEvent: ((err: Error | null, arg: EventRecord) => unknown), onMarketEvent?: (((err: Error | null, arg: string) => unknown)) | undefined | null)
   /** Set token/name (token falls back to `FINNHUB_API_KEY` env var). */
   init(config: FinnhubConfig): Promise<void>
   /** Start streaming; resumes any persisted subscriptions (redb) as the initial symbol set. */
@@ -83,7 +83,7 @@ export declare class YahooStreaming {
    * Order: (on_log, on_pricing, on_event, [on_market_event]). `on_market_event` is optional —
    * pass it to also receive the unified `"market"` stream.
    */
-  constructor(onLog: ((err: Error | null, arg: LogRecord) => any), onPricing: ((err: Error | null, arg: JsPricingData) => unknown), onEvent: ((err: Error | null, arg: EventRecord) => any), onMarketEvent?: (((err: Error | null, arg: string) => unknown)) | undefined | null)
+  constructor(onLog: ((err: Error | null, arg: LogRecord) => unknown), onPricing: ((err: Error | null, arg: JsPricingData) => unknown), onEvent: ((err: Error | null, arg: EventRecord) => unknown), onMarketEvent?: (((err: Error | null, arg: string) => unknown)) | undefined | null)
   /** Set config (silence threshold / optional base_url override). */
   init(config: YahooConfig): Promise<void>
   /** Start streaming; the driver resumes persisted subscriptions (redb) on every (re)connect. */

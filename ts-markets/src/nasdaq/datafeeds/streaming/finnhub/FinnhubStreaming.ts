@@ -8,6 +8,7 @@ import {
 	nextCid,
 } from "@ckirg/corelib";
 import { createNativeCallbacks } from "../nativeCallbacks.js";
+import { ProcessKeepAlive } from "../ProcessKeepAlive.js";
 import { StreamHealthTracker } from "../StreamHealthTracker.js";
 import type { FinnhubPricingData } from "../types.js";
 
@@ -35,6 +36,7 @@ export interface FinnhubConfig {
 export class FinnhubStreaming extends EventEmitter {
 	private rust: FinnhubStreamingFFI;
 	private initialized = false;
+	private readonly keepAlive = new ProcessKeepAlive();
 	private readonly health = new StreamHealthTracker(
 		"finnhub",
 		finnhubStreamingLogger,
@@ -84,6 +86,7 @@ export class FinnhubStreaming extends EventEmitter {
 		if (!this.initialized) await this.init();
 		await this.rust.start();
 		this.health.start();
+		this.keepAlive.hold();
 	}
 	async subscribe(symbols: string[]): Promise<void> {
 		await this.rust.subscribe(symbols);
@@ -104,9 +107,11 @@ export class FinnhubStreaming extends EventEmitter {
 	async stop(): Promise<void> {
 		finnhubStreamingLogger.trace("stream: stop", { feed: "finnhub" });
 		this.health.stop();
+		this.keepAlive.release();
 		await this.rust.stop();
 	}
 	async clean(): Promise<void> {
+		this.keepAlive.release();
 		await this.rust.clean();
 	}
 }

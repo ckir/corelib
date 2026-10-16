@@ -131,7 +131,11 @@ use tokio::sync::Mutex;
 
 /// Bounded TSFN (Epic 5 ffi-tsfn-queue-unbounded): caps the off-heap queue at 1024; NonBlocking
 /// delivery drops on overflow. Used for the high-rate market-data callbacks only.
-type BoundedTsfn<T> = ThreadsafeFunction<T, Unknown<'static>, T, Status, true, false, 1024>;
+type BoundedTsfn<T> = ThreadsafeFunction<T, Unknown<'static>, T, Status, true, true, 1024>;
+// Weak (unref'd at creation): a strong ThreadsafeFunction keeps Node's event loop alive from
+// construction, so a process that merely constructs a streamer (or has stopped it) could never exit.
+// The JS wrapper keeps the loop alive explicitly while a feed is running (see start()/stop()).
+type WeakTsfn<T> = ThreadsafeFunction<T, Unknown<'static>, T, Status, true, true, 0>;
 
 /// Configuration for the Finnhub streaming facade. Token masked in Debug output.
 #[napi(object)]
@@ -171,9 +175,9 @@ struct FinnhubInner {
 #[napi]
 pub struct FinnhubStreaming {
     inner: Arc<Mutex<FinnhubInner>>,
-    on_log: Arc<ThreadsafeFunction<LogRecord>>,
+    on_log: Arc<WeakTsfn<LogRecord>>,
     on_pricing: Arc<BoundedTsfn<FinnhubPricingData>>,
-    on_event: Arc<ThreadsafeFunction<EventRecord>>,
+    on_event: Arc<WeakTsfn<EventRecord>>,
     /// Optional unified-event sink: receives the finstream-superset `MarketEvent` as a JSON string.
     /// Absent when JS constructs with only 3 callbacks (back-compat).
     on_market_event: Option<Arc<BoundedTsfn<String>>>,
@@ -186,19 +190,27 @@ impl FinnhubStreaming {
     /// `on_market_event` is optional — pass it to also receive the unified `"market"` stream.
     #[napi(constructor)]
     pub fn new(
-        on_log: ThreadsafeFunction<LogRecord>,
+        on_log: ThreadsafeFunction<LogRecord, Unknown<'static>, LogRecord, Status, true, true, 0>,
         on_pricing: ThreadsafeFunction<
             FinnhubPricingData,
             Unknown<'static>,
             FinnhubPricingData,
             Status,
             true,
-            false,
+            true,
             1024,
         >,
-        on_event: ThreadsafeFunction<EventRecord>,
+        on_event: ThreadsafeFunction<
+            EventRecord,
+            Unknown<'static>,
+            EventRecord,
+            Status,
+            true,
+            true,
+            0,
+        >,
         on_market_event: Option<
-            ThreadsafeFunction<String, Unknown<'static>, String, Status, true, false, 1024>,
+            ThreadsafeFunction<String, Unknown<'static>, String, Status, true, true, 1024>,
         >,
     ) -> napi::Result<Self> {
         let host = WebsocketStreamerHost::new(
