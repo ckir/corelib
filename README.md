@@ -61,7 +61,7 @@ graph TD
 
 ## 📦 Installation for External Projects
 
-These packages are published to the **public npm registry** under the `@ckir` scope.
+These packages are published to the **public npm registry** under the `@ckirg` scope.
 
 ### 1. Install
 ```bash
@@ -96,7 +96,7 @@ npm install @ckirg/corelib @ckirg/corelib-markets
 
 ### Prerequisites
 - [Node.js](https://nodejs.org/) (v24+ recommended)
-- [pnpm](https://pnpm.io/) (v10+ required)
+- [pnpm](https://pnpm.io/) (v11.5+ required)
 - [Rust](https://rust-lang.org/) (for native module builds)
 
 ### Common Commands

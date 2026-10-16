@@ -1,0 +1,786 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>corelib User Guide</title>
+<style>
+@page { size: A4; margin: 18mm 16mm; }
+body { font: 10.5pt/1.5 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color:#1b1f24; }
+h1 { font-size: 24pt; margin: 0 0 4pt; } h2 { font-size: 16pt; border-bottom: 1px solid #d0d7de; padding-bottom: 3pt; margin-top: 22pt; break-after: avoid; }
+h3 { font-size: 12.5pt; margin-top: 14pt; break-after: avoid; }
+h4 { font-size: 10.5pt; margin: 12pt 0 3pt; break-after: avoid; }
+h4 .tag { font: 600 7.5pt sans-serif; padding: 1pt 5pt; border-radius: 8pt; margin-left: 6pt; vertical-align: 1pt; }
+h4 .ran { background:#dafbe1; color:#116329; } h4 .ill { background:#fff8c5; color:#7d4e00; }
+pre { background:#f6f8fa; border:1px solid #d0d7de; border-radius:5px; padding:8pt 10pt; font: 9pt/1.4 "DejaVu Sans Mono", Menlo, Consolas, monospace; white-space: pre-wrap; word-wrap: break-word; break-inside: avoid; }
+code { font: 9.5pt "DejaVu Sans Mono", Menlo, Consolas, monospace; background:#f6f8fa; padding:1pt 3pt; border-radius:3px; } pre code { background:none; padding:0; }
+table { border-collapse: collapse; width:100%; margin: 8pt 0; break-inside: avoid; } th,td { border:1px solid #d0d7de; padding:4pt 7pt; text-align:left; vertical-align:top; } th { background:#f6f8fa; }
+.output::before { content:"Output"; display:block; font:600 8pt sans-serif; color:#57606a; margin-bottom:3pt; }
+.output { background:#fff; border-left:3px solid #2da44e; }
+.output.illus::before { content:"Output (illustrative)"; color:#7d4e00; } .output.illus { border-left-color:#bf8700; }
+.note { border-left:3px solid #0969da; background:#ddf4ff; padding:6pt 10pt; margin:8pt 0; break-inside: avoid; }
+.warn { border-left:3px solid #bf8700; background:#fff8c5; padding:6pt 10pt; margin:8pt 0; break-inside: avoid; }
+.cover { padding: 60mm 0 20mm; break-after: page; } .cover .sub { color:#57606a; font-size:13pt; }
+nav.toc { break-after: page; } nav.toc ol { line-height:1.9; }
+a { color:#0969da; text-decoration:none; }
+</style></head><body>
+<section class="cover"><h1>corelib</h1><div class="sub">User Guide &middot; version 0.4.0 &middot; 2026-10-16</div>
+<p class="sub" style="font-size:10.5pt">A multi-runtime TypeScript toolkit: resilient HTTP, logging, configuration and databases (<code>@ckirg/corelib</code>), Nasdaq market data and streaming (<code>@ckirg/corelib-markets</code>), and an edge proxy service (<code>@ckirg/corelib-cloud</code>).</p>
+<p style="font-size:9.5pt;color:#57606a">Example convention: a heading tagged <b>ran locally</b> was executed against the repository's built packages (using local stub servers and scratch files; the output shown is real, with timestamps, ports and ANSI colours trimmed). A heading tagged <b>illustrative</b> needs credentials, a paid or public network service, or a deployment, so it was not run and its output is omitted or marked illustrative.</p></section>
+
+<nav class="toc"><h2>Contents</h2><ol>
+<li><a href="#overview">Overview</a></li>
+<li><a href="#install">Installation and requirements</a></li>
+<li><a href="#quickstart">Quick start</a></li>
+<li><a href="#concepts">Core concepts</a></li>
+<li><a href="#http">HTTP requests: endPoint, endPoints, RequestProxied</a></li>
+<li><a href="#logging">Logging</a></li>
+<li><a href="#config">Configuration with ConfigManager</a></li>
+<li><a href="#db">Databases</a></li>
+<li><a href="#utils">Runtime utilities, cron and the native core</a></li>
+<li><a href="#markets">Market data (corelib-markets)</a></li>
+<li><a href="#cloud">Edge proxy service (corelib-cloud)</a></li>
+<li><a href="#confref">Configuration reference</a></li>
+<li><a href="#recipes">Recipes</a></li>
+<li><a href="#trouble">Troubleshooting</a></li>
+<li><a href="#discrep">Where the docs and the code disagree</a></li>
+<li><a href="#quickref">Appendix: quick reference</a></li>
+</ol></nav>
+
+<h2 id="overview">1. Overview</h2>
+<p>corelib is a pnpm monorepo that publishes three npm packages for Node.js (24+), Bun and Deno, plus a Rust native addon that the TypeScript packages load over N-API.</p>
+<table>
+<tr><th>Package</th><th>Use it for</th></tr>
+<tr><td><code>@ckirg/corelib</code></td><td>Resilient HTTP (<code>endPoint</code>, <code>endPoints</code>, <code>RequestProxied</code>), structured <code>logger</code>, <code>ConfigManager</code>, SQLite/PostgreSQL <code>createDatabase</code>, runtime helpers, cron include/exclude, native <code>Core</code>.</td></tr>
+<tr><td><code>@ckirg/corelib-markets</code></td><td>Nasdaq market status and monitor, symbol directory (<code>MarketSymbols</code>), CNN Fear and Greed, Yahoo historical data, Nasdaq 100 list, real-time Alpaca / Finnhub / Yahoo streaming.</td></tr>
+<tr><td><code>@ckirg/corelib-cloud</code></td><td>A Hono application (<code>createRouter</code>) that exposes the above as an authenticated HTTP service on Cloudflare Workers, AWS Lambda or Cloud Run.</td></tr>
+</table>
+<p>This guide is for application developers who consume these packages. It does not cover contributing to the repository.</p>
+
+<h4>Smallest useful program <span class="tag ran">ran locally</span></h4>
+<pre><code>// hello.mjs
+import { detectRuntime, getMode, getPlatform, sleep, Core } from '@ckirg/corelib';
+
+console.log(detectRuntime(), getMode(), getPlatform());
+const t = Date.now();
+await sleep(100);
+console.log('slept at least 95 ms:', Date.now() - t &gt;= 95);
+console.log('native addon loaded:', Core.isFfiAvailable());</code></pre>
+<pre class="output">node development linux
+slept at least 95 ms: true
+native addon loaded: true</pre>
+
+<h2 id="install">2. Installation and requirements</h2>
+<table>
+<tr><th>Requirement</th><th>Value (from the repo manifests)</th></tr>
+<tr><td>Node.js</td><td>24 or newer (<code>engines.node &gt;=24</code>). Bun 1.1+ and Deno 2.0+ are supported by the isomorphic core.</td></tr>
+<tr><td>Package manager for this monorepo</td><td>pnpm 11.5.2 (<code>packageManager</code> field)</td></tr>
+<tr><td>Module system</td><td>ESM only (<code>"type": "module"</code>). Use <code>.mjs</code> files or <code>"type": "module"</code> in your <code>package.json</code>.</td></tr>
+<tr><td>Native binary</td><td>Prebuilt <code>corelib-rust-*.node</code> for linux-x64, linux-arm64, win32-x64, darwin-x64, darwin-arm64, fetched by a <code>postinstall</code> script.</td></tr>
+</table>
+
+<h4>Install into your application <span class="tag ill">illustrative</span></h4>
+<pre><code>npm install @ckirg/corelib @ckirg/corelib-markets
+# or: pnpm add @ckirg/corelib @ckirg/corelib-markets
+# or: bun add  @ckirg/corelib @ckirg/corelib-markets</code></pre>
+<p>Not run: it needs the network. <code>@ckirg/corelib-markets</code> depends on a package from JSR, so add this line to your project's <code>.npmrc</code> first, or the install fails with a 404 on the transitive <code>@jsr/...</code> package:</p>
+<pre><code>@jsr:registry=https://npm.jsr.io</code></pre>
+
+<h4>Native binary caveats <span class="tag ill">illustrative</span></h4>
+<ul>
+<li><b>Bun</b> blocks dependency postinstall scripts. Add <code>"trustedDependencies": ["@ckirg/corelib"]</code> to your <code>package.json</code>.</li>
+<li>The postinstall <b>skips</b> the download when <code>MODE=development</code> or under GitHub Actions. Do not put <code>MODE=development</code> in a consuming app's <code>.env</code>.</li>
+<li>Fetch it manually if it was skipped: <code>node node_modules/@ckirg/corelib/scripts/postinstall.js</code></li>
+<li>If the binary is missing the library still loads; only the native features (<code>Core</code>, streaming) are disabled. Check <code>Core.isFfiAvailable()</code>.</li>
+</ul>
+<div class="warn">The per-package READMEs still say the packages are "Not on the public npm registry" and (ts-core, ts-markets) show a v0.1.17 tarball URL. The root README and the current release (0.4.0) say they are on npm. See section 15.</div>
+
+<h4>Working from a clone of the monorepo <span class="tag ill">illustrative</span></h4>
+<pre><code>pnpm install
+pnpm build-all        # tsup builds every package into dist/
+pnpm test-all:run     # one-shot test run
+pnpm typecheck-all</code></pre>
+<p>The examples in this guide were run against the already-built <code>dist/</code> folders of a clone, without modifying it.</p>
+
+<h2 id="quickstart">3. Quick start</h2>
+<h4>First resilient request, with a result you can branch on <span class="tag ran">ran locally</span></h4>
+<p>A throw-away local server stands in for a real API so the example is self-contained. Replace the URL with your own.</p>
+<pre><code>// quick.mjs
+import http from 'node:http';
+import { endPoint } from '@ckirg/corelib';
+
+const srv = http.createServer((req, res) =&gt; {
+  res.setHeader('content-type', 'application/json');
+  res.end(JSON.stringify({ symbol: 'AAPL', price: 189.5 }));
+}).listen(0, async () =&gt; {
+  const result = await endPoint(`http://127.0.0.1:${srv.address().port}/quote/AAPL`);
+  if (result.status === 'success') {
+    console.log(result.value.status, result.value.body);
+  } else {
+    console.error('failed:', result.reason);
+  }
+  srv.close();
+});</code></pre>
+<pre class="output">200 { symbol: 'AAPL', price: 189.5 }</pre>
+<p>That is the whole pattern: nothing throws, every call returns <code>{ status: 'success', value }</code> or <code>{ status: 'error', reason }</code>.</p>
+
+<h2 id="concepts">4. Core concepts</h2>
+<ul>
+<li><b>Result unions instead of exceptions.</b> HTTP calls return <code>RequestResult</code> (<code>value</code> is a <code>SerializedResponse</code> with <code>ok, status, statusText, headers, url, redirected, type, body</code> and a <code>cid</code> correlation id). Database calls return <code>DatabaseResult</code>. Market calls return similar unions. Always branch on <code>status</code>.</li>
+<li><b>Layered configuration.</b> Priority is CLI flags &gt; <code>CORELIB_*</code> environment variables &gt; config file &gt; built-in defaults (section 7).</li>
+<li><b>Runtime detection.</b> The logger and several helpers choose an implementation for node, bun, deno, cloudflare, aws-lambda or gcp-cloudrun. Set <code>RUNTIME=</code> to force it.</li>
+<li><b>Native core.</b> Streaming engines and a few helpers run in Rust. They degrade gracefully when the binary is absent.</li>
+</ul>
+
+<h2 id="http">5. HTTP requests</h2>
+<p>Retries use full-jitter backoff. GET, HEAD and OPTIONS are retried on network errors, 5xx and up to five 429 responses; other 4xx responses are not retried. Defaults: 50 s timeout, 5 retries, 3 s backoff cap. The examples below run against a small local stub server (full code in the recipe in section 13); <code>base</code> is its URL.</p>
+
+<h3>5.1 endPoint and endPoints</h3>
+<h4>Successful GET <span class="tag ran">ran locally</span></h4>
+<pre><code>const ok = await endPoint(`${base}/quote/AAPL`);
+console.log(ok.status, ok.value.status, ok.value.body, ok.cid);</code></pre>
+<pre class="output">success 200 { symbol: 'AAPL', price: 189.5 } 1</pre>
+
+<h4>HTTP error: a value, not an exception <span class="tag ran">ran locally</span></h4>
+<pre><code>const nf = await endPoint(`${base}/nope`);
+console.log(nf.status, nf.reason.status, nf.reason.statusText);</code></pre>
+<pre class="output">error 404 Not Found</pre>
+<div class="note">On an error result the response <code>body</code> is the literal string <code>"[Body already consumed]"</code>, so the server's error payload is not available through <code>reason.body</code> (observed on 0.4.0; see section 15). A warning is also logged.</div>
+
+<h4>Retries on 5xx, with tuned retry options <span class="tag ran">ran locally</span></h4>
+<p>The server answers 503 twice, then 200. Options are passed to <a href="https://github.com/sindresorhus/ky">ky</a>.</p>
+<pre><code>const fl = await endPoint(`${base}/flaky`, { retry: { limit: 4, backoffLimit: 200 } });
+console.log(fl.status, fl.value.body, 'server hits:', hits);</code></pre>
+<pre class="output">success { ok: true } server hits: 3</pre>
+
+<h4>POST with JSON and an auth header <span class="tag ran">ran locally</span></h4>
+<pre><code>const post = await endPoint(`${base}/echo`, {
+  method: 'POST',
+  json: { a: 1 },
+  headers: { Authorization: 'Bearer YOUR_TOKEN' },
+});
+console.log(post.value.body);
+
+// A pre-serialised string body gets content-type: application/json automatically
+const post2 = await endPoint(`${base}/echo`, { method: 'POST', body: JSON.stringify({ b: 2 }) });
+console.log(post2.value.body);</code></pre>
+<pre class="output">{
+  method: 'POST',
+  body: '{"a":1}',
+  ct: 'application/json',
+  auth: 'Bearer YOUR_TOKEN'
+}
+{ method: 'POST', body: '{"b":2}', ct: 'application/json' }</pre>
+<p>Only GET, HEAD and OPTIONS are retried by default, so a POST that fails is not replayed.</p>
+
+<h4>Several URLs in parallel; network failures <span class="tag ran">ran locally</span></h4>
+<pre><code>const many = await endPoints([`${base}/quote/AAPL`, `${base}/nope`]);
+console.log(many.map(r =&gt; r.status + ':' + (r.status === 'success' ? r.value.status : r.reason.status)));
+
+// Connection refused (nothing listening): reason is a serialised Error
+const dead = await endPoint(`http://127.0.0.1:${closedPort}/`, { retry: { limit: 0 } });
+console.log(dead.status, dead.reason.name);</code></pre>
+<pre class="output">[ 'success:200', 'error:404' ]
+error NetworkError</pre>
+<p>Results come back in input order. Config keys <code>retrieve.timeout</code>, <code>retrieve.retry.limit</code> and <code>retrieve.retry.backoffLimit</code> change the defaults globally (timeout is clamped to 1 000..120 000 ms, retry limit to 0..10, backoff to 0..60 000 ms); options you pass per call win over config.</p>
+<div class="note">If you call <code>endPoint</code> before <code>ConfigManager.initialize()</code> resolves, a one-time warning is logged (<code>ConfigManager.get("retrieve.timeout") called before initialize() resolved</code>) and the seeded defaults are used. Call <code>await ConfigManager.getInstance().initialize()</code> at start-up to avoid it (it is suppressed when <code>NODE_ENV=production</code>).</div>
+
+<h3>5.2 RequestProxied</h3>
+<p><code>new RequestProxied(proxyBaseUrls)</code> sends each request to a proxy as <code>&lt;proxy&gt;/?url=&lt;target&gt;</code> (the proxy is expected to behave like the ts-cloud <code>GET /api/v1/ky?url=</code> route). Single requests rotate round-robin and fall back to every other proxy before failing; <code>endPoints</code> spreads the batch across proxies. Signature: <code>endPoint(url, suffix = "", options = {})</code>.</p>
+<h4>Rotation and a path suffix <span class="tag ran">ran locally</span></h4>
+<p>Two local stub proxies answer with their own name (<code>via</code>), the path they received and the <code>url</code> query parameter. The suffix call lands on proxy-b because the round-robin pointer was on its turn.</p>
+<pre><code>const client = new RequestProxied([proxyA, proxyB]);
+for (let i = 0; i &lt; 3; i++) {
+  const r = await client.endPoint('https://api.example.com/quote/AAPL');
+  console.log(r.status, r.value.body.via);
+}
+const many = await client.endPoints(['https://t1.example.com', 'https://t2.example.com']);
+console.log(many.map(r =&gt; r.value.body.via));
+
+// Append a path to the proxy base, and pass ky options as the third argument
+const s = await client.endPoint('https://api.example.com/q', '/fetch', { headers: { 'x-trace': '1' } });
+console.log(s.value.body);</code></pre>
+<pre class="output">success proxy-a
+success proxy-b
+success proxy-a
+[ 'proxy-a', 'proxy-b' ]
+{ via: 'proxy-b', path: '/fetch', target: 'https://api.example.com/q' }</pre>
+
+<h4>Fallback when a proxy returns 502 <span class="tag ran">ran locally</span></h4>
+<pre><code>const mixed = new RequestProxied([badProxy502, goodProxy]);
+// Argument order is (url, suffix, options): pass '' as the suffix when you only want options
+const m = await mixed.endPoint('https://api.example.com/x', '', { retry: { limit: 0 } });
+console.log(m.status, m.value.body.via);</code></pre>
+<pre class="output">success good</pre>
+<div class="warn">Argument order is <code>endPoint(url, suffix, options)</code>, unlike <code>endPoint(url, options)</code> of the standalone function. Passing the options object second puts it in the <code>suffix</code> slot (observed: it was stringified into the request path as <code>/[object Object]</code>).</div>
+<p>Only network errors and proxy-originated 502/503/504 count against a proxy's health; a 404 from the target does not. After <b>3 consecutive</b> failures a proxy is removed for the lifetime of the instance.</p>
+
+<h4>Validation errors <span class="tag ran">ran locally</span></h4>
+<pre><code>try { new RequestProxied([]); } catch (e) { console.log(e.message); }
+try { new RequestProxied(['nope']); } catch (e) { console.log(e.message); }
+const bad = await client.endPoint('https://api.example.com/q', 'https://evil.example.org/');
+console.log(bad.status, bad.reason.message);   // a suffix may not leave the proxy host</code></pre>
+<pre class="output">RequestProxied: at least one proxy URL is required
+RequestProxied: invalid proxy URL "nope"
+error Invalid proxy suffix</pre>
+
+<h2 id="logging">6. Logging</h2>
+<p><code>logger</code> has a strict signature <code>(msg: string, extras?: object)</code> with levels <code>trace, debug, info, warn, error, fatal</code>, plus <code>child(bindings)</code>, <code>setTelemetry('on'|'off')</code>, <code>level</code>, <code>flush()</code>. It is built on pino and picks an implementation per runtime.</p>
+<table>
+<tr><th>Env var</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>LOG_LEVEL</code></td><td><code>info</code></td><td>Minimum level (Node implementation).</td></tr>
+<tr><td><code>LOG_PRETTY</code></td><td>on unless <code>NODE_ENV=production</code></td><td><code>true</code>/<code>false</code> forces coloured text vs. one JSON object per line.</td></tr>
+<tr><td><code>NODE_ENV</code></td><td>development</td><td><code>production</code> switches <code>getMode()</code> and disables pretty output.</td></tr>
+</table>
+<h4>Basic and structured logging <span class="tag ran">ran locally</span></h4>
+<pre><code>import { logger } from '@ckirg/corelib';
+logger.info('Application started');
+logger.error('Database connection failed', { host: 'localhost', port: 5432 });</code></pre>
+<pre class="output">[2026-10-16 05:06:05.270 +0300] INFO: Application started
+[2026-10-16 05:06:05.278 +0300] ERROR: Database connection failed
+    host: "localhost"
+    port: 5432</pre>
+<p>(On a terminal the output is also colourised; ANSI codes were stripped here. The logger writes to stdout.)</p>
+
+<h4>Child loggers and JSON output <span class="tag ran">ran locally</span></h4>
+<pre><code>const log = logger.child({ section: 'billing' });
+log.debug('hidden at info level');
+log.info('Invoice created', { invoiceId: 42, amount: 19.99 });</code></pre>
+<pre class="output">$ LOG_PRETTY=false node logs.mjs
+{"level":30,"time":1792116378343,"pid":3355647,"hostname":"vmi3624072","section":"billing","invoiceId":42,"amount":19.99,"msg":"Invoice created"}
+
+$ LOG_LEVEL=debug LOG_PRETTY=false node logs.mjs
+{"level":20,"time":1792116378627,"pid":3355663,"hostname":"vmi3624072","section":"billing","msg":"hidden at info level"}
+{"level":30,"time":1792116378629,"pid":3355663,"hostname":"vmi3624072","section":"billing","invoiceId":42,"amount":19.99,"msg":"Invoice created"}</pre>
+
+<h4>Telemetry on a record <span class="tag ran">ran locally</span></h4>
+<pre><code>logger.setTelemetry('on');
+log.warn('with telemetry', { telemetry: true });</code></pre>
+<p>With telemetry on and <code>{ telemetry: true }</code> in the extras, the record gains a <code>telemetry</code> object (<code>runtime, os, arch, pid, ppid, cwd, uptime, osVersion, loadAvg, memory, ...</code>) from <code>getSysInfo()</code>, cached for 5 seconds (the full output, not shown here, is long).</p>
+<div class="warn"><b>The telemetry object includes an <code>env</code> map of your whole process environment.</b> Values are redacted only for variable names that look secret (for example tokens, keys, passwords). Other values, such as <code>PATH</code>, <code>HOME</code> and URLs like <code>CORELIB_TURSO_URL</code>, appear verbatim. Leave telemetry off, or do not ship these records to a third party, unless that is acceptable (observed on 0.4.0).</div>
+
+<h2 id="config">7. Configuration with ConfigManager</h2>
+<p><code>ConfigManager</code> is a singleton <code>EventEmitter</code>. <code>get(path)</code> (instance or static form) is synchronous, uses dot notation and returns <code>undefined</code> for a missing key. Bundled defaults are seeded at construction, so reads are safe before <code>initialize()</code>, but gate long-lived components on <code>whenReady()</code>.</p>
+<p>Priority, highest first: <b>CLI flags</b> (<code>--a-b-c value</code> or <code>--a-b-c=value</code>), <b>environment</b> (<code>CORELIB_A_B_C</code>), <b>config file</b> (<code>-C file</code> / <code>--config file</code>), <b>bundled defaults</b>. Values are parsed: <code>true</code>/<code>false</code>, numbers, and JSON arrays/objects.</p>
+
+<h4>Initialise, read, update, subscribe <span class="tag ran">ran locally</span></h4>
+<pre><code>import { ConfigManager } from '@ckirg/corelib';
+const config = ConfigManager.getInstance();
+await config.initialize();     // concurrent calls share one run
+console.log(config.isInitialized, config.get('retrieve.timeout'), config.get('retrieve.retry.limit'));
+console.log(ConfigManager.get('database.port'));      // not a default key
+
+config.on('change:database.port', (p) =&gt; console.log('port changed to', p));
+config.updateValue('database.port', 6000);
+console.log(ConfigManager.get('database.port'));</code></pre>
+<pre class="output">true 50000 5
+undefined
+port changed to 6000
+6000</pre>
+<p><code>updateValue</code> also emits a generic <code>change</code> event <code>{ path, value }</code>; <code>initialize()</code> emits <code>initialized</code>. Other methods: <code>getConfig()</code>, <code>toJsonString()</code>, <code>toBuffer()</code>, <code>whenReady()</code>, <code>loadExternalConfig(source)</code>.</p>
+
+<h4>Command-line overrides <span class="tag ran">ran locally</span></h4>
+<pre><code>// c2.mjs prints retrieve, database.port and feature.flags after initialize()
+$ node c2.mjs --retrieve-retry-limit 2 --database-port=7000 --feature-flags '["a","b"]'</code></pre>
+<pre class="output">{"timeout":50000,"retry":{"limit":2,"backoffLimit":3000}} 7000 [ 'a', 'b' ]</pre>
+
+<h4>Environment overrides <span class="tag ran">ran locally</span></h4>
+<pre><code>$ CORELIB_RETRIEVE_RETRY_LIMIT=3 CORELIB_RETRIEVE_TIMEOUT=1500 node c2.mjs</code></pre>
+<pre class="output">{"timeout":1500,"retry":{"limit":3,"backoffLimit":3000}} undefined undefined</pre>
+<div class="warn">Env names map to <b>lower-case</b> keys with <code>_</code> as the separator, so camelCase keys cannot be set that way. <code>CORELIB_RETRIEVE_RETRY_BACKOFFLIMIT=100</code> produced a stray key: <code>{"limit":5,"backoffLimit":3000,"backofflimit":100}</code>. Use the CLI form for those: <code>--retrieve-retry-backoffLimit=100</code> gave <code>{"limit":5,"backoffLimit":100}</code>.</div>
+
+<h4>Layered config file (YAML, TOML, JSON, JSON5, JSONC, INI) <span class="tag ran">ran locally</span></h4>
+<p>A file is layered as <code>commonAll</code>, then your app's section (<code>common</code>, then <code>&lt;linux|windows&gt;.&lt;development|production&gt;</code>). The app name is the folder name of the nearest workspace root (a directory with <code>pnpm-workspace.yaml</code> or a <code>package.json</code> with <code>workspaces</code>), else the current directory's name; the match is case-insensitive. Here the working directory is called <code>app2</code>.</p>
+<pre><code># settings.yaml
+commonAll:
+  retrieve:
+    timeout: 20000
+app2:
+  common:
+    greeting: hello
+  linux:
+    development:
+      database:
+        port: 5433
+    production:
+      database:
+        port: 5432
+
+$ node c2.mjs -C settings.yaml
+$ NODE_ENV=production node c2.mjs --config=settings.yaml</code></pre>
+<pre class="output">{"timeout":20000,"retry":{"limit":5,"backoffLimit":3000}} 5433 undefined
+{"timeout":20000,"retry":{"limit":5,"backoffLimit":3000}} 5432 undefined</pre>
+<p>A <code>.enc</code> file is decrypted first; an <code>http(s)://</code> source is fetched with <code>endPoint</code>. Remote and encrypted loading was not run here.</p>
+
+<h4>Error case: config file not found <span class="tag ran">ran locally</span></h4>
+<pre><code>$ node c3.mjs -C ./missing.yaml</code></pre>
+<pre class="output">Error: ENOENT: no such file or directory, open './missing.yaml'
+    at readFileSync (node:fs:483:20)
+    ...</pre>
+<p><code>initialize()</code> rejects and can be retried; wrap it in <code>try/catch</code> if the file is optional.</p>
+<div class="note"><b>Do not cache a sub-section at module scope</b> (<code>const db = ConfigManager.get('database')</code>): a later override can be missed. Read <code>ConfigManager.get('database.port')</code> where you use it.</div>
+
+<h2 id="db">8. Databases</h2>
+<p><code>createDatabase(config)</code> returns a <code>Database</code> with <code>query(sql, params?)</code>, <code>transaction(callback)</code> and <code>disconnect()</code>. <code>dialect</code> is <code>'sqlite'</code> (LibSQL: local <code>file:</code> URLs or Turso <code>libsql://</code>) or <code>'postgres'</code>. Params are a positional array (<code>?</code>) or an object (<code>:name</code>). Config also accepts <code>mode</code> (<code>'stateless' | 'stateful'</code>), <code>timeoutMs</code>, <code>logger</code>, <code>paramRedactor</code>, <code>getTraceId</code>; SQLite adds <code>authToken, journalMode, synchronous, maxConnections</code>.</p>
+
+<h4>Create, insert, select <span class="tag ran">ran locally</span></h4>
+<pre><code>import { createDatabase } from '@ckirg/corelib';
+const db = await createDatabase({ dialect: 'sqlite', url: 'file:./app.db', mode: 'stateful' });
+
+await db.query('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT, active INTEGER)');
+console.log(JSON.stringify(await db.query('INSERT INTO users (name, active) VALUES (?, ?)', ['ada', 1])));
+await db.query('INSERT INTO users (name, active) VALUES (:n, :a)', { n: 'grace', a: 0 });   // named params
+console.log(JSON.stringify(await db.query('SELECT * FROM users WHERE active = ?', [1])));</code></pre>
+<pre class="output">{"status":"success","value":{"rows":[],"affectedRows":1,"lastInsertId":"1"}}
+{"status":"success","value":{"rows":[{"id":1,"name":"ada","active":1}],"affectedRows":0}}</pre>
+
+<h4>Transactions: commit and roll back <span class="tag ran">ran locally</span></h4>
+<p>Return <code>{ status: 'success', value }</code> from the callback to commit, or an <code>error</code> result to roll back.</p>
+<pre><code>const tx = await db.transaction(async () =&gt; {
+  await db.query('INSERT INTO users (name, active) VALUES (?, 1)', ['linus']);
+  return { status: 'success', value: 'committed' };
+});
+const tx2 = await db.transaction(async () =&gt; {
+  await db.query('INSERT INTO users (name, active) VALUES (?, 1)', ['rolled-back']);
+  return { status: 'error', reason: { message: 'abort' } };
+});
+console.log(JSON.stringify(tx), JSON.stringify(tx2));
+console.log(JSON.stringify((await db.query('SELECT count(*) AS n FROM users')).value.rows));</code></pre>
+<pre class="output">{"status":"success","value":"committed"} {"status":"error","reason":{"message":"abort"}}
+[{"n":3}]</pre>
+<p>Three rows (ada, grace, linus): the rolled-back insert is absent.</p>
+
+<h4>SQL error as a value; PostgreSQL <span class="tag ran">ran locally</span></h4>
+<pre><code>const bad = await db.query('SELECT * FROM nope');
+console.log(bad.status, bad.reason.message);
+await db.disconnect();
+
+// PostgreSQL has the same API (illustrative, needs a server):
+// const pg = await createDatabase({ dialect: 'postgres', url: 'postgres://user:pass@localhost:5432/dbname', mode: 'stateful' });</code></pre>
+<pre class="output">error SQLITE_ERROR: no such table: nope</pre>
+<p>The PostgreSQL line is illustrative and was not run. Other public exports: <code>SqliteDb, PostgresDb, SqliteDriver, PostgresDriver, wrapSuccess, wrapError, handleDbError, redactParams, defaultRedactor, runInTransaction, getActiveTransaction, getActiveTxId, transactionStorage</code>.</p>
+
+<h2 id="utils">9. Runtime utilities, cron and the native core</h2>
+<table>
+<tr><th>Function</th><th>Returns</th></tr>
+<tr><td><code>detectRuntime()</code></td><td><code>"node" | "bun" | "deno" | "cloudflare" | "aws-lambda" | "gcp-cloudrun" | ...</code> (override with <code>RUNTIME=</code>)</td></tr>
+<tr><td><code>getEnv(key)</code>, <code>getAllEnv()</code></td><td>Env access that works on Node and Deno.</td></tr>
+<tr><td><code>getMode()</code>, <code>getPlatform()</code></td><td><code>"development"|"production"</code> from <code>NODE_ENV</code>; <code>"linux"|"windows"</code>.</td></tr>
+<tr><td><code>getCwd()</code>, <code>getDirname()</code>, <code>getTempDir()</code></td><td>Paths.</td></tr>
+<tr><td><code>readTextFileSync(f)</code>, <code>existsSync(f)</code></td><td>File helpers across runtimes.</td></tr>
+<tr><td><code>sleep(ms)</code></td><td>Promise delay.</td></tr>
+<tr><td><code>getSysInfo()</code></td><td>Process and system info; secret-looking env values redacted (see the telemetry warning in section 6).</td></tr>
+<tr><td><code>nextCid()</code></td><td>Process-wide counter used as a correlation id.</td></tr>
+</table>
+<h4>Environment helpers and system info <span class="tag ran">ran locally</span></h4>
+<pre><code>import { detectRuntime, getMode, getPlatform, getEnv, getSysInfo } from '@ckirg/corelib';
+console.log(detectRuntime(), getMode(), getPlatform(), getEnv('HOME'));
+console.log(Object.keys(getSysInfo()));</code></pre>
+<pre class="output">node development linux /home/user
+[
+  'runtime', 'os',
+  'arch',    'pid',
+  'ppid',    'cwd',
+  'uptime',  'osVersion',
+  'loadAvg', 'memory',
+  'env'
+]</pre>
+
+<h3>Cron include/exclude</h3>
+<p><code>includeExcludeCron(includeExprs, excludeExprs, handler, timezone?, onError?)</code> returns a croner job that ticks every second and runs <code>handler</code> when any include expression matches and no exclude does. Expressions may have 5, 6 (with seconds) or 7 fields and are validated up front. A throwing or rejecting handler goes to <code>onError</code> (or the logger) and does not stop the job.</p>
+<h4>Run every second except even seconds <span class="tag ran">ran locally</span></h4>
+<pre><code>const job = includeExcludeCron(['* * * * * *'], ['*/2 * * * * *'], () =&gt; {
+  console.log('tick, second is odd:', new Date().getSeconds() % 2 === 1);
+}, 'UTC');
+await sleep(4200);
+job.stop();</code></pre>
+<pre class="output">tick, second is odd: true
+tick, second is odd: true</pre>
+<h4>Invalid expression fails fast <span class="tag ran">ran locally</span></h4>
+<pre><code>try { includeExcludeCron(['bad cron'], [], () =&gt; {}); } catch (e) { console.log(e.message); }</code></pre>
+<pre class="output">CronPattern: invalid configuration format ('bad cron'), exactly five, six, or seven space separated parts are required.</pre>
+
+<h3>Native core (FFI)</h3>
+<h4>Detect and call the Rust addon <span class="tag ran">ran locally</span></h4>
+<pre><code>import { Core } from '@ckirg/corelib';
+if (Core.isFfiAvailable()) {
+  console.log(Core.getVersion(), Core.logAndDouble('Double me', 21));
+}
+Core.run('maintenance-task', { verbose: true });   // logs only; returns undefined</code></pre>
+<pre class="output">0.2.0 42
+[2026-10-16 05:06:23.579 +0300] INFO: Running on node. FFI: true
+    section: "Core"
+[2026-10-16 05:06:23.589 +0300] INFO: Task: maintenance-task
+    section: "Core"
+    verbose: true</pre>
+<p>Without the binary <code>isFfiAvailable()</code> is <code>false</code> and the other calls are not safe to rely on. (The version string above is the addon's own, not the npm package version; see section 15.)</p>
+
+<h2 id="markets">10. Market data (corelib-markets)</h2>
+<p>Most calls here reach live services (Nasdaq, CNN, Yahoo, brokers). Examples that hit them are marked illustrative. Where possible, the local examples redirect the package to a stub server by overriding config keys with <code>ConfigManager.updateValue</code>.</p>
+
+<h3>10.1 Market status and sleep calculation</h3>
+<p><code>MarketStatus.getStatus()</code> reads <code>markets.nasdaq.statusEndpoint</code> and returns <code>NasdaqResult&lt;NasdaqMarketInfo&gt;</code>. <code>getSleepDuration(info)</code> returns milliseconds until the next pre-market or open (0 when open; 300 000 if the next trade date cannot be parsed).</p>
+<h4>Sleep until the next event <span class="tag ran">ran locally</span></h4>
+<p>The system clock is faked to 03:00 New York time on 9 Mar 2026 (07:00 UTC, EDT); the info object is trimmed to the fields that matter.</p>
+<pre><code>const info = { mrktStatus: 'Closed', nextTradeDate: 'Mar 10, 2026', pmOpenRaw: '2026-03-09T04:00:00',
+               openRaw: '2026-03-09T09:30:00', closeRaw: '2026-03-09T16:00:00', ahCloseRaw: '2026-03-09T20:00:00',
+               /* ...remaining NasdaqMarketInfo fields... */ };
+Date.now = () =&gt; new Date('2026-03-09T07:00:00Z').getTime();
+console.log(MarketStatus.getSleepDuration(info));                          // 1 hour
+console.log(MarketStatus.getSleepDuration({ ...info, mrktStatus: 'Open' })); // already open</pre>
+<pre class="output">3600000
+0</pre>
+
+
+<h4>Fetch status and monitor phase changes against a stub <span class="tag ran">ran locally</span></h4>
+<pre><code>cfg.updateValue('markets.nasdaq.statusEndpoint', `http://127.0.0.1:${port}/api/market-info`);
+const st = await MarketStatus.getStatus();
+console.log(st.status, st.value.mrktStatus);
+
+const monitor = new MarketMonitor({ liveIntervalSec: 15, closedIntervalSec: 1800 });
+monitor.on('status-change', (phase, data, heuristic) =&gt; {
+  console.log('phase', phase, 'heuristic', !!heuristic, data.nextTradeDate);
+  monitor.stop();
+});
+monitor.on('stopped', () =&gt; console.log('stopped; running =', monitor.isRunningState));
+monitor.start();</code></pre>
+<pre class="output">success Closed
+phase closed heuristic false Mar 10, 2026
+stopped; running = false</pre>
+<p><code>MarketMonitor</code> options: <code>liveIntervalSec, closedIntervalSec, warnIntervalSec, proxies</code> (proxies are called at <code>&lt;proxy&gt;/api/v1/markets/nasdaq/status</code>, i.e. a ts-cloud service). Phases: <code>"open" | "pre-market" | "after-hours" | "closed"</code>. It emits <code>status-change</code> after the first successful poll and on each change, falls back to a time-based heuristic during fetch failures (<code>heuristic = true</code>), and emits <code>stopped</code>. Properties: <code>isRunningState</code>, <code>currentPhase</code>.</p>
+
+<h4>Against the real Nasdaq API <span class="tag ill">illustrative</span></h4>
+<pre><code>const result = await MarketStatus.getStatus();
+if (result.status === 'success') {
+  console.log(`Nasdaq Status: ${result.value.mrktStatus}`);
+  console.log(`Sleeping ${MarketStatus.getSleepDuration(result.value)} ms`);
+}</code></pre>
+
+<h3>10.2 MarketSymbols (symbol directory)</h3>
+<p><code>new MarketSymbols(db?, ingestors?)</code>. <code>get(symbol)</code> returns a <code>MarketSymbolRow</code> (<code>symbol, name, type 'rt'|'eod', class, ts, active</code>) or <code>null</code>; <code>refresh()</code> forces a reload; <code>close()</code> releases the store. The backend is the constructor argument (a path means SQLite, <code>mongodb://</code> or <code>mongodb+srv://</code> means MongoDB, <code>{ dbUrl, dbToken }</code> means Turso) or <code>markets.nasdaq.symbols.store</code> (<code>sqlite</code> default, <code>turso</code>, <code>mongodb</code>). On Node it searches store, then Nasdaq API, then ingestors; on edge runtimes API first.</p>
+<h4>Load the directory from stub files and look up symbols <span class="tag ran">ran locally</span></h4>
+<p>The refresh normally downloads two files from Nasdaq's FTP/HTTPS directory. Here the two URL keys point at a local server serving files in the same format, and <code>minRows</code> (default 1000; a guard against truncated downloads) is lowered for the demo.</p>
+<pre><code>cfg.updateValue('markets.nasdaq.symbols.nasdaqListedUrl', `${base}/nasdaqlisted.txt`);
+cfg.updateValue('markets.nasdaq.symbols.otherListedUrl',  `${base}/otherlisted.txt`);
+cfg.updateValue('markets.nasdaq.symbols.minRows', 2);
+const symbols = new MarketSymbols('./symbols-demo.sqlite');
+for (const s of ['AAPL', 'IBM', 'QQQ']) console.log(JSON.stringify(await symbols.get(s)));
+await symbols.close();</code></pre>
+<pre class="output">{"symbol":"AAPL","type":"rt","class":"stocks","name":"Apple Inc. - Common Stock","ts":1792108279630,"active":true}
+{"symbol":"IBM","type":"rt","class":"stocks","name":"International Business Machines","ts":1792108279630,"active":true}
+{"symbol":"QQQ","type":"rt","class":"etf","name":"Invesco QQQ Trust","ts":1792108279630,"active":true}</pre>
+<h4>Other backends <span class="tag ill">illustrative</span></h4>
+<pre><code>new MarketSymbols({ dbUrl: 'libsql://your-db.turso.io', dbToken: 'YOUR_TURSO_TOKEN' });   // Turso
+new MarketSymbols('mongodb+srv://user:YOUR_PASSWORD@cluster.example.mongodb.net/corelib');  // MongoDB
+new MarketSymbols(undefined, ['https://script.google.com/macros/s/YOUR_ID/exec']);       // + custom ingestor
+
+// or select by configuration:
+//   export CORELIB_MARKETS_NASDAQ_SYMBOLS_STORE=mongodb
+//   export MONGODB_URI="mongodb+srv://user:YOUR_PASSWORD@cluster.example.mongodb.net/corelib"</code></pre>
+<ul>
+<li>MongoDB runs on Node, Lambda and Cloud Run, not on Cloudflare Workers (use Turso there). Switching backend starts empty; there is no migration.</li>
+<li>A circuit breaker (<code>markets.nasdaq.symbols.breaker</code>, default 30 000 ms) applies to MongoDB only.</li>
+<li>A misconfigured store is only <b>logged</b> by <code>get()</code> (<code>SearchDb query failed</code>), which then falls back to the Nasdaq API; <code>refresh()</code> throws. If lookups unexpectedly hit the API, read the logs.</li>
+</ul>
+
+<h3>10.3 Nasdaq API wrapper, headers, Fear and Greed, Top 100, historical data</h3>
+<h4>Header spoofing and input validation, offline <span class="tag ran">ran locally</span></h4>
+<pre><code>import { CnnFearAndGreed, getNasdaqHeaders } from '@ckirg/corelib-markets';
+console.log(JSON.stringify(await CnnFearAndGreed.getFearAndGreed('15-03-2026')));   // rejected before any request
+console.log(Object.keys(getNasdaqHeaders('https://api.nasdaq.com/api/quote/AAPL/info')).join(', '));</code></pre>
+<pre class="output">{"status":"error","reason":{"message":"Invalid date: expected YYYY-MM-DD or \"Historical\""}}
+accept, accept-language, origin, referer, sec-ch-ua, sec-ch-ua-mobile, sec-ch-ua-platform, user-agent</pre>
+<p>Add or override headers with the config key <code>markets.nasdaq.headers</code> (an object); the Chrome version used in the user agent is <code>markets.chromeVersion</code>.</p>
+
+<h4>Live data calls <span class="tag ill">illustrative</span></h4>
+<pre><code>import { ApiNasdaqUnlimited, CnnFearAndGreed, CnnFearAndGreedFilter, Historical, getSymbolsTop100 }
+  from '@ckirg/corelib-markets';
+
+// Nasdaq: status === 'success' checks the API's own rCode too
+const quote = await ApiNasdaqUnlimited.endPoint('https://api.nasdaq.com/api/quote/AAPL/info?assetclass=stocks');
+
+// CNN Fear and Greed: current, full history, or one metric on one date (YYYY-MM-DD)
+const current = await CnnFearAndGreed.getFearAndGreed();
+const history = await CnnFearAndGreed.getFearAndGreed('Historical', 'full');
+const vix     = await CnnFearAndGreed.getFearAndGreed('2026-03-15', CnnFearAndGreedFilter.MarketVolatilityVix);
+if (current.status === 'success') console.log(current.value.score, current.value.rating);
+
+// Yahoo Finance v3 daily bars; interval is '1d' | '1wk' | '1mo'
+const bars = await Historical.getData('AAPL', { period1: '2023-01-01', interval: '1d' });
+if (bars.status === 'success') console.log(bars.value.at(-1));   // { symbol, date, open, high, low, close, volume, adjClose }
+
+// Nasdaq 100 constituents, cached in-process and shared between concurrent callers
+const top = await getSymbolsTop100();</code></pre>
+<p>These were not run (public network). Other exports: <code>ApiNasdaqQuotes</code>, <code>NasdaqPolling</code>, the <code>Markets</code> namespace object, <code>SymbolStore</code> and <code>SymbolStoreUnavailableError</code> types.</p>
+
+<h3>10.4 Real-time streaming</h3>
+<p><code>AlpacaStreaming</code>, <code>FinnhubStreaming</code> and <code>YahooStreaming</code> are <code>EventEmitter</code>s backed by the Rust WebSocket engine. Construct (synchronous, wrap in <code>try/catch</code>), <code>await init(config)</code>, <code>await start()</code>, <code>subscribe([...])</code>. Events: <code>pricing</code>, <code>log</code>, <code>connected</code>, <code>disconnected</code>, <code>reconnecting</code>, <code>error</code>; Alpaca and Yahoo also emit <code>market</code> and <code>silence-reconnect</code>.</p>
+<h4>Alpaca, Finnhub and Yahoo <span class="tag ill">illustrative</span></h4>
+<pre><code>import { AlpacaStreaming, FinnhubStreaming, YahooStreaming } from '@ckirg/corelib-markets';
+
+// Alpaca: credentials via init() or APCA_API_KEY_ID / APCA_API_SECRET_KEY
+const alpaca = new AlpacaStreaming();
+await alpaca.init({ keyId: 'YOUR_KEY', secretKey: 'YOUR_SECRET', silenceSeconds: 60 });
+await alpaca.start();
+alpaca.subscribe(['AAPL', 'TSLA']);                       // or { trades?, quotes?, bars? }
+alpaca.on('pricing', (d) =&gt; console.log(`${d.symbol}: $${d.price}`));
+alpaca.on('error', (e) =&gt; console.error('error', e));
+
+// Finnhub: token via init() or FINNHUB_API_KEY; payload fields are camelCase
+const finnhub = new FinnhubStreaming();
+await finnhub.init({ token: 'YOUR_FINNHUB_API_KEY' });
+await finnhub.start();
+await finnhub.subscribe(['MSFT']);
+finnhub.on('pricing', (d) =&gt; console.log(d.messageType, d.symbol, d.price, d.timestamp));
+
+// Yahoo: no credentials; the ticker field is `id`, not `symbol`
+const yahoo = new YahooStreaming();
+await yahoo.init({ silenceSeconds: 45 });
+await yahoo.start();
+yahoo.subscribe(['AAPL', 'BTC-USD']);
+yahoo.on('pricing', (d) =&gt; console.log(`${d.id}: $${d.price}`));
+
+alpaca.stop(); yahoo.stop(); await finnhub.stop();</code></pre>
+<div class="warn">Not run (needs credentials or a live feed). A probe with no credentials, <code>await new AlpacaStreaming().init({})</code>, neither resolved nor rejected within 15 seconds in this environment, so always supply credentials (or the environment variables) before calling <code>init</code>. Use <code>stream.clean()</code> to wipe the persistence database (<code>dbPath</code>, default under the temp dir).</div>
+
+<h2 id="cloud">11. Edge proxy service (corelib-cloud)</h2>
+<p><code>createRouter(logger?, { platform? })</code> returns a <a href="https://hono.dev">Hono</a> app. Its <code>app.request(path, init, env)</code> method lets you exercise it in-process without a server; on a platform you use the entry bundles (<code>@ckirg/corelib-cloud/aws</code>, <code>/cloudflare</code>, <code>/cloudrun</code>). The package also exports the sub-routers (<code>kyRouter, nasdaqRouter, marketStatusRouter, historicalRouter, sqlRouter</code>), the <code>Cloud</code> namespace and the <code>AppEnv</code> type.</p>
+<table>
+<tr><th>Route</th><th>Auth</th><th>Purpose</th></tr>
+<tr><td><code>GET /health</code>, <code>GET /api/v1/health</code></td><td>none</td><td>Liveness (<code>platform</code>, <code>service</code>, <code>version</code>).</td></tr>
+<tr><td><code>POST /api/v1/ky</code></td><td>bearer</td><td>Resilient proxy; body <code>{ url, options? }</code> or <code>{ endPoints: [...] }</code>.</td></tr>
+<tr><td><code>GET /api/v1/ky?url=</code></td><td>bearer</td><td>Transparent single-URL proxy (what <code>RequestProxied</code> calls).</td></tr>
+<tr><td><code>POST|GET /api/v1/markets/nasdaq</code></td><td>bearer</td><td>Nasdaq proxy, <code>nasdaq.com</code> hosts only.</td></tr>
+<tr><td><code>GET /api/v1/markets/nasdaq/status</code></td><td>bearer</td><td>Market status.</td></tr>
+<tr><td><code>GET /api/v1/markets/nasdaq/groups/top100</code></td><td>bearer</td><td>Nasdaq 100 symbols.</td></tr>
+<tr><td><code>POST /api/v1/markets/nasdaq/historical</code></td><td>bearer</td><td>Body <code>{ symbol, options }</code>.</td></tr>
+<tr><td><code>POST /api/v1/sql</code></td><td>bearer</td><td>Body <code>{ sql, params? }</code> on <code>CORELIB_TURSO_URL</code>.</td></tr>
+</table>
+
+<h4>Health and authentication states <span class="tag ran">ran locally</span></h4>
+<pre><code>import { createRouter } from '@ckirg/corelib-cloud';
+const app = createRouter(undefined, { platform: 'local-demo' });
+const show = async (label, p, init, env) =&gt; {
+  const r = await app.request(p, init, env);
+  console.log(label, r.status, await r.text());
+};
+await show('health', '/health');
+await show('no token configured', '/api/v1/markets/nasdaq/status');
+const env = { CORELIB_API_TOKEN: 'demo-token' };
+await show('missing header', '/api/v1/ky?url=https://example.com', {}, env);
+await show('wrong token', '/api/v1/ky?url=https://example.com', { headers: { authorization: 'Bearer nope' } }, env);</code></pre>
+<pre class="output">health 200 {"status":"ok","timestamp":"2026-10-16T02:06:59.789Z","service":"ts-cloud","platform":"local-demo"}
+no token configured 503 {"status":"error","reason":{"message":"Service authentication is not configured"}}
+missing header 401 {"status":"error","reason":{"message":"Unauthorized"}}
+wrong token 401 {"status":"error","reason":{"message":"Unauthorized"}}</pre>
+<p>The service is fail-closed: with no <code>CORELIB_API_TOKEN</code> every <code>/api/v1</code> route except health answers 503. Wrong or missing tokens answer 401 with a <code>WWW-Authenticate</code> header.</p>
+
+<h4>Target restrictions (SSRF guard) <span class="tag ran">ran locally</span></h4>
+<pre><code>const auth = { authorization: 'Bearer demo-token' };
+await show('loopback blocked', '/api/v1/ky?url=http://127.0.0.1:8080/', { headers: auth }, env);
+await show('metadata blocked', '/api/v1/ky', { method: 'POST', headers: { ...auth, 'content-type': 'application/json' },
+  body: JSON.stringify({ url: 'http://169.254.169.254/latest/meta-data' }) }, env);
+await show('non-nasdaq host', '/api/v1/markets/nasdaq', { method: 'POST', headers: { ...auth, 'content-type': 'application/json' },
+  body: JSON.stringify({ url: 'https://example.com/x' }) }, env);</code></pre>
+<pre class="output">loopback blocked 400 {"status":"error","reason":{"message":"Target address is not allowed"}}
+metadata blocked 400 {"status":"error","reason":{"message":"Target address is not allowed"}}
+non-nasdaq host 400 {"status":"error","reason":{"message":"Target host is not on the allow-list"}}</pre>
+<p>The guard inspects the URL text only; a public hostname that resolves to a private address, and redirects, are not detected. Keep the token secret.</p>
+
+<h4>SQL endpoint against a local SQLite file <span class="tag ran">ran locally</span></h4>
+<p>The handler reads <code>CORELIB_TURSO_URL</code> and <code>CORELIB_TURSO_TOKEN</code> from the bindings or <code>process.env</code>; a <code>file:</code> URL works locally.</p>
+<pre><code>const env = { CORELIB_API_TOKEN: 'demo-token', CORELIB_TURSO_URL: 'file:./cloud-demo.db', CORELIB_TURSO_TOKEN: '' };
+const sql = async (body) =&gt; {
+  const r = await app.request('/api/v1/sql', { method: 'POST',
+    headers: { authorization: 'Bearer demo-token', 'content-type': 'application/json' },
+    body: JSON.stringify(body) }, env);
+  console.log(r.status, await r.text());
+};
+await sql({ sql: 'CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT, active INTEGER)' });
+await sql({ sql: 'INSERT INTO users (name, active) VALUES (?, ?)', params: ['ada', 1] });
+await sql({ sql: 'SELECT * FROM users WHERE active = ?', params: [1] });
+await sql({ sql: 'SELECT * FROM users', params: 'oops' });
+await sql({});
+</code></pre>
+<pre class="output">200 {"status":"success","value":{"rows":[],"affectedRows":0,"lastInsertId":"0"}}
+200 {"status":"success","value":{"rows":[],"affectedRows":1,"lastInsertId":"1"}}
+200 {"status":"success","value":{"rows":[{"id":1,"name":"ada","active":1}],"affectedRows":0}}
+400 {"status":"error","reason":{"message":"Invalid params: expected an array or an object"}}
+400 {"status":"error","reason":{"message":"Missing SQL query"}}</pre>
+
+<h4>Calls to a deployed service <span class="tag ill">illustrative</span></h4>
+<pre><code>export CORELIB_API_TOKEN=YOUR_TOKEN
+curl https://your-service-url/health
+
+# generic proxy, single and bulk
+curl -X POST https://your-service-url/api/v1/ky \
+  -H "Authorization: Bearer $CORELIB_API_TOKEN" -H "Content-Type: application/json" \
+  -d '{ "url": "https://api.github.com/zen" }'
+curl -X POST https://your-service-url/api/v1/ky \
+  -H "Authorization: Bearer $CORELIB_API_TOKEN" -H "Content-Type: application/json" \
+  -d '{ "endPoints": [ { "url": "https://api.a.com/status" }, { "url": "https://api.b.com/data", "options": { "timeout": 2000 } } ] }'
+
+# transparent GET (this is what RequestProxied calls)
+curl -H "Authorization: Bearer $CORELIB_API_TOKEN" "https://your-service-url/api/v1/ky?url=https://api.github.com/zen"
+
+# market data
+curl -H "Authorization: Bearer $CORELIB_API_TOKEN" https://your-service-url/api/v1/markets/nasdaq/status
+curl -H "Authorization: Bearer $CORELIB_API_TOKEN" https://your-service-url/api/v1/markets/nasdaq/groups/top100
+curl -X POST https://your-service-url/api/v1/markets/nasdaq/historical \
+  -H "Authorization: Bearer $CORELIB_API_TOKEN" -H "Content-Type: application/json" \
+  -d '{ "symbol": "AAPL", "options": { "period1": "2023-01-01", "interval": "1d" } }'</code></pre>
+
+<h4>Build and deploy <span class="tag ill">illustrative</span></h4>
+<p>From a clone, <code>pnpm --filter @ckirg/corelib-cloud build</code> (script <code>build</code> in <code>ts-cloud</code>) produces <code>dist/cloudflare/worker.js</code>, <code>dist/aws/handler.mjs</code> and <code>dist/cloudrun/server.js</code>. Deploying is outside the scope of the local examples and was not run:</p>
+<pre><code># Cloudflare (from ts-cloud/)
+pnpm exec wrangler secret put CORELIB_API_TOKEN
+pnpm exec wrangler deploy
+
+# AWS Lambda (from the repo root; needs docker, pnpm, zip)
+scripts/package-lambda.sh
+aws lambda update-function-code --function-name corelib --zip-file fileb://ts-cloud/dist/function.zip
+
+# Cloud Run
+gcloud run deploy ts-cloud --source . --command node --args dist/cloudrun/server.js</code></pre>
+<p>Environment for deployments: <code>CORELIB_API_TOKEN</code> (required), <code>CORELIB_TURSO_URL</code> and <code>CORELIB_TURSO_TOKEN</code> (SQL route only), <code>PORT</code> (Cloud Run, default 3000). Keep the Worker's <code>[alias]</code> stubs in <code>wrangler.toml</code>; removing them breaks the bundle. On Lambda the native module must be built against glibc 2.34, which is why the script builds inside <code>amazonlinux:2023</code>.</p>
+
+<h2 id="confref">12. Configuration reference</h2>
+<h3>Config keys (bundled defaults)</h3>
+<table>
+<tr><th>Key</th><th>Type</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>retrieve.timeout</code></td><td>ms</td><td>50000</td><td>Request timeout; clamped 1000..120000.</td></tr>
+<tr><td><code>retrieve.retry.limit</code></td><td>number</td><td>5</td><td>Retries; clamped 0..10.</td></tr>
+<tr><td><code>retrieve.retry.backoffLimit</code></td><td>ms</td><td>3000</td><td>Max backoff; clamped 0..60000.</td></tr>
+<tr><td><code>markets.chromeVersion</code></td><td>string</td><td>"146"</td><td>Chrome version in spoofed Nasdaq headers.</td></tr>
+<tr><td><code>markets.nasdaq.headers</code></td><td>object</td><td>unset</td><td>Extra/override headers for Nasdaq calls.</td></tr>
+<tr><td><code>markets.nasdaq.statusEndpoint</code></td><td>URL</td><td>https://api.nasdaq.com/api/market-info</td><td>Market status source.</td></tr>
+<tr><td><code>markets.nasdaq.monitor.liveIntervalSec</code></td><td>s</td><td>10</td><td>Poll interval while market is active.</td></tr>
+<tr><td><code>markets.nasdaq.monitor.closedIntervalSec</code></td><td>s</td><td>3600</td><td>Poll interval when closed.</td></tr>
+<tr><td><code>markets.nasdaq.monitor.warnIntervalSec</code></td><td>s</td><td>60</td><td>Failure-warning throttle.</td></tr>
+<tr><td><code>markets.nasdaq.symbols.nasdaqListedUrl</code>, <code>otherListedUrl</code></td><td>URL</td><td>ftp://ftp.nasdaqtrader.com/...</td><td>Primary symbol directory sources.</td></tr>
+<tr><td><code>markets.nasdaq.symbols.nasdaqListedFallbackUrl</code>, <code>otherListedFallbackUrl</code></td><td>URL</td><td>https://www.nasdaqtrader.com/dynamic/symdir/...</td><td>Fallback sources.</td></tr>
+<tr><td><code>markets.nasdaq.symbols.initialBackoffMs</code>, <code>maxRetryBackoffMs</code>, <code>maxFetchRetries</code></td><td>number</td><td>1000, 3600000, 10</td><td>Directory download retry policy.</td></tr>
+<tr><td><code>markets.nasdaq.symbols.minRows</code></td><td>number</td><td>1000 (code default; not in the JSON)</td><td>Refuse a directory that parses to fewer rows.</td></tr>
+<tr><td><code>markets.nasdaq.symbols.store</code></td><td>string</td><td>sqlite</td><td><code>sqlite | turso | mongodb</code>.</td></tr>
+<tr><td><code>markets.nasdaq.symbols.breaker</code></td><td>ms</td><td>30000</td><td>MongoDB circuit-breaker window.</td></tr>
+<tr><td><code>markets.nasdaq.symbols.turso.urlEnv</code>, <code>tokenEnv</code></td><td>string</td><td>CORELIB_TURSO_URL, CORELIB_TURSO_TOKEN</td><td>Names of the env vars holding Turso settings.</td></tr>
+<tr><td><code>markets.nasdaq.symbols.mongodb.uriEnv</code>, <code>database</code>, <code>collection</code></td><td>string</td><td>MONGODB_URI, corelib, nasdaq_symbols</td><td>MongoDB settings.</td></tr>
+<tr><td><code>markets.nasdaq.quotes.concurrencyLimit</code></td><td>number</td><td>5</td><td>Parallelism for quote fetching.</td></tr>
+</table>
+<h3>Environment variables</h3>
+<table>
+<tr><th>Variable</th><th>Used by</th></tr>
+<tr><td><code>CORELIB_*</code></td><td>Any config key, lower-cased, <code>_</code> becomes <code>.</code> (single-word segments only).</td></tr>
+<tr><td><code>LOG_LEVEL</code>, <code>LOG_PRETTY</code>, <code>NODE_ENV</code>, <code>RUNTIME</code>, <code>MODE</code></td><td>Logger, <code>getMode()</code>, runtime detection, postinstall skip (<code>MODE=development</code>).</td></tr>
+<tr><td><code>APCA_API_KEY_ID</code>, <code>APCA_API_SECRET_KEY</code>, <code>FINNHUB_API_KEY</code></td><td>Streaming credentials.</td></tr>
+<tr><td><code>CORELIB_TURSO_URL</code>, <code>CORELIB_TURSO_TOKEN</code>, <code>MONGODB_URI</code></td><td>Symbol store, ts-cloud SQL route.</td></tr>
+<tr><td><code>CORELIB_API_TOKEN</code>, <code>PORT</code></td><td>ts-cloud.</td></tr>
+</table>
+<h3>Command-line flags</h3>
+<p><code>-C file</code> / <code>--config file</code> / <code>--config=file</code> load a config file (or URL); every other <code>--a-b-c value</code> / <code>--a-b-c=value</code> / <code>--a-b-c</code> (true) sets key <code>a.b.c</code>. Keys containing <code>__proto__</code>, <code>constructor</code> or <code>prototype</code> segments are dropped.</p>
+
+<h2 id="recipes">13. Recipes</h2>
+<h4>A self-contained HTTP test harness <span class="tag ran">ran locally</span></h4>
+<p>This is the stub server used by the section 5 examples. It serves a JSON quote, a flaky endpoint (two 503s then 200), an echo endpoint and a 404.</p>
+<pre><code>// stub.mjs
+import http from 'node:http';
+import { endPoint } from '@ckirg/corelib';
+
+let hits = 0;
+const srv = http.createServer((req, res) =&gt; {
+  const u = new URL(req.url, 'http://x');
+  res.setHeader('content-type', 'application/json');
+  if (u.pathname === '/quote/AAPL') return res.end(JSON.stringify({ symbol: 'AAPL', price: 189.5 }));
+  if (u.pathname === '/flaky') {
+    if (++hits &lt; 3) { res.statusCode = 503; return res.end('busy'); }
+    return res.end('{"ok":true}');
+  }
+  if (u.pathname === '/echo') {
+    let b = ''; req.on('data', (c) =&gt; (b += c));
+    return req.on('end', () =&gt; res.end(JSON.stringify({ method: req.method, body: b,
+      ct: req.headers['content-type'], auth: req.headers.authorization })));
+  }
+  res.statusCode = 404; res.end('{"error":"not found"}');
+}).listen(0, async () =&gt; {
+  const base = `http://127.0.0.1:${srv.address().port}`;
+  console.log((await endPoint(`${base}/flaky`, { retry: { limit: 4, backoffLimit: 200 } })).value.body, 'hits', hits);
+  srv.close();
+});</code></pre>
+<pre class="output">{ ok: true } hits 3</pre>
+
+<h4>Production-style start-up: config, logger, then work <span class="tag ran">ran locally</span></h4>
+<pre><code>// main.mjs  (run as: NODE_ENV=production LOG_LEVEL=info node main.mjs --retrieve-retry-limit=2)
+import { ConfigManager, logger } from '@ckirg/corelib';
+
+const config = ConfigManager.getInstance();
+await config.initialize();                      // CLI &gt; env &gt; file &gt; defaults
+const log = logger.child({ section: 'main' });
+log.info('starting', { retryLimit: config.get('retrieve.retry.limit') });</code></pre>
+<pre class="output">{"level":30,"time":1792108608111,"pid":3257669,"hostname":"vmi3624072","section":"main","retryLimit":2,"msg":"starting"}</pre>
+<p>In production mode the logger writes one JSON object per line, which is what log shippers expect; <code>retryLimit</code> is <code>2</code> from the CLI flag.</p>
+
+<h4>Proxy all traffic through your own ts-cloud deployment <span class="tag ill">illustrative</span></h4>
+<pre><code>import { RequestProxied } from '@ckirg/corelib';
+const client = new RequestProxied(['https://your-service-url/api/v1/ky']);
+// the proxy expects an Authorization header: pass it per call via options
+const r = await client.endPoint('https://api.github.com/zen', '', {
+  headers: { Authorization: 'Bearer YOUR_TOKEN' },
+});</code></pre>
+<p>Because <code>RequestProxied</code> builds <code>&lt;proxy&gt;/?url=&lt;target&gt;</code>, the base you pass already includes the route path (<code>/api/v1/ky</code>), and the transparent GET route returns the target's body and status directly.</p>
+
+<h2 id="trouble">14. Troubleshooting</h2>
+<table>
+<tr><th>Symptom</th><th>Cause and fix</th></tr>
+<tr><td>"module not found" for the <code>.node</code> addon, or <code>Core.isFfiAvailable()</code> is false</td><td>postinstall skipped (<code>MODE=development</code>, CI, Bun without <code>trustedDependencies</code>). Run <code>node node_modules/@ckirg/corelib/scripts/postinstall.js</code>.</td></tr>
+<tr><td><code>npm install</code> 404 on <code>@jsr/...</code></td><td>Add <code>@jsr:registry=https://npm.jsr.io</code> to <code>.npmrc</code>.</td></tr>
+<tr><td>Warning "ConfigManager.get(...) called before initialize() resolved"</td><td>Await <code>ConfigManager.getInstance().initialize()</code> first; the warning is one-time and silent in production.</td></tr>
+<tr><td><code>ENOENT ... open './x.yaml'</code> from <code>initialize()</code></td><td>The <code>-C</code> path does not exist; <code>initialize()</code> rejects (retryable).</td></tr>
+<tr><td>A <code>CORELIB_..._BACKOFFLIMIT</code> env var creates a lower-case twin key</td><td>Env names cannot express camelCase; use <code>--retrieve-retry-backoffLimit</code> or a config file.</td></tr>
+<tr><td><code>RequestProxied: at least one proxy URL is required</code> / <code>invalid proxy URL</code></td><td>Constructor validation; pass absolute URLs.</td></tr>
+<tr><td><code>Invalid proxy suffix</code> result</td><td>The suffix must stay on the proxy host (no absolute or <code>//</code> URLs).</td></tr>
+<tr><td>Proxy silently stops being used</td><td>Removed after 3 consecutive proxy-level failures (network error, 502/503/504); create a new <code>RequestProxied</code> to reset.</td></tr>
+<tr><td>HTTP error result has <code>body: "[Body already consumed]"</code></td><td>Known behaviour on error results; use <code>reason.status</code> and logs.</td></tr>
+<tr><td>ts-cloud answers 503 "Service authentication is not configured"</td><td>Set <code>CORELIB_API_TOKEN</code> (binding, secret or env var).</td></tr>
+<tr><td>ts-cloud 400 "Target address is not allowed" / "not on the allow-list"</td><td>The guard refuses loopback, private, link-local and <code>.local</code>/<code>.internal</code> hosts on <code>/ky</code>, and non-<code>nasdaq.com</code> hosts on <code>/markets/nasdaq</code>.</td></tr>
+<tr><td><code>MarketSymbols.get</code> unexpectedly calls the Nasdaq API</td><td>Store misconfigured or unreachable; <code>get()</code> only logs <code>SearchDb query failed</code>. Check <code>store</code>, <code>MONGODB_URI</code>, <code>CORELIB_TURSO_*</code>.</td></tr>
+<tr><td>Symbol refresh error "parsed to N rows, expected at least 1000"</td><td>The downloaded file was an error page or truncated; the guard protects existing data. Lower <code>minRows</code> only for test stubs.</td></tr>
+<tr><td>Lambda deploys but Rust features are off</td><td>The addon needs glibc newer than 2.34; build the package with <code>scripts/package-lambda.sh</code>.</td></tr>
+</table>
+
+<h2 id="discrep">15. Where the docs and the code disagree</h2>
+<p>These were found while verifying the examples. The guide follows the code's behaviour where it could be observed.</p>
+<ol>
+<li><b>Install instructions.</b> The <code>ts-core</code>, <code>ts-markets</code> and <code>ts-cloud</code> READMEs say "Not on the public npm registry" (ts-core and ts-markets show a v0.1.17 GitHub tarball install); the root README says they are on the public npm registry (version 0.4.0 in all manifests). The root README also names the scope <code>@ckir</code> in one sentence while every package is <code>@ckirg/...</code>.</li>
+<li><b>Tool versions.</b> The root README prerequisites say pnpm "(v10+ required)" while its own pnpm badge says 11.5+ and <code>packageManager</code> is <code>pnpm@11.5.2</code>; the README shows a TypeScript 5.0+ badge while the catalog pins TypeScript <code>^6.0.3</code>.</li>
+<li><b>RequestProxied pruning.</b> The ts-core README says unhealthy proxies are pruned "on first failure"; the code (and its doc comment) removes a proxy after 3 consecutive failures.</li>
+<li><b>Database config type.</b> The ts-core README example <code>createDatabase({ dialect: 'sqlite', url })</code> omits <code>mode</code>, which <code>BaseDbConfig</code> declares as required (<code>'stateless' | 'stateful'</code>). It runs at runtime without it, but TypeScript users get a type error.</li>
+<li><b>RequestUnlimited.</b> READMEs describe a <code>RequestUnlimited</code> class; the package exports the functions <code>endPoint</code> and <code>endPoints</code> (plus <code>RequestProxied</code>), not a class of that name.</li>
+<li><b>Native addon version.</b> <code>Core.getVersion()</code> returned <code>0.2.0</code> from the bundled <code>ts-core/corelib-rust.node</code> while the package is 0.4.0.</li>
+<li><b>Error bodies.</b> Failed HTTP results carry <code>body: "[Body already consumed]"</code>, so the server's error payload is not retrievable from <code>reason.body</code>.</li>
+<li><b>Streaming without credentials.</b> <code>AlpacaStreaming.init({})</code> with no credentials never settled within 15 seconds in this environment (cause not investigated).</li>
+</ol>
+
+<h2 id="quickref">16. Appendix: quick reference</h2>
+<h3>@ckirg/corelib</h3>
+<table>
+<tr><th>Export</th><th>Summary</th></tr>
+<tr><td><code>endPoint(url, ky?)</code>, <code>endPoints(urls, ky?)</code></td><td>Resilient fetch; <code>RequestResult</code>.</td></tr>
+<tr><td><code>new RequestProxied(proxies).endPoint(url, suffix?, ky?)</code> / <code>.endPoints(urls, suffix?, ky?)</code></td><td>Rotating proxy pool.</td></tr>
+<tr><td><code>logger</code>, <code>StrictLogger</code>, <code>LogMethod</code></td><td>Structured logging.</td></tr>
+<tr><td><code>ConfigManager</code></td><td><code>getInstance, initialize, whenReady, isInitialized, get, getConfig, updateValue, loadExternalConfig, toJsonString, toBuffer</code>; events <code>initialized, change, change:&lt;path&gt;</code>.</td></tr>
+<tr><td><code>createDatabase</code>, <code>SqliteDb</code>, <code>PostgresDb</code>, <code>DatabaseResult</code>, <code>wrapSuccess/wrapError</code></td><td>SQL access.</td></tr>
+<tr><td><code>detectRuntime, getEnv, getAllEnv, getMode, getPlatform, getCwd, getDirname, getTempDir, readTextFileSync, existsSync, getRequire, sleep, getSysInfo, nextCid, includeExcludeCron</code></td><td>Runtime helpers.</td></tr>
+<tr><td><code>Core</code>, <code>isFfiAvailable</code>, <code>getVersion</code>, <code>logAndDouble</code>, <code>coreFFI</code></td><td>Native addon.</td></tr>
+</table>
+<h3>@ckirg/corelib-markets</h3>
+<p><code>MarketStatus.getStatus/getSleepDuration</code>, <code>MarketMonitor</code>, <code>MarketSymbols</code> (<code>get, refresh, close</code>), <code>ApiNasdaqUnlimited.endPoint</code>, <code>ApiNasdaqQuotes</code>, <code>getNasdaqHeaders</code>, <code>CnnFearAndGreed.getFearAndGreed</code> with <code>CnnFearAndGreedFilter</code>, <code>Historical.getData</code>, <code>NasdaqPolling</code>, <code>getSymbolsTop100</code>, <code>AlpacaStreaming</code>, <code>FinnhubStreaming</code>, <code>YahooStreaming</code>, namespace <code>Markets</code>.</p>
+<h3>@ckirg/corelib-cloud</h3>
+<p><code>createRouter(logger?, { platform? })</code>, <code>Cloud</code>, <code>kyRouter</code>, <code>nasdaqRouter</code>, <code>marketStatusRouter</code>, <code>historicalRouter</code>, <code>sqlRouter</code>, type <code>AppEnv</code>; subpath bundles <code>/aws</code>, <code>/cloudflare</code>, <code>/cloudrun</code>.</p>
+<h3>Monorepo scripts (from a clone)</h3>
+<table>
+<tr><th>Command</th><th>Does</th></tr>
+<tr><td><code>pnpm build-all</code></td><td>Build all packages.</td></tr>
+<tr><td><code>pnpm test-all:run</code></td><td>Run all unit tests once.</td></tr>
+<tr><td><code>pnpm typecheck-all</code>, <code>pnpm lint-all</code>, <code>pnpm lint:strict</code></td><td>Type check and Biome.</td></tr>
+<tr><td><code>pnpm verify:fast</code>, <code>pnpm verify:full</code></td><td>Pre-commit style and full pre-release checks.</td></tr>
+<tr><td><code>pnpm test:integration</code> (<code>:record</code>, <code>:live</code>)</td><td>Integration tests; live variants hit real services.</td></tr>
+<tr><td><code>pnpm docs-all</code></td><td>Generate API docs.</td></tr>
+</table>
+</body></html>
