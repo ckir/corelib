@@ -18,6 +18,7 @@ import {
 	afterNativeSuccess,
 	createNativeCallbacks,
 } from "../nativeCallbacks.js";
+import { ProcessKeepAlive } from "../ProcessKeepAlive.js";
 import { StreamHealthTracker } from "../StreamHealthTracker.js";
 import type { YahooPricingData } from "../types.js";
 
@@ -37,6 +38,7 @@ const yahooStreamingLogger = logger.child({ section: "YahooStreaming" });
 export class YahooStreaming extends EventEmitter {
 	private rust: YahooStreamingFFI;
 	private initialized = false;
+	private readonly keepAlive = new ProcessKeepAlive();
 	private readonly health = new StreamHealthTracker(
 		"yahoo",
 		yahooStreamingLogger,
@@ -107,6 +109,7 @@ export class YahooStreaming extends EventEmitter {
 		if (!this.initialized) await this.init();
 		await this.rust.start();
 		this.health.start();
+		this.keepAlive.hold();
 	}
 
 	/**
@@ -151,6 +154,7 @@ export class YahooStreaming extends EventEmitter {
 	 * Cleans up the local state/database.
 	 */
 	clean() {
+		this.keepAlive.release();
 		this.rust.clean();
 	}
 
@@ -160,6 +164,7 @@ export class YahooStreaming extends EventEmitter {
 	stop() {
 		yahooStreamingLogger.trace("stream: stop", { feed: "yahoo" });
 		this.health.stop();
+		this.keepAlive.release();
 		this.rust.stop();
 	}
 }

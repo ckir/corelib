@@ -18,6 +18,7 @@ import {
 	afterNativeSuccess,
 	createNativeCallbacks,
 } from "../nativeCallbacks.js";
+import { ProcessKeepAlive } from "../ProcessKeepAlive.js";
 import { StreamHealthTracker } from "../StreamHealthTracker.js";
 import type { AlpacaPricingData } from "../types.js";
 
@@ -38,6 +39,7 @@ const alpacaStreamingLogger = logger.child({ section: "AlpacaStreaming" });
 export class AlpacaStreaming extends EventEmitter {
 	private rust: AlpacaStreamingFFI;
 	private initialized = false;
+	private readonly keepAlive = new ProcessKeepAlive();
 	private readonly health = new StreamHealthTracker(
 		"alpaca",
 		alpacaStreamingLogger,
@@ -122,6 +124,7 @@ export class AlpacaStreaming extends EventEmitter {
 		if (!this.initialized) await this.init();
 		await this.rust.start();
 		this.health.start();
+		this.keepAlive.hold();
 	}
 
 	/**
@@ -174,6 +177,7 @@ export class AlpacaStreaming extends EventEmitter {
 	 * Cleans up the local state/database.
 	 */
 	clean() {
+		this.keepAlive.release();
 		this.rust.clean();
 	}
 
@@ -183,6 +187,7 @@ export class AlpacaStreaming extends EventEmitter {
 	stop() {
 		alpacaStreamingLogger.trace("stream: stop", { feed: "alpaca" });
 		this.health.stop();
+		this.keepAlive.release();
 		this.rust.stop();
 	}
 }
