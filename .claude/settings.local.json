@@ -20,5 +20,14 @@
       "Bash(tee /tmp/vitest_out.txt)",
       "Bash(echo \"EXIT: $?\")"
     ]
+  },
+  "skillOverrides": {
+    "anthropic-skills:google-workspace": "off",
+    "anthropic-skills:xlsx": "off",
+    "anthropic-skills:pptx": "off"
+  },
+  "enabledPlugins": {
+    "typescript-lsp@claude-plugins-official": true,
+    "skill-creator@anthropic-plugin-directory": true
   }
 }
