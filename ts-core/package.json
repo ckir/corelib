@@ -52,7 +52,7 @@
         "@types/bun": "catalog:",
         "@types/deno": "catalog:",
         "@types/node": "catalog:",
-        "bun-types": "^1.4.2",
+        "bun-types": "^1.4.3",
         "happy-dom": "^20.14.6",
         "msw": "^2.14.6",
         "pg-mem": "^3.0.14",

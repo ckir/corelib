@@ -11,10 +11,10 @@ catalog:
   "@types/node": "^25.9.2"
   "@types/deno": "^2.7.0"
   "@types/ws": "^8.18.2"
-  "@types/bun": "^1.4.2"
+  "@types/bun": "^1.4.3"
   "tsx": "^4.23.15"
   "typescript": "^6.0.3"
-  "vitest": "^4.1.11"
+  "vitest": "^4.1.12"
   "@vitest/coverage-v8": "^4.1.11"
   "tsup": "^8.5.1"
 
