@@ -8,15 +8,15 @@ packages:
 
 catalog:
   "@biomejs/biome": "^2.5.15"
-  "@types/node": "^25.9.2"
+  "@types/node": "^26.6.5"
   "@types/deno": "^2.7.0"
   "@types/ws": "^8.18.2"
   "@types/bun": "^1.4.2"
   "tsx": "^4.23.15"
   "typescript": "^6.0.3"
   "vitest": "^4.1.11"
-  "@vitest/coverage-v8": "^4.1.11"
-  "tsup": "^8.5.1"
+  "@vitest/coverage-v8": "^5.0.5"
+  "tsup": "^9.0.0"
 
 # Patched floors for transitive dependencies of @jsr/gadicc__yahoo-finance2 (its optional MCP server tree:
 # express, ajv, ...). Each is held inside its current major line; remove an entry once
