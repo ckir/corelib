@@ -55,7 +55,7 @@ const post = (options: Record<string, unknown>) =>
 	endPoint("https://api.test.com/echo", { method: "post", ...options });
 
 describe("RequestUnlimited content-type", () => {
-	beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
+	beforeAll(() => server.listen({ onUnhandledFrame: "error" }));
 	afterAll(() => server.close());
 	afterEach(() => {
 		seen = undefined;
