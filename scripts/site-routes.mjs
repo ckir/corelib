@@ -1,0 +1,211 @@
+/**
+ * Route table and reference resolver for the static site pipeline.
+ *
+ * Pure module: no network, no filesystem, no dependencies.
+ * Consumed by two callers:
+ * - `scripts/build-site.mjs` (Task 5) — route mapping, base normalisation, constants.
+ * - `scripts/check-site.mjs` (Task 2) — ref extraction, target resolution and page
+ *   checking (`checkPages` is the checker's core logic, covered by task-1 tests).
+ *
+ * Conventions:
+ * - Authored internal links are written `{{BASE}}/path` (leading slash after the token).
+ * - `{{BASE}}` normalises to `""` (domain root) or `"/corelib"` (no trailing slash);
+ *   site-relative paths returned by `resolveTarget` have the base stripped, so checks
+ *   compare against `GENERATED_ROUTES` regardless of deployment base.
+ * - Directory routes keep a trailing slash; files do not.
+ */
+
+/** Deployment base used when `SITE_BASE` is unset (Task 2: `process.env.SITE_BASE ?? DEFAULT_BASE`). */
+export const DEFAULT_BASE = "/corelib";
+
+/** Authored page files, relative to the repo root (`--source` mode reads these). */
+export const AUTHORED_PAGES = ["site/index.html", "site/404.html"];
+
+/** Directory routes produced by the docs/build pipeline (keep trailing slash). */
+export const GENERATED_ROUTES = [
+	"/api/",
+	"/api/core/",
+	"/api/markets/",
+	"/api/cloud/",
+	"/api/rust/",
+	"/guide/",
+];
+
+/** Files produced by the build that pages may reference directly (no trailing slash). */
+export const GENERATED_FILES = ["/guide/index.html", "/guide/USER_GUIDE.pdf"];
+
+/** Site asset files copied verbatim from `site/assets/`. */
+export const ASSET_FILES = ["/assets/site.css", "/assets/favicon.svg", "/assets/site.js"];
+
+/**
+ * Normalise a raw base value to `""` or `"/<name>"` (no leading/trailing slashes).
+ * Throws for anything that is not a plain path: absolute/protocol-relative URLs
+ * (containing `://`), `?` and `#`.
+ * @param {string} raw
+ * @returns {string}
+ */
+export function normaliseBase(raw) {
+	const value = String(raw ?? "");
+	if (value.includes("://") || value.includes("?") || value.includes("#")) {
+		throw new Error(`base must be a path, got "${value}"`);
+	}
+	const segments = value
+		.replace(/\/+$/, "")
+		.replace(/^\/+/, "")
+		.split("/")
+		.filter(Boolean);
+	return segments.length > 0 ? `/${segments.join("/")}` : "";
+}
+
+/**
+ * Map a page file path to its site route. `site/` and `_site/` prefixes are ignored
+ * (Windows path separators normalised), so both `site/index.html` and `index.html`
+ * map to `/`.
+ * @param {string} relPath e.g. "site/api/index.html" | "api/index.html" | "404.html"
+ * @returns {string} route, e.g. "/api/" — "/404.html" keeps the file name.
+ */
+export function routeForFile(relPath) {
+	const rel = String(relPath).replaceAll("\\", "/").replace(/^(?:site\/|_site\/)/, "");
+	const indexSuffix = "/index.html";
+	if (rel === "index.html") return "/";
+	if (rel === "404.html") return "/404.html";
+	if (rel.endsWith(indexSuffix)) return `/${rel.slice(0, -indexSuffix.length)}/`;
+	return `/${rel}`;
+}
+
+/**
+ * Extract every `href="..."` and `src="..."` value from HTML in document order.
+ * @param {string} html
+ * @returns {{attr: "href"|"src", value: string}[]}
+ */
+export function extractRefs(html) {
+	const refs = [];
+	for (const match of String(html ?? "").matchAll(/\b(href|src)\s*=\s*"([^"]*)"/g)) {
+		refs.push({ attr: /** @type {"href"|"src"} */ (match[1]), value: match[2] ?? "" });
+	}
+	return refs;
+}
+
+/**
+ * Extract every `id="..."` value from HTML into a Set.
+ * @param {string} html
+ * @returns {Set<string>}
+ */
+export function extractIds(html) {
+	const ids = new Set();
+	for (const match of String(html ?? "").matchAll(/\bid\s*=\s*"([^"]+)"/g)) {
+		ids.add(match[1] ?? "");
+	}
+	return ids;
+}
+
+/**
+ * Resolve a relative path against a page route (dot-segment aware).
+ * "/api/" + "../guide/" → "/guide/"; a trailing slash in the input is preserved.
+ * @param {string} path already-absolute ("/x") or page-relative path, no query/hash
+ * @param {string} pageRoute route of the page containing the reference
+ * @returns {string}
+ */
+function resolveAgainstRoute(path, pageRoute) {
+	if (path.startsWith("/")) return path;
+	const directory = pageRoute.endsWith("/") ? pageRoute : `${pageRoute.slice(0, pageRoute.lastIndexOf("/") + 1) || "/"}`;
+	const segments = (`${directory}${path}`).split("/");
+	const stack = [];
+	for (const segment of segments) {
+		if (segment === "" || segment === ".") continue;
+		if (segment === "..") stack.pop();
+		else stack.push(segment);
+	}
+	return `/${stack.join("/")}${path.endsWith("/") ? "/" : ""}`;
+}
+
+/**
+ * Classify and resolve one reference value.
+ * `{{BASE}}` is expanded first, external URLs and protocol-relative URLs get their
+ * own result types, the query string is dropped, `#` is split into `hash`, relative
+ * paths resolve against the page route, and the normalised base prefix is stripped.
+ * @param {string} ref reference value, e.g. `{{BASE}}/api/` | "../guide/" | "#packages"
+ * @param {string} pageRoute route of the page containing the reference
+ * @param {string} base normalised deployment base ("" = domain root)
+ * @returns {{type: "external"} | {type: "protocol-relative"} | {type: "same-document", hash: string} | {type: "internal", path: string, hash: string}}
+ */
+export function resolveTarget(ref, pageRoute, base) {
+	let value = String(ref ?? "").replaceAll("{{BASE}}", normaliseBase(base));
+	if (!value.startsWith("//") && value.includes("://")) {
+		return { type: "external" };
+	}
+	if (value.startsWith("//")) {
+		return { type: "protocol-relative" };
+	}
+	if (value.startsWith("#")) {
+		return { type: "same-document", hash: value.slice(1) };
+	}
+	let hash = "";
+	const hashIndex = value.indexOf("#");
+	if (hashIndex !== -1) {
+		hash = value.slice(hashIndex + 1).split("?")[0];
+		value = value.slice(0, hashIndex);
+	}
+	const queryIndex = value.indexOf("?");
+	if (queryIndex !== -1) value = value.slice(0, queryIndex);
+	let path = resolveAgainstRoute(value, pageRoute);
+	const normalisedBase = normaliseBase(base);
+	if (normalisedBase) {
+		if (path === normalisedBase) {
+			path = "/";
+		} else if (path.startsWith(`${normalisedBase}/`)) {
+			path = path.slice(normalisedBase.length);
+		}
+	}
+	return { type: "internal", path, hash };
+}
+
+/**
+ * Check every page's references against the known route/file tables.
+ * Error strings (one per problem, in document order):
+ * - `protocol-relative URL: <ref>` — `//host` is a mistake, never a valid target;
+ * - `empty fragment: href "#"` — same-document link with no hash;
+ * - `missing anchor: #<id>` — same-document hash with no matching id on the page;
+ * - `unknown route: <path>` — internal link ending `/` not in `knownRoutes`;
+ * - `unknown asset: <path>` — internal file link not in `knownFiles`.
+ * External URLs and internal links with hashes (cross-page anchors are not known
+ * here) are ignored.
+ * @param {{pages: {route: string, html: string}[], knownRoutes: Iterable<string>, knownFiles: Iterable<string>, base?: string}} input
+ * @returns {string[]}
+ */
+export function checkPages({ pages, knownRoutes, knownFiles, base }) {
+	const routes = new Set(knownRoutes);
+	const files = new Set(knownFiles);
+	const normalisedBase = normaliseBase(base ?? "");
+	const errors = [];
+	for (const page of pages) {
+		const ids = extractIds(page.html);
+		for (const { attr, value } of extractRefs(page.html)) {
+			const target = resolveTarget(value, page.route, normalisedBase);
+			if (target.type === "external") continue;
+			const where = ` (${attr} "${value}" in route ${page.route})`;
+			if (target.type === "protocol-relative") {
+				errors.push(`protocol-relative URL: ${value}${where}`);
+				continue;
+			}
+			if (target.type === "same-document") {
+				if (target.hash === "") {
+					errors.push(`empty fragment: href "#"${where}`);
+				} else if (!ids.has(target.hash)) {
+					errors.push(`missing anchor: #${target.hash}${where}`);
+				}
+				continue;
+			}
+			if (target.path.endsWith("/")) {
+				if (!routes.has(target.path)) {
+					errors.push(`unknown route: ${target.path}${where}`);
+				}
+				continue;
+			}
+			if (!files.has(target.path)) {
+				errors.push(`unknown asset: ${target.path}${where}`);
+			}
+		}
+	}
+	return errors;
+}
