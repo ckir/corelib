@@ -8,7 +8,8 @@
  *   sees the unexpanded HTML where that rule is enforceable. Base comes from
  *   `process.env.SITE_BASE ?? DEFAULT_BASE`.
  * - `node scripts/check-site.mjs` (default, build mode) — checks the four pages
- *   assembled by the build under `_site/` (`--root <dir>` overrides `_site`).
+ *   assembled by the build under `_site/` (`--root <dir>` overrides `_site`,
+ *   build mode only; combined with `--source` it is a usage error).
  *   `{{BASE}}` tokens are already expanded there, so `requireBaseToken` is off and
  *   the base is read from `_site/.site-base` (what the build actually applied).
  *   Known files are the build's own outputs under `assets/` and `guide/` plus
@@ -30,7 +31,7 @@ import {
 	routeForFile,
 } from "./site-routes.mjs";
 
-const USAGE = "usage: node scripts/check-site.mjs [--source] [--root <dir>]";
+const USAGE = `usage: node scripts/check-site.mjs [--source] [--root <dir>]\n(--root applies to build mode only)`;
 
 /** Pages the build assembles under `_site/` (relative to the build root). */
 const BUILD_PAGES = [
@@ -47,27 +48,12 @@ const BUILD_SEGMENTS = ["assets", "guide"];
 const ALWAYS_KNOWN_ROUTES = [...GENERATED_ROUTES, "/", "/404.html"];
 
 /**
- * Runtime marker distinguishing "missing input" (exit 2, one-line message) from
- * unexpected failures.
- */
-const NOT_FOUND = Symbol("notFound");
-
-/**
- * @param {string} message one-line stderr message
- * @returns {Error} an error carrying the {@link NOT_FOUND} marker
- */
-function notFoundError(message) {
-	/** @type {Error & {[NOT_FOUND]?: true}} */
-	const error = new Error(message);
-	error[NOT_FOUND] = true;
-	return error;
-}
-
-/**
  * List every regular file under `<root>/<segment>` recursively (readdirSync with
  * `withFileTypes`, no glob dependency) as site-absolute paths. A missing segment
  * directory simply contributes no files — `checkPages` then reports any page that
- * links into it as an unknown asset.
+ * links into it as an unknown asset. Symlinked entries are intentionally skipped
+ * (the build copies real files, so a symlink under `_site/` is treated as absent
+ * rather than followed).
  * @param {string} root build root directory, e.g. "_site"
  * @param {string} segment subdirectory name, e.g. "assets"
  * @returns {string[]} e.g. ["/assets/site.css"]
@@ -80,6 +66,8 @@ function collectBuildFiles(root, segment) {
 		}).sort((a, b) => a.name.localeCompare(b.name))) {
 			const child = `${rel}/${entry.name}`;
 			if (entry.isDirectory()) walk(child);
+			// `withFileTypes` classifies symlinks separately, so isFile()/isDirectory()
+			// skip them by construction — intentional, see the JSDoc above.
 			else if (entry.isFile()) files.push(`/${child}`);
 		}
 	};
@@ -97,54 +85,69 @@ function collectBuildFiles(root, segment) {
 }
 
 /**
- * Read a text file, returning `undefined` instead of throwing when it is absent.
+ * Read a text file, returning `undefined` when it does not exist (ENOENT).
+ * Any other IO failure (permissions, directory read…) is rethrown — converting
+ * it to "not found" would mask real problems as exit-2 input errors.
  * @param {string} path
  * @returns {Promise<string | undefined>}
  */
 async function readTextFile(path) {
 	try {
 		return await readFile(path, "utf8");
-	} catch {
+	} catch (error) {
+		if (/** @type {NodeJS.ErrnoException} */ (error).code !== "ENOENT") {
+			throw error;
+		}
 		return undefined;
 	}
 }
 
 /**
- * Parse CLI arguments. Anything that is not `--source`, `--root <dir>` (including
- * a bare positional or a missing `--root` value) is a wrong invocation.
+ * Parse CLI arguments. Accepts `--root <dir>` and `--root=<dir>`. Anything else —
+ * a bare positional, an unknown flag, a missing `--root` value (empty or starting
+ * with `--`), or `--root` combined with `--source` (`--root` applies to build mode
+ * only) — is a wrong invocation.
  * @param {string[]} argv raw arguments after the script path
  * @returns {{source: boolean, root: string} | undefined} the options, or
- *   `undefined` when the usage line should be printed
+ *   `undefined` when the usage message should be printed
  */
 function parseArgs(argv) {
-	const options = { source: false, root: "_site" };
+	let source = false;
+	let root = "_site";
+	let rootSeen = false;
 	for (let i = 0; i < argv.length; i++) {
 		const arg = argv[i] ?? "";
 		if (arg === "--source") {
-			options.source = true;
-		} else if (arg === "--root") {
-			const value = argv[i + 1] ?? "";
-			if (value === "") return undefined;
-			options.root = value;
-			i++;
+			if (rootSeen) return undefined;
+			source = true;
+		} else if (arg === "--root" || arg.startsWith("--root=")) {
+			if (source) return undefined;
+			const inline = arg.startsWith("--root=");
+			const value = inline ? arg.slice("--root=".length) : (argv[i + 1] ?? "");
+			if (value === "" || (!inline && value.startsWith("--"))) {
+				return undefined;
+			}
+			root = value;
+			rootSeen = true;
+			if (!inline) i++;
 		} else {
 			return undefined;
 		}
 	}
-	return options;
+	return { source, root };
 }
 
 /**
  * @param {string} root build root directory
  * @returns {Promise<{route: string, html: string}[]>} the four assembled pages
- * @throws {Error} carrying {@link NOT_FOUND} on the first missing page
+ * @throws {Error} with a one-line message on the first missing page
  */
 async function readBuildPages(root) {
 	const pages = [];
 	for (const rel of BUILD_PAGES) {
 		const html = await readTextFile(`${root}/${rel}`);
 		if (html === undefined) {
-			throw notFoundError(`${root}/${rel} not found`);
+			throw new Error(`${root}/${rel} not found`);
 		}
 		pages.push({ route: routeForFile(rel), html });
 	}
@@ -153,14 +156,14 @@ async function readBuildPages(root) {
 
 /**
  * @returns {Promise<{route: string, html: string}[]>} the authored pages
- * @throws {Error} carrying {@link NOT_FOUND} on the first missing page
+ * @throws {Error} with a one-line message on the first missing page
  */
 async function readSourcePages() {
 	const pages = [];
 	for (const rel of AUTHORED_PAGES) {
 		const html = await readTextFile(rel);
 		if (html === undefined) {
-			throw notFoundError(`${rel} not found: run Task 3 first`);
+			throw new Error(`${rel} not found: run Task 3 first`);
 		}
 		pages.push({ route: routeForFile(rel), html });
 	}
@@ -210,8 +213,8 @@ async function run() {
 	return 0;
 }
 
-// Unexpected failures (e.g. an invalid `SITE_BASE` rejected by `normaliseBase`)
-// also exit 2 with a one-line message; NOT_FOUND errors carry that message already.
+// All thrown errors (missing pages, invalid `SITE_BASE`, unexpected IO failures)
+// exit 2 with a one-line message on stderr.
 const code = await run().catch(
 	/** @param {unknown} error */ (error) => {
 		process.stderr.write(
