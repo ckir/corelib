@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>corelib — a multi-runtime TypeScript foundation</title>
+<meta name="description" content="corelib is a multi-runtime TypeScript foundation: resilient HTTP, structured logging, edge routers and a native Rust streaming core for Node, Bun and Deno.">
+<meta name="theme-color" content="#070b18">
+<link rel="icon" type="image/svg+xml" href="{{BASE}}/assets/favicon.svg">
+<link rel="stylesheet" href="{{BASE}}/assets/site.css?v={{VERSION}}">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="ambient" aria-hidden="true"></div>
+
+<!-- shared gradients and the cube mark -->
+<svg class="sprite" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="gTop" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#60a5fa"/><stop offset="1" stop-color="#7c3aed"/></linearGradient>
+    <linearGradient id="gLeft" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6d28d9"/><stop offset="1" stop-color="#4c1d95"/></linearGradient>
+    <linearGradient id="gRight" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4338ca"/><stop offset="1" stop-color="#7c3aed"/></linearGradient>
+    <linearGradient id="gAccent" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a855f7"/><stop offset="1" stop-color="#3b82f6"/></linearGradient>
+    <symbol id="cube" viewBox="0 0 200 200">
+      <polygon points="100,14 176,58 100,102 24,58" fill="url(#gTop)"/>
+      <polygon points="24,58 100,102 100,186 24,142" fill="url(#gLeft)"/>
+      <polygon points="176,58 100,102 100,186 176,142" fill="url(#gRight)"/>
+    </symbol>
+  </defs>
+</svg>
+
+<header class="nav-shell">
+  <div class="wrap">
+    <nav class="nav" aria-label="Primary">
+      <a class="nav-logo" href="{{BASE}}/"><svg class="cube" width="26" height="26" aria-hidden="true" focusable="false"><use href="#cube"/></svg>corelib</a>
+      <div class="nav-links" id="nav-links" data-nav-links>
+        <a href="#packages">Packages</a>
+        <a href="#native">Native core</a>
+        <a href="#start">Quickstart</a>
+        <a href="{{BASE}}/api/">API</a>
+      </div>
+      <div class="nav-right">
+        <span class="pill">v{{VERSION}}</span>
+        <a class="cta" href="#start">Get started →</a>
+        <button class="nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-controls="nav-links" hidden>Menu</button>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+    <!-- ================= HERO ================= -->
+    <section class="hero">
+      <div>
+        <div class="lockup">
+          <svg class="cube" aria-hidden="true" focusable="false"><use href="#cube"/></svg>
+          <div class="wordmark">core<span class="grad-text">lib</span></div>
+        </div>
+        <h1>A modern foundation for <span class="grad-text">multi-runtime</span> TypeScript.</h1>
+        <p class="lede">Resilient HTTP, structured logging and a native Rust streaming core — one toolkit that behaves the same on Node, Bun and Deno.</p>
+        <div class="strip">HTTP <i>/</i> Logging <i>/</i> FFI <i>/</i> Markets <i>/</i> Cloud</div>
+        <div class="features">
+          <div class="feature">
+            <div class="ico"><svg width="26" height="30" aria-hidden="true" focusable="false"><path d="M13.5 1 3 16h6.2l-1.2 11L19 11h-6.4L13.5 1Z" fill="url(#gTop)"/></svg></div>
+            <p class="feature-title">Native</p>
+            <p>Rust engine, zero event-loop blocking.</p>
+          </div>
+          <div class="feature">
+            <div class="ico"><svg width="30" height="30" fill="none" aria-hidden="true" focusable="false"><path d="M10 6 3 14l7 8M18 6l7 8-7 8" stroke="url(#gRight)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <p class="feature-title">Typed</p>
+            <p>Strict signatures, no <code>any</code>.</p>
+          </div>
+          <div class="feature">
+            <div class="ico"><svg width="30" height="30" aria-hidden="true" focusable="false"><path d="M11 3h6v4.2a2.6 2.6 0 1 0 0 4.4V16h4.4a2.6 2.6 0 1 0 0 5.2V25h-6v-3.8a2.6 2.6 0 1 0-5.2 0V25H4v-5.6a2.6 2.6 0 1 0 0-5.2H11V12Z" fill="url(#gTop)" opacity=".92"/></svg></div>
+            <p class="feature-title">Modular</p>
+            <p>Take one package or all three.</p>
+          </div>
+          <div class="feature">
+            <div class="ico"><svg width="32" height="28" aria-hidden="true" focusable="false"><circle cx="10" cy="8" r="4" fill="url(#gRight)"/><circle cx="21" cy="9" r="3.2" fill="url(#gTop)"/><path d="M2 24c0-4.4 3.6-7 8-7s8 2.6 8 7H2Zm16 0c0-3.4 1.4-5.8 4-6.6 3.2.5 6 3 6 6.6h-10Z" fill="url(#gRight)" opacity=".9"/></svg></div>
+            <p class="feature-title">Open source</p>
+            <p>MIT, developed in the open.</p>
+          </div>
+        </div>
+      </div>
+      <div class="art">
+        <div class="blob b1" aria-hidden="true"></div>
+        <div class="blob b2" aria-hidden="true"></div>
+        <div class="blob b3" aria-hidden="true"></div>
+        <div class="window">
+          <div class="window-bar">
+            <span class="dot r" aria-hidden="true"></span>
+            <span class="dot y" aria-hidden="true"></span>
+            <span class="dot g" aria-hidden="true"></span>
+            <span class="window-name">quickstart.ts</span>
+            <button class="copy" type="button" data-copy data-copy-target="hero-code">Copy</button>
+          </div>
+<pre id="hero-code"><span class="c">// Retries, jitter, typed results — built in.</span>
+<span class="k">import</span> { endPoint } <span class="k">from</span> <span class="s">"@ckirg/corelib"</span>;
+
+<span class="k">const</span> res = <span class="k">await</span> endPoint(<span class="s">"/me"</span>);
+
+<span class="k">if</span> (res.status === <span class="s">"success"</span>) {
+  console.log(res.value.status, res.value.body);
+} <span class="c">// typed union</span></pre>
+        </div>
+        <div class="note" aria-hidden="true">One library.<br>Three runtimes.<u></u></div>
+      </div>
+    </section>
+
+    <!-- ================= PACKAGES ================= -->
+    <section class="block" id="packages">
+      <div class="eyebrow">What's in the box</div>
+      <h2>Three packages. One native core.</h2>
+      <p class="section-lede">Each package is published on its own, but they share the same config, logger and FFI bridge. Install only what you need.</p>
+
+      <div class="pkg-grid">
+        <article class="pkg">
+          <div class="badge"><svg width="22" height="22" aria-hidden="true" focusable="false"><use href="#cube"/></svg></div>
+          <h3>@ckirg/corelib</h3>
+          <p class="tag">The foundation: resilient HTTP, structured logging, config, database helpers and the FFI loader.</p>
+          <ul>
+            <li><code>endPoint</code> / <code>endPoints</code> with retry + full jitter</li>
+            <li><code>RequestProxied</code> with self-healing proxy pools</li>
+            <li>Child logger with cycle-safe error serialization</li>
+          </ul>
+          <div class="foot"><span class="install">pnpm add @ckirg/corelib</span><a class="link" href="{{BASE}}/api/">API →</a></div>
+        </article>
+
+        <article class="pkg">
+          <div class="badge"><svg width="22" height="22" fill="none" aria-hidden="true" focusable="false"><path d="M3 17l5-10 4 7 3-4 6 7" stroke="url(#gAccent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <h3>@ckirg/corelib-markets</h3>
+          <p class="tag">Market data plumbing for Nasdaq, Yahoo, Alpaca and Finnhub, plus the CNN Fear &amp; Greed sentiment index.</p>
+          <ul>
+            <li><code>AlpacaStreaming</code> · <code>YahooStreaming</code> · <code>FinnhubStreaming</code></li>
+            <li><code>Historical</code> and <code>NasdaqPolling</code> data feeds</li>
+            <li><code>MarketMonitor</code> for phase + status tracking</li>
+          </ul>
+          <div class="foot"><span class="install">pnpm add @ckirg/corelib-markets</span><a class="link" href="{{BASE}}/api/">API →</a></div>
+        </article>
+
+        <article class="pkg">
+          <div class="badge"><svg width="22" height="22" fill="none" aria-hidden="true" focusable="false"><path d="M6 18a4 4 0 0 1 .6-8 5.5 5.5 0 0 1 10.4-1.2A3.8 3.8 0 0 1 16.4 18H6Z" stroke="url(#gAccent)" stroke-width="1.8" stroke-linejoin="round"/></svg></div>
+          <h3>@ckirg/corelib-cloud</h3>
+          <p class="tag">Edge routers for AWS, GCP and Cloudflare — including the transparent single-URL proxy.</p>
+          <ul>
+            <li><code>createRouter</code> for Hono on the edge</li>
+            <li><code>kyRouter</code> · <code>nasdaqRouter</code> · <code>sqlRouter</code></li>
+            <li>Same response shape as the local client</li>
+          </ul>
+          <div class="foot"><span class="install">pnpm add @ckirg/corelib-cloud</span><a class="link" href="{{BASE}}/api/">API →</a></div>
+        </article>
+      </div>
+    </section>
+
+    <!-- ================= NATIVE ================= -->
+    <section class="block" id="native">
+      <div class="native">
+        <div>
+          <div class="eyebrow">Native core</div>
+          <h2>Rust does the waiting.</h2>
+          <p class="section-lede">WebSockets and streaming live in a N-API module. Frames arrive on Rust worker threads and reach JS as events — the event loop never blocks.</p>
+          <ul class="list">
+            <li><span class="n">01</span><span><b>Prebuilt binaries.</b> A postinstall picks the right <code>.node</code> for your OS and arch from the matching release.</span></li>
+            <li><span class="n">02</span><span><b>Same API everywhere.</b> Node, Bun and Deno all load the same bridge, with a typed events surface.</span></li>
+            <li><span class="n">03</span><span><b>Resilience built in.</b> Silence detection, keep-alive and reconnect are handled below the JS layer.</span></li>
+          </ul>
+        </div>
+
+        <div class="viz">
+          <div class="viz-head"><span>napi bridge</span><span class="led-row"><i class="led"></i>live</span></div>
+          <div class="ffi">
+            <div class="ffi-box">
+              <div class="k2">Rust worker</div>
+              <strong>WS client</strong>
+              <p>Alpaca · Yahoo · Finnhub</p>
+            </div>
+            <div class="bridge"><span>ThreadsafeFn</span><span class="dashline" aria-hidden="true"></span><span>no block</span></div>
+            <div class="ffi-box">
+              <div class="k2">JS runtime</div>
+              <strong>EventEmitter</strong>
+              <p><code>pricing</code> · <code>market</code> · <code>log</code> · <code>error</code></p>
+            </div>
+          </div>
+          <div class="tape" aria-hidden="true">
+            <span class="tick">AAPL <span class="up">232.41 ▲</span></span>
+            <span class="tick">MSFT <span class="down">428.90 ▼</span></span>
+            <span class="tick">NVDA <span class="up">141.02 ▲</span></span>
+            <span class="tick">SPY <span class="up">588.14 ▲</span></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="rows">
+        <div class="row">
+          <div class="row-text">
+            <h3>HTTP that retries itself</h3>
+            <p>Every request gets a correlation id, a timeout floor and full-jitter backoff. 5xx and network failures retry; 4xx stops immediately. You get a discriminated union back, not a thrown error.</p>
+            <div class="mini"><span class="c">// retries: 5 · timeout: 50s · jitter</span>
+<span class="k">const</span> res = <span class="k">await</span> endPoint(<span class="s">"/me"</span>, { retry: { limit: 5 } })</div>
+          </div>
+          <div class="viz">
+            <div class="viz-head"><span>attempt timeline</span><span>cid 4182</span></div>
+            <div class="retry" aria-hidden="true">
+              <div class="attempt"><span>1.2s</span><div class="track"><div class="fill bad w-38">503 &nbsp;retry</div></div><span>attempt 1</span></div>
+              <div class="attempt"><span>2.7s</span><div class="track"><div class="fill bad w-58">503 &nbsp;retry</div></div><span>attempt 2</span></div>
+              <div class="attempt"><span>5.1s</span><div class="track"><div class="fill warn w-74">429 &nbsp;retry</div></div><span>attempt 3</span></div>
+              <div class="attempt"><span>9.4s</span><div class="track"><div class="fill good w-100">200 &nbsp;ok</div></div><span>attempt 4</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="row flip">
+          <div class="row-text">
+            <h3>Logs you can actually parse</h3>
+            <p>One child logger per module, a strict <code>(msg, extras?)</code> signature, and errors serialized depth-first with cycle detection. At <code>LOG_LEVEL=trace</code> you can reconstruct the whole decision chain.</p>
+            <div class="mini"><span class="k">const</span> log = logger.child({ section: <span class="s">"retry"</span> })
+log.debug(<span class="s">"retry decision"</span>, { status, willRetry })</div>
+          </div>
+          <div class="viz">
+            <div class="viz-head"><span>stdout · trace</span><span>json</span></div>
+            <div class="logs">
+              <span class="ln">{<span class="key">"level"</span>:30,<span class="key">"section"</span>:<span class="str">"retry"</span>,<span class="key">"msg"</span>:<span class="str">"request: 1 url"</span>,<span class="key">"cid"</span>:4182}</span>
+              <span class="ln">{<span class="key">"level"</span>:10,<span class="key">"attempt"</span>:1,<span class="key">"status"</span>:503,<span class="key">"willRetry"</span>:<span class="val">true</span>,<span class="key">"elapsedMs"</span>:1204}</span>
+              <span class="ln">{<span class="key">"level"</span>:10,<span class="key">"attempt"</span>:2,<span class="key">"status"</span>:503,<span class="key">"willRetry"</span>:<span class="val">true</span>,<span class="key">"elapsedMs"</span>:2731}</span>
+              <span class="ln">{<span class="key">"level"</span>:10,<span class="key">"attempt"</span>:3,<span class="key">"status"</span>:429,<span class="key">"willRetry"</span>:<span class="val">true</span>,<span class="key">"elapsedMs"</span>:5110}</span>
+              <span class="ln">{<span class="key">"level"</span>:20,<span class="key">"msg"</span>:<span class="str">"ok after 4 attempts"</span>,<span class="key key-ok">"status"</span>:200}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="row-text">
+            <h3>Cloud routers, transparent by default</h3>
+            <p>The edge proxy returns the target's body and status directly for a single URL, and an array of results for bulk. Deploy it to Cloudflare, AWS or GCP with the same router code.</p>
+            <div class="mini"><span class="k">import</span> { createRouter } <span class="k">from</span> <span class="s">"@ckirg/corelib-cloud"</span>
+<span class="k">export default</span> createRouter()</div>
+          </div>
+          <div class="viz">
+            <div class="viz-head"><span>edge topology</span><span>single hop</span></div>
+            <div class="ffi">
+              <div class="ffi-box">
+                <div class="k2">client</div>
+                <strong>GET /ky?url=…</strong>
+                <p>one URL → passthrough</p>
+              </div>
+              <div class="bridge"><span>edge</span><span class="dashline" aria-hidden="true"></span><span>hono</span></div>
+              <div class="ffi-box">
+                <div class="k2">origin</div>
+                <strong>200 · body</strong>
+                <p>same status, same headers</p>
+              </div>
+            </div>
+            <div class="tape" aria-hidden="true">
+              <span class="tick">bulk → RequestResult[]</span>
+              <span class="tick">single → <span class="tick-ok">target body</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= QUICKSTART ================= -->
+    <section class="block" id="start">
+      <div class="eyebrow">Quickstart</div>
+      <h2>Three commands to a typed request.</h2>
+      <p class="section-lede">The install step is the same shape on every runtime. Nothing else is required to make your first call.</p>
+
+      <div class="steps">
+        <div class="step">
+          <div class="num">1</div>
+          <h3>Install</h3>
+          <p>Add the core package. Markets and cloud are separate, opt-in installs.</p>
+          <div class="tabs" role="tablist" aria-label="Runtime for the install command">
+            <button class="tab" type="button" role="tab" id="tab-node" data-runtime-tab data-runtime="node" aria-selected="true" aria-controls="install-node">Node</button>
+            <button class="tab" type="button" role="tab" id="tab-bun" data-runtime-tab data-runtime="bun" aria-selected="false" aria-controls="install-bun">Bun</button>
+            <button class="tab" type="button" role="tab" id="tab-deno" data-runtime-tab data-runtime="deno" aria-selected="false" aria-controls="install-deno">Deno</button>
+          </div>
+          <div class="code-block">
+            <pre role="tabpanel" id="install-node" data-runtime-panel aria-labelledby="tab-node" tabindex="0">pnpm add @ckirg/corelib</pre>
+            <button class="copy" type="button" data-copy data-copy-target="install-node">Copy</button>
+          </div>
+          <div class="code-block">
+            <pre role="tabpanel" id="install-bun" data-runtime-panel aria-labelledby="tab-bun" tabindex="0" hidden>bun add @ckirg/corelib</pre>
+            <button class="copy" type="button" data-copy data-copy-target="install-bun">Copy</button>
+          </div>
+          <div class="code-block">
+            <pre role="tabpanel" id="install-deno" data-runtime-panel aria-labelledby="tab-deno" tabindex="0" hidden>deno add npm:@ckirg/corelib</pre>
+            <button class="copy" type="button" data-copy data-copy-target="install-deno">Copy</button>
+          </div>
+        </div>
+        <div class="step">
+          <div class="num">2</div>
+          <h3>Make a request</h3>
+          <p>Retries, jitter and a typed result — no wrapper to write.</p>
+          <div class="code-block"><pre id="step-request-code"><span class="k">import</span> { endPoint }
+  <span class="k">from</span> <span class="s">"@ckirg/corelib"</span>;
+
+<span class="k">const</span> r = <span class="k">await</span> endPoint(url);</pre>
+            <button class="copy" type="button" data-copy data-copy-target="step-request-code">Copy</button>
+          </div>
+        </div>
+        <div class="step">
+          <div class="num">3</div>
+          <h3>Stream a quote</h3>
+          <p>Native FFI stream, events delivered on the JS side.</p>
+          <div class="code-block"><pre id="step-stream-code"><span class="k">import</span> { AlpacaStreaming }
+  <span class="k">from</span> <span class="s">"@ckirg/corelib-markets"</span>;
+
+<span class="k">const</span> stream = <span class="k">new</span> AlpacaStreaming();
+stream.on(<span class="s">"pricing"</span>, (tick) =&gt; {
+  console.log(tick.symbol);
+});</pre>
+            <button class="copy" type="button" data-copy data-copy-target="step-stream-code">Copy</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= CTA ================= -->
+    <section class="block">
+      <div class="cta-panel">
+        <svg class="cube cube-cta" aria-hidden="true" focusable="false"><use href="#cube"/></svg>
+        <h2>Every type and signature is documented.</h2>
+        <p>The full API reference is generated from the source on every push to main — three packages and the Rust core, one index.</p>
+        <div class="btns">
+          <a class="btn" href="{{BASE}}/api/">API reference →</a>
+          <a class="btn ghost" href="{{BASE}}/guide/">User guide</a>
+          <a class="btn ghost" href="{{BASE}}/guide/USER_GUIDE.pdf">Guide PDF</a>
+          <a class="btn ghost" href="https://github.com/ckir/corelib">GitHub</a>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <div class="nav-logo foot-logo"><svg class="cube" width="22" height="22" aria-hidden="true" focusable="false"><use href="#cube"/></svg>corelib</div>
+        <span class="foot-about">A multi-runtime TypeScript foundation with a native Rust core.</span>
+      </div>
+      <div>
+        <p class="foot-title">Packages</p>
+        <a href="{{BASE}}/api/">@ckirg/corelib</a>
+        <a href="{{BASE}}/api/">@ckirg/corelib-markets</a>
+        <a href="{{BASE}}/api/">@ckirg/corelib-cloud</a>
+        <a href="{{BASE}}/api/rust/">corelib-rust</a>
+      </div>
+      <div>
+        <p class="foot-title">Docs</p>
+        <a href="{{BASE}}/api/">API reference</a>
+        <a href="#start">Quickstart</a>
+        <a href="{{BASE}}/guide/">User guide</a>
+        <a href="{{BASE}}/guide/USER_GUIDE.pdf">Guide PDF</a>
+      </div>
+      <div>
+        <p class="foot-title">Project</p>
+        <a href="https://github.com/ckir/corelib">GitHub</a>
+        <a href="https://github.com/ckir/corelib/releases">Releases</a>
+        <a href="https://www.npmjs.com/package/@ckirg/corelib">npm</a>
+        <a href="https://github.com/ckir/corelib/blob/main/LICENSE">MIT license</a>
+      </div>
+    </div>
+    <div class="foot-note"><span>© 2026 corelib · MIT</span><span>Built with pnpm, tsup and Rust</span></div>
+  </div>
+</footer>
+</body>
+</html>
