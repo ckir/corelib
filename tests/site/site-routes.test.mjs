@@ -25,6 +25,14 @@ describe("normaliseBase", () => {
 			/base must be a path/,
 		);
 	});
+
+	it("rejects a query string", () => {
+		expect(() => normaliseBase("corelib?v=1")).toThrow(/base must be a path/);
+	});
+
+	it("rejects a fragment", () => {
+		expect(() => normaliseBase("/corelib#top")).toThrow(/base must be a path/);
+	});
 });
 
 describe("resolveTarget", () => {
@@ -74,15 +82,39 @@ describe("resolveTarget", () => {
 	});
 
 	it("treats absolute URLs as external", () => {
-		expect(resolveTarget("https://github.com/ckir/corelib", "/", "/corelib")).toEqual(
-			{ type: "external" },
-		);
+		expect(
+			resolveTarget("https://github.com/ckir/corelib", "/", "/corelib"),
+		).toEqual({ type: "external" });
 	});
 
 	it("strips the cache-busting query", () => {
-		expect(resolveTarget("{{BASE}}/assets/site.css?v=0.4.0", "/", "/corelib")).toEqual(
-			{ type: "internal", path: "/assets/site.css", hash: "" },
-		);
+		expect(
+			resolveTarget("{{BASE}}/assets/site.css?v=0.4.0", "/", "/corelib"),
+		).toEqual({ type: "internal", path: "/assets/site.css", hash: "" });
+	});
+
+	it("resolves a root escape to the site root, never //", () => {
+		expect(resolveTarget("../", "/api/", "/corelib")).toEqual({
+			type: "internal",
+			path: "/",
+			hash: "",
+		});
+	});
+
+	it("maps a base-equal path to the site root", () => {
+		expect(resolveTarget("/corelib", "/api/", "/corelib")).toEqual({
+			type: "internal",
+			path: "/",
+			hash: "",
+		});
+	});
+
+	it("splits a hash off an internal route link", () => {
+		expect(resolveTarget("{{BASE}}/api/#core", "/", "/corelib")).toEqual({
+			type: "internal",
+			path: "/api/",
+			hash: "core",
+		});
 	});
 });
 
@@ -95,10 +127,9 @@ describe("extractRefs / extractIds", () => {
 	});
 
 	it("finds ids", () => {
-		expect([...extractIds('<h2 id="packages">x</h2><div id="start">')]).toEqual([
-			"packages",
-			"start",
-		]);
+		expect([...extractIds('<h2 id="packages">x</h2><div id="start">')]).toEqual(
+			["packages", "start"],
+		);
 	});
 });
 
@@ -129,14 +160,19 @@ describe("checkPages", () => {
 
 	it("rejects a missing asset", () => {
 		const errors = checkPages({
-			pages: [{ route: "/", html: '<link href="{{BASE}}/assets/missing.css">' }],
+			pages: [
+				{ route: "/", html: '<link href="{{BASE}}/assets/missing.css">' },
+			],
 			...known,
 		});
 		expect(errors[0]).toMatch(/unknown asset: \/assets\/missing.css/);
 	});
 
 	it("rejects an empty fragment", () => {
-		const errors = checkPages({ pages: [{ route: "/", html: '<a href="#">x</a>' }], ...known });
+		const errors = checkPages({
+			pages: [{ route: "/", html: '<a href="#">x</a>' }],
+			...known,
+		});
 		expect(errors[0]).toMatch(/empty fragment/);
 	});
 
@@ -147,6 +183,47 @@ describe("checkPages", () => {
 		});
 		expect(errors[0]).toMatch(/missing anchor: #missing/);
 	});
+
+	it("rejects a protocol-relative src", () => {
+		const errors = checkPages({
+			pages: [{ route: "/", html: '<img src="//cdn.example.com/x.png">' }],
+			...known,
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toMatch(/protocol-relative URL/);
+	});
+
+	it("rejects a renamed anchor referenced via {{BASE}}/ + hash", () => {
+		const errors = checkPages({
+			pages: [{ route: "/", html: '<a href="{{BASE}}/#gone">gone</a>' }],
+			...known,
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toMatch(/missing anchor: #gone/);
+	});
+
+	it("requires the {{BASE}} token on internal links in source mode", () => {
+		const errors = checkPages({
+			pages: [
+				{
+					route: "/",
+					html: '<h1 id="top">x</h1><a href="/api/">tokenless</a><a href="{{BASE}}/#top">top</a>',
+				},
+			],
+			...known,
+			requireBaseToken: true,
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toMatch(/^missing \{\{BASE\}\} token: \/api\//);
+	});
+
+	it("accepts tokenless internal links in build mode (tokens already expanded)", () => {
+		const errors = checkPages({
+			pages: [{ route: "/", html: '<a href="/api/">expanded</a>' }],
+			...known,
+		});
+		expect(errors).toEqual([]);
+	});
 });
 
 describe("routeForFile", () => {
@@ -155,6 +232,15 @@ describe("routeForFile", () => {
 		["404.html", "/404.html"],
 		["api/index.html", "/api/"],
 	])("maps %s to %s", (file, route) => {
+		expect(routeForFile(file)).toBe(route);
+	});
+
+	it.each([
+		["site/index.html", "/"],
+		["_site/api/index.html", "/api/"],
+		["site\\404.html", "/404.html"],
+		["./index.html", "/"],
+	])("maps %j to %s across prefixes and separators", (file, route) => {
 		expect(routeForFile(file)).toBe(route);
 	});
 });

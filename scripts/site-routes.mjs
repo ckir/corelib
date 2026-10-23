@@ -35,7 +35,11 @@ export const GENERATED_ROUTES = [
 export const GENERATED_FILES = ["/guide/index.html", "/guide/USER_GUIDE.pdf"];
 
 /** Site asset files copied verbatim from `site/assets/`. */
-export const ASSET_FILES = ["/assets/site.css", "/assets/favicon.svg", "/assets/site.js"];
+export const ASSET_FILES = [
+	"/assets/site.css",
+	"/assets/favicon.svg",
+	"/assets/site.js",
+];
 
 /**
  * Normalise a raw base value to `""` or `"/<name>"` (no leading/trailing slashes).
@@ -65,11 +69,17 @@ export function normaliseBase(raw) {
  * @returns {string} route, e.g. "/api/" — "/404.html" keeps the file name.
  */
 export function routeForFile(relPath) {
-	const rel = String(relPath).replaceAll("\\", "/").replace(/^(?:site\/|_site\/)/, "");
+	const rel = String(relPath)
+		.replaceAll("\\", "/")
+		.replace(/^(?:site\/|_site\/)/, "")
+		.split("/")
+		.filter((segment) => segment !== "" && segment !== ".")
+		.join("/");
 	const indexSuffix = "/index.html";
 	if (rel === "index.html") return "/";
 	if (rel === "404.html") return "/404.html";
-	if (rel.endsWith(indexSuffix)) return `/${rel.slice(0, -indexSuffix.length)}/`;
+	if (rel.endsWith(indexSuffix))
+		return `/${rel.slice(0, -indexSuffix.length)}/`;
 	return `/${rel}`;
 }
 
@@ -80,8 +90,13 @@ export function routeForFile(relPath) {
  */
 export function extractRefs(html) {
 	const refs = [];
-	for (const match of String(html ?? "").matchAll(/\b(href|src)\s*=\s*"([^"]*)"/g)) {
-		refs.push({ attr: /** @type {"href"|"src"} */ (match[1]), value: match[2] ?? "" });
+	for (const match of String(html ?? "").matchAll(
+		/(?:^|\s)(href|src)\s*=\s*"([^"]*)"/g,
+	)) {
+		refs.push({
+			attr: /** @type {"href"|"src"} */ (match[1]),
+			value: match[2] ?? "",
+		});
 	}
 	return refs;
 }
@@ -93,7 +108,9 @@ export function extractRefs(html) {
  */
 export function extractIds(html) {
 	const ids = new Set();
-	for (const match of String(html ?? "").matchAll(/\bid\s*=\s*"([^"]+)"/g)) {
+	for (const match of String(html ?? "").matchAll(
+		/(?:^|\s)id\s*=\s*"([^"]+)"/g,
+	)) {
 		ids.add(match[1] ?? "");
 	}
 	return ids;
@@ -108,14 +125,17 @@ export function extractIds(html) {
  */
 function resolveAgainstRoute(path, pageRoute) {
 	if (path.startsWith("/")) return path;
-	const directory = pageRoute.endsWith("/") ? pageRoute : `${pageRoute.slice(0, pageRoute.lastIndexOf("/") + 1) || "/"}`;
-	const segments = (`${directory}${path}`).split("/");
+	const directory = pageRoute.endsWith("/")
+		? pageRoute
+		: `${pageRoute.slice(0, pageRoute.lastIndexOf("/") + 1) || "/"}`;
+	const segments = `${directory}${path}`.split("/");
 	const stack = [];
 	for (const segment of segments) {
 		if (segment === "" || segment === ".") continue;
 		if (segment === "..") stack.pop();
 		else stack.push(segment);
 	}
+	if (stack.length === 0) return "/";
 	return `/${stack.join("/")}${path.endsWith("/") ? "/" : ""}`;
 }
 
@@ -164,16 +184,33 @@ export function resolveTarget(ref, pageRoute, base) {
  * Check every page's references against the known route/file tables.
  * Error strings (one per problem, in document order):
  * - `protocol-relative URL: <ref>` — `//host` is a mistake, never a valid target;
- * - `empty fragment: href "#"` — same-document link with no hash;
- * - `missing anchor: #<id>` — same-document hash with no matching id on the page;
+ * - `empty fragment: <attr> "#"` — same-document link with no hash;
+ * - `missing anchor: #<id>` — same-document hash with no matching id on the page
+ *   (also raised for an internal target whose path resolves back to the page's own
+ *   route, e.g. `{{BASE}}/#packages` on the home page);
+ * - `missing {{BASE}} token: <ref>` — an internal link not authored as
+ *   `{{BASE}}/path` (only with `requireBaseToken`, see below);
  * - `unknown route: <path>` — internal link ending `/` not in `knownRoutes`;
  * - `unknown asset: <path>` — internal file link not in `knownFiles`.
- * External URLs and internal links with hashes (cross-page anchors are not known
- * here) are ignored.
- * @param {{pages: {route: string, html: string}[], knownRoutes: Iterable<string>, knownFiles: Iterable<string>, base?: string}} input
+ * External URLs and internal links with hashes pointing at a different route are
+ * ignored (cross-page anchors are not known here).
+ *
+ * `requireBaseToken` enforces the authoring rule that every internal link is written
+ * `{{BASE}}/path`: with it enabled, any internal reference whose raw value does not
+ * start with the `{{BASE}}` token is reported, because after token substitution such
+ * a link would bypass the deployment base and 404 on GitHub Pages. Same-document
+ * (`#anchor`) links are exempt. Task 2's `--source` mode authoring check passes
+ * `true`; build mode passes `false` (the builder has already expanded the tokens).
+ * @param {{pages: {route: string, html: string}[], knownRoutes: Iterable<string>, knownFiles: Iterable<string>, base?: string, requireBaseToken?: boolean}} input
  * @returns {string[]}
  */
-export function checkPages({ pages, knownRoutes, knownFiles, base }) {
+export function checkPages({
+	pages,
+	knownRoutes,
+	knownFiles,
+	base,
+	requireBaseToken = false,
+}) {
 	const routes = new Set(knownRoutes);
 	const files = new Set(knownFiles);
 	const normalisedBase = normaliseBase(base ?? "");
@@ -190,8 +227,17 @@ export function checkPages({ pages, knownRoutes, knownFiles, base }) {
 			}
 			if (target.type === "same-document") {
 				if (target.hash === "") {
-					errors.push(`empty fragment: href "#"${where}`);
+					errors.push(`empty fragment: ${attr} "#"${where}`);
 				} else if (!ids.has(target.hash)) {
+					errors.push(`missing anchor: #${target.hash}${where}`);
+				}
+				continue;
+			}
+			if (requireBaseToken && !value.startsWith("{{BASE}}")) {
+				errors.push(`missing {{BASE}} token: ${value}${where}`);
+			}
+			if (target.path === page.route && target.hash !== "") {
+				if (!ids.has(target.hash)) {
 					errors.push(`missing anchor: #${target.hash}${where}`);
 				}
 				continue;
