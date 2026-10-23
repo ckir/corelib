@@ -46,6 +46,8 @@
         "test:integration": "pnpm -r --workspace-concurrency=1 run test:integration",
         "test:integration:record": "cross-env INTEGRATION_RECORD=1 pnpm -r --workspace-concurrency=1 run test:integration",
         "test:integration:live": "cross-env INTEGRATION_LIVE=1 pnpm -r --workspace-concurrency=1 run test:integration",
-        "test:integration:validate": "tsx tests/integration/coverage-validator.ts"
+        "test:integration:validate": "tsx tests/integration/coverage-validator.ts",
+        "site:build": "node scripts/build-site.mjs",
+        "site:preview": "cross-env SITE_BASE= pnpm site:build && cross-env SITE_BASE= node scripts/serve-site.mjs"
     }
 }
