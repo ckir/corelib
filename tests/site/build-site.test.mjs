@@ -1,8 +1,18 @@
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { substitute, detectCrateDir, renderApiIndex } from "../../scripts/build-site.mjs";
+import {
+	detectCrateDir,
+	renderApiIndex,
+	substitute,
+} from "../../scripts/build-site.mjs";
 
 describe("build-site helpers", () => {
 	let tempDirs = [];
@@ -17,9 +27,12 @@ describe("build-site helpers", () => {
 	});
 
 	it("substitute replaces both tokens and leaves other text alone", () => {
-		const html = '<link href="{{BASE}}/assets/site.css?v={{VERSION}}"><a href="{{BASE}}/">hi</a>';
+		const html =
+			'<link href="{{BASE}}/assets/site.css?v={{VERSION}}"><a href="{{BASE}}/">hi</a>';
 		const result = substitute(html, { base: "/corelib", version: "1.2.3" });
-		expect(result).toBe('<link href="/corelib/assets/site.css?v=1.2.3"><a href="/corelib/">hi</a>');
+		expect(result).toBe(
+			'<link href="/corelib/assets/site.css?v=1.2.3"><a href="/corelib/">hi</a>',
+		);
 		expect(result).not.toContain("{{BASE}}");
 		expect(result).not.toContain("{{VERSION}}");
 	});

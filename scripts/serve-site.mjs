@@ -1,8 +1,7 @@
-import { createServer } from "node:http";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { join, extname, normalize, resolve } from "node:path";
+import { createServer } from "node:http";
+import { dirname, extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { dirname } from "node:path";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -32,7 +31,7 @@ function serve() {
 	const server = createServer((req, res) => {
 		try {
 			const url = new URL(req.url, `http://${host}:${port}`);
-			let pathname = decodeURIComponent(url.pathname);
+			const pathname = decodeURIComponent(url.pathname);
 
 			// Reject path traversal
 			if (pathname.includes("..")) {
@@ -65,7 +64,12 @@ function serve() {
 				return;
 			}
 
-			let filePath = join(SITE_DIR, normalizedPath.startsWith("/") ? normalizedPath.slice(1) : normalizedPath);
+			let filePath = join(
+				SITE_DIR,
+				normalizedPath.startsWith("/")
+					? normalizedPath.slice(1)
+					: normalizedPath,
+			);
 
 			// Prevent escaping site dir
 			const resolvedSite = resolve(SITE_DIR);
@@ -116,7 +120,7 @@ function serve() {
 			res.writeHead(200, { "Content-Type": contentType });
 			res.end(content);
 			process.stdout.write(`${req.method} ${pathname} 200\n`);
-		} catch (err) {
+		} catch {
 			res.writeHead(500);
 			res.end();
 			process.stdout.write(`${req.method} ${req.url} 500\n`);

@@ -1,14 +1,16 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import {
-	ASSET_FILES,
-	GENERATED_FILES,
-	GENERATED_ROUTES,
-	normaliseBase,
-	routeForFile,
-} from "./site-routes.mjs";
+	cpSync,
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { normaliseBase } from "./site-routes.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -54,7 +56,9 @@ export function detectCrateDir(rustDocsDir) {
 		}
 	}
 	if (candidates.length !== 1) {
-		throw new Error(`expected exactly one crate directory in ${rustDocsDir}, found ${candidates.length}`);
+		throw new Error(
+			`expected exactly one crate directory in ${rustDocsDir}, found ${candidates.length}`,
+		);
 	}
 	return candidates[0];
 }
@@ -198,7 +202,7 @@ function copyDirSubstitute(src, dest, base, version) {
 
 function build() {
 	const base = normaliseBase(process.env.SITE_BASE ?? "/corelib");
-	
+
 	// Read version from root package.json
 	const rootPkgPath = join(ROOT, "package.json");
 	if (!existsSync(rootPkgPath)) {
@@ -217,13 +221,20 @@ function build() {
 	const userGuidePdf = join(ROOT, "docs", "USER_GUIDE.pdf");
 
 	// Assert all source paths exist
-	if (!existsSync(siteDir)) throw new Error(`missing ${siteDir}: run pnpm docs-all first`);
-	if (!existsSync(tsCoreDocs)) throw new Error(`missing ${tsCoreDocs}: run pnpm docs-all first`);
-	if (!existsSync(tsMarketsDocs)) throw new Error(`missing ${tsMarketsDocs}: run pnpm docs-all first`);
-	if (!existsSync(tsCloudDocs)) throw new Error(`missing ${tsCloudDocs}: run pnpm docs-all first`);
-	if (!existsSync(rustDocs)) throw new Error(`missing ${rustDocs}: run pnpm docs-all first`);
-	if (!existsSync(userGuideHtml)) throw new Error(`missing ${userGuideHtml}: run pnpm docs-all first`);
-	if (!existsSync(userGuidePdf)) throw new Error(`missing ${userGuidePdf}: run pnpm docs-all first`);
+	if (!existsSync(siteDir))
+		throw new Error(`missing ${siteDir}: run pnpm docs-all first`);
+	if (!existsSync(tsCoreDocs))
+		throw new Error(`missing ${tsCoreDocs}: run pnpm docs-all first`);
+	if (!existsSync(tsMarketsDocs))
+		throw new Error(`missing ${tsMarketsDocs}: run pnpm docs-all first`);
+	if (!existsSync(tsCloudDocs))
+		throw new Error(`missing ${tsCloudDocs}: run pnpm docs-all first`);
+	if (!existsSync(rustDocs))
+		throw new Error(`missing ${rustDocs}: run pnpm docs-all first`);
+	if (!existsSync(userGuideHtml))
+		throw new Error(`missing ${userGuideHtml}: run pnpm docs-all first`);
+	if (!existsSync(userGuidePdf))
+		throw new Error(`missing ${userGuidePdf}: run pnpm docs-all first`);
 
 	// rmSync _site
 	rmSync(outDir, { recursive: true, force: true });
