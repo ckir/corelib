@@ -20,7 +20,21 @@ updates:
       - "dependencies"
       - "npm"
     # Group minor/patch updates together, keep major separate for review
+    # A dependency joins the FIRST group whose pattern matches, so the specific
+    # families come before the catch-alls.
     groups:
+      # vitest and its @vitest/* plugins must stay on the same version: coverage-v8 refuses
+      # to run against a different vitest ("mixed versions"). Majors are ignored below and
+      # migrated by hand (the Cloudflare workers pool pins a vitest peer range).
+      vitest:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+      # msw majors change the public API (3.x renamed onUnhandledRequest and stopped
+      # intercepting happy-dom's fetch), so they get their own PR instead of hiding in a batch.
+      msw:
+        patterns:
+          - "msw"
       minor-and-patch:
         patterns:
           - "*"
@@ -45,8 +59,10 @@ updates:
       # Biome major versions may have breaking config changes
       - dependency-name: "@biomejs/biome"
         update-types: ["version-update:semver-major"]
-      # Vitest major versions may break test API
+      # Vitest major versions may break test API; the @vitest/* plugins must follow vitest
       - dependency-name: "vitest"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@vitest/*"
         update-types: ["version-update:semver-major"]
       # Rust FFI related - napi-rs major needs coordination
       - dependency-name: "@napi-rs/cli"
@@ -95,7 +111,15 @@ updates:
       - "cargo"
       - "rust"
     # Group minor/patch, keep major for manual review
+    # First matching group wins, so the families come before the catch-all.
     groups:
+      # napi-derive's generated code calls into napi at a matching version; bumping one
+      # alone breaks `cargo clippy` (register_native_borrow_with_value).
+      napi:
+        patterns: ["napi", "napi-*"]
+      # TLS roots and verifier advisories (RUSTSEC-2026-0381/0382/0383) span these crates.
+      rustls:
+        patterns: ["rustls*", "webpki*", "tokio-rustls"]
       minor-and-patch:
         patterns: ["*"]
         update-types: ["minor", "patch"]
