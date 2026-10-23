@@ -82,20 +82,25 @@ jobs:
       # "unsafe" fix) instead of reporting them. This read-only pass is what enforces
       # noConsole / noExplicitAny in CI.
       - name: Strict lint (read-only)
+        if: ${{ !cancelled() }}
         run: pnpm lint:strict
 
       # No build needed: tsconfig.base.json paths resolve workspace imports to source.
       - name: Typecheck
+        if: ${{ !cancelled() }}
         run: pnpm typecheck-all
 
       # Package layering (core <- markets <- cloud) and logger privacy; see .dependency-cruiser.cjs.
       - name: Dependency rules
+        if: ${{ !cancelled() }}
         run: pnpm deps:check
 
       - name: Site link check
+        if: ${{ !cancelled() }}
         run: pnpm site:check:source
 
       - name: Site unit tests
+        if: ${{ !cancelled() }}
         run: pnpm test:site
 
   # ---------------------------------------------------------
