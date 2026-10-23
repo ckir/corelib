@@ -15,7 +15,7 @@ catalog:
   "tsx": "^4.23.15"
   "typescript": "^6.0.3"
   "vitest": "^4.1.12"
-  "@vitest/coverage-v8": "^5.0.5"
+  "@vitest/coverage-v8": "^4.1.12"
   "tsup": "^9.0.0"
 
 # Patched floors for transitive dependencies of @jsr/gadicc__yahoo-finance2 (its optional MCP server tree:
