@@ -99,7 +99,7 @@ const server = setupServer(...handlers);
 
 describe("RequestUnlimited", () => {
 	beforeAll(() => {
-		server.listen({ onUnhandledRequest: "error" });
+		server.listen({ onUnhandledFrame: "error" });
 	});
 
 	afterAll(() => server.close());

@@ -1,3 +1,6 @@
+// @vitest-environment node
+// msw 3 no longer intercepts happy-dom's window.fetch (it hits the network and fails CORS),
+// so these msw-backed suites run under the plain Node fetch.
 // =============================================
 // FILE: ts-markets/src/nasdaq/MarketStatus.test.ts
 // PURPOSE: Exhaustive test suite for MarketStatus

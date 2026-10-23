@@ -44,7 +44,7 @@ const server = setupServer(
 );
 
 describe("RequestUnlimited hardening", () => {
-	beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
+	beforeAll(() => server.listen({ onUnhandledFrame: "error" }));
 	afterAll(() => server.close());
 	afterEach(() => {
 		seenHeaders = undefined;

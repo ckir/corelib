@@ -77,7 +77,7 @@ export function beginItest(): void {
 	if (IS_LIVE) return; // real network; no interception
 	if (serverStarted) return; // idempotent: global setup + per-test beforeAll can both call safely
 	serverStarted = true;
-	itestServer.listen({ onUnhandledRequest: "bypass" });
+	itestServer.listen({ onUnhandledFrame: "bypass" });
 	if (IS_RECORD && !bypassListenerAttached) {
 		bypassListenerAttached = true; // attach exactly once (no per-call leak)
 		itestServer.events.on("response:bypass", async ({ request, response }) => {

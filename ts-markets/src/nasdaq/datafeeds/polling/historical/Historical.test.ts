@@ -1,3 +1,6 @@
+// @vitest-environment node
+// msw 3 no longer intercepts happy-dom's window.fetch (it hits the network and fails CORS),
+// so these msw-backed suites run under the plain Node fetch.
 import { logger } from "@ckirg/corelib";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
@@ -133,7 +136,7 @@ const server = setupServer(
 );
 
 describe("Historical Module - Yahoo Provider with corelib Interceptor", () => {
-	beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
+	beforeAll(() => server.listen({ onUnhandledFrame: "error" }));
 	afterEach(() => {
 		server.resetHandlers();
 		vi.clearAllMocks();
