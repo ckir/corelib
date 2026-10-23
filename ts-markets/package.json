@@ -30,8 +30,8 @@
         "@types/ws": "catalog:",
         "@vitest/coverage-v8": "catalog:",
         "bun-types": "^1.4.3",
-        "happy-dom": "^20.14.6",
-        "msw": "^2.14.6",
+        "happy-dom": "^21.0.3",
+        "msw": "^3.0.3",
         "typedoc": "^0.28.20",
         "vitest": "catalog:"
     },
