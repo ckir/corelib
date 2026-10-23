@@ -114,7 +114,7 @@ markets/nasdaq/status, markets/nasdaq/historical, sql, tests}` plus `/health`; p
 
 1. **Validate**: Biome (`pnpm lint-all`) → typecheck → TS build → offline integration replay.
 2. **Test**: Vitest + MSW on Ubuntu/macOS/Windows (TS packages built first for workspace resolution).
-3. **Deploy Docs** (push to `main` only): TypeDoc + `cargo doc` → unified `docs-root` → `gh-pages`
+3. **Deploy Docs** (push to `main` only): TypeDoc + `cargo doc` → `pnpm site:build` → assembled `_site/` → GitHub Pages
    (requires `main` in the `github-pages` environment's allowed deployment branches).
 4. **Release** (`v*` tags): packs 3 TS `.tgz`s + 4 FFI `.node` binaries + 8 streamer CLIs,
    then publishes `@ckirg/*` to npm from the release tarballs.

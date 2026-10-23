@@ -6,6 +6,8 @@ pre-commit:
     format-lint:
       run: |
         pnpm format-all && pnpm lint:strict && pnpm lint-all
+    site-check:
+      run: pnpm site:check:source
     # Hint only (cross-shell echo): a type/API boundary changed — CI's validate
     # pre-flight will typecheck it; run `pnpm typecheck-all` locally if you want certainty.
     api-escalation:

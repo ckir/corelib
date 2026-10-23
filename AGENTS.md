@@ -26,7 +26,7 @@ This document defines the foundational architectural rules and development stand
     - TS docs are generated via TypeDoc.
     - Rust docs are generated via `cargo doc` and moved to `rust/docs`.
     - Run `pnpm docs-all` to regenerate the entire unified documentation suite.
-    - Live Docs: [ckir.github.io/corelib](https://ckir.github.io/corelib/index.html)
+    - Live site: [ckir.github.io/corelib](https://ckir.github.io/corelib/) — landing page at `/`, API reference at `/api`, user guide at `/guide`.
 
 ## 3. Engineering Standards
 
@@ -45,7 +45,7 @@ This document defines the foundational architectural rules and development stand
 The monorepo uses a strictly staged GitHub Actions pipeline:
 1.  **Validate**: Linting and formatting check (Biome).
 2.  **Test**: Multi-OS execution (Ubuntu, macOS, Windows). **Mandatory**: TS packages must be built before testing to ensure correct workspace resolution.
-3.  **Deploy Docs**: Triggered on `main` branch push. Publishes unified index to GitHub Pages.
+3.  **Deploy Docs**: Triggered on `main` branch push. Runs `pnpm site:build` after `pnpm docs-all` and publishes the assembled `_site/` directory (landing page, `/api`, `/guide`) to GitHub Pages.
 4.  **Release**: Triggered on `v*` tags. Builds and attaches 11 assets:
     - TS Packages (`.tgz` for core, cloud, markets).
     - Rust FFI Nodes (Darwin x64/arm64, Linux x64, Win x64).
