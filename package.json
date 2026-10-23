@@ -41,6 +41,8 @@
         "docs-all": "pnpm -r run docs",
         "clean-all": "pnpm exec npx del-cli --force node_modules dist rust/target .nx",
         "test:site": "vitest run --config vitest.config.mts",
+        "site:check": "node scripts/check-site.mjs",
+        "site:check:source": "node scripts/check-site.mjs --source",
         "test:integration": "pnpm -r --workspace-concurrency=1 run test:integration",
         "test:integration:record": "cross-env INTEGRATION_RECORD=1 pnpm -r --workspace-concurrency=1 run test:integration",
         "test:integration:live": "cross-env INTEGRATION_LIVE=1 pnpm -r --workspace-concurrency=1 run test:integration",
