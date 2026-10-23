@@ -148,9 +148,9 @@ describe("check-site CLI", () => {
 		expect(result.stdout).toBe("");
 	});
 
-	it("exits 2 naming site/index.html while the pages do not exist", () => {
-		// TODO(Task 3): this stays green after `site/` lands — then covers Task 2's
-		// transition behaviour, not a permanently-missing tree.
+	it("exits 2 naming site/index.html when the source pages are absent", () => {
+		// The fixture deliberately omits site/, so this covers the missing-page
+		// path permanently rather than depending on the real pages being absent.
 		const result = runCli(["--source"], makeSourceCwd(undefined, false));
 		expect(result.status).toBe(2);
 		expect(result.stderr).toBe("site/index.html not found: run Task 3 first\n");
