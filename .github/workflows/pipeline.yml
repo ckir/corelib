@@ -92,6 +92,12 @@ jobs:
       - name: Dependency rules
         run: pnpm deps:check
 
+      - name: Site link check
+        run: pnpm site:check:source
+
+      - name: Site unit tests
+        run: pnpm test:site
+
   # ---------------------------------------------------------
   # 2. TEST — Multi-OS Matrix (Ubuntu, macOS, Windows)
   # TS packages MUST be built before testing for correct workspace resolution.
@@ -235,19 +241,25 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install pinned Rust toolchain
+        uses: ./.github/actions/setup-rust
+
       - name: Build all packages (required for TypeDoc)
         run: pnpm build-all
 
       - name: Generate documentation
         run: pnpm docs-all
 
+      - name: Build static site
+        run: pnpm site:build
+
       - name: Setup Pages
         uses: actions/configure-pages@v6
 
-      - name: Upload documentation artifact
+      - name: Upload site artifact
         uses: actions/upload-pages-artifact@v5
         with:
-          path: docs
+          path: _site
 
       - name: Deploy to GitHub Pages
         id: deployment

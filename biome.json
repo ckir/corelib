@@ -3,6 +3,9 @@
 	"files": {
 		"includes": [
 			"**/*.ts",
+			"**/*.mts",
+			"scripts/*site*.mjs",
+			"tests/site/**/*.mjs",
 			"!ts-core/docs",
 			"!rust"
 		]

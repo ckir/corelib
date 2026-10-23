@@ -193,15 +193,21 @@ curl -X POST https://your-edge-service/api/v1/markets/nasdaq \
 
 ---
 
-## 📖 API Documentation
+## 📖 Documentation
 
-Detailed API documentation is generated for each package and published via GitHub Pages:
+The project publishes a documentation site at [ckir.github.io/corelib](https://ckir.github.io/corelib/):
 
-- **[Unified Documentation Index](https://ckir.github.io/corelib/index.html)**
-- **[Core Utilities Documentation](https://ckir.github.io/corelib/ts-core/index.html)** (`@ckirg/corelib`)
-- **[Market Data Documentation](https://ckir.github.io/corelib/ts-markets/index.html)** (`@ckirg/corelib-markets`)
-- **[Cloud Extensions Documentation](https://ckir.github.io/corelib/ts-cloud/index.html)** (`@ckirg/corelib-cloud`)
-- **[Rust Native Core Documentation](https://ckir.github.io/corelib/rust/corelib_rust/index.html)** (`corelib-rust`)
+- **[Landing site](https://ckir.github.io/corelib/)**
+- **[API Documentation Index](https://ckir.github.io/corelib/api/)**
+  - **[Core Utilities Reference](https://ckir.github.io/corelib/api/core/)** (`@ckirg/corelib`)
+  - **[Market Data Reference](https://ckir.github.io/corelib/api/markets/)** (`@ckirg/corelib-markets`)
+  - **[Cloud Extensions Reference](https://ckir.github.io/corelib/api/cloud/)** (`@ckirg/corelib-cloud`)
+  - **[Rust Native Core Reference](https://ckir.github.io/corelib/api/rust/)** (`corelib-rust`; redirects to the crate page)
+- **[User Guide](https://ckir.github.io/corelib/guide/)** ([PDF](https://ckir.github.io/corelib/guide/USER_GUIDE.pdf))
+
+The site is authored in `site/`; the generated API reference and the user guide are merged into
+`_site/` by `pnpm site:build`. `pnpm site:preview` serves it locally at
+`http://127.0.0.1:4173`.
 
 ---
 
