@@ -118,13 +118,18 @@ export function extractIds(html) {
 
 /**
  * Resolve a relative path against a page route (dot-segment aware).
- * "/api/" + "../guide/" → "/guide/"; a trailing slash in the input is preserved.
+ * "/api/" + "../guide/" → "/guide/"; a trailing slash in the input is preserved,
+ * and a bare `.`/`..` last segment resolves to a directory, so it keeps a slash.
  * @param {string} path already-absolute ("/x") or page-relative path, no query/hash
  * @param {string} pageRoute route of the page containing the reference
  * @returns {string}
  */
 function resolveAgainstRoute(path, pageRoute) {
 	if (path.startsWith("/")) return path;
+	const rawSegments = path.split("/");
+	const lastRawSegment = rawSegments[rawSegments.length - 1] ?? "";
+	const asDirectory =
+		path.endsWith("/") || lastRawSegment === "." || lastRawSegment === "..";
 	const directory = pageRoute.endsWith("/")
 		? pageRoute
 		: `${pageRoute.slice(0, pageRoute.lastIndexOf("/") + 1) || "/"}`;
@@ -136,7 +141,7 @@ function resolveAgainstRoute(path, pageRoute) {
 		else stack.push(segment);
 	}
 	if (stack.length === 0) return "/";
-	return `/${stack.join("/")}${path.endsWith("/") ? "/" : ""}`;
+	return `/${stack.join("/")}${asDirectory ? "/" : ""}`;
 }
 
 /**
@@ -184,7 +189,8 @@ export function resolveTarget(ref, pageRoute, base) {
  * Check every page's references against the known route/file tables.
  * Error strings (one per problem, in document order):
  * - `protocol-relative URL: <ref>` — `//host` is a mistake, never a valid target;
- * - `empty fragment: <attr> "#"` — same-document link with no hash;
+ * - `empty fragment: <attr> "#"` — a `#` with no hash: either a bare `#` link or an
+ *   internal link resolving back to the page's own route, e.g. `{{BASE}}/#`;
  * - `missing anchor: #<id>` — same-document hash with no matching id on the page
  *   (also raised for an internal target whose path resolves back to the page's own
  *   route, e.g. `{{BASE}}/#packages` on the home page);
@@ -225,7 +231,23 @@ export function checkPages({
 				errors.push(`protocol-relative URL: ${value}${where}`);
 				continue;
 			}
-			if (target.type === "same-document") {
+			if (
+				requireBaseToken &&
+				target.type === "internal" &&
+				!value.startsWith("{{BASE}}")
+			) {
+				errors.push(`missing {{BASE}} token: ${value}${where}`);
+			}
+			// Same-document: a plain `#hash`, or an internal target that resolves
+			// back to this page's own route (e.g. `{{BASE}}/#packages` on `/`).
+			// The raw value's `#` discriminates an intended fragment from a
+			// hash-less link, so `{{BASE}}/#` is an empty fragment, not a route.
+			const sameDocument =
+				target.type === "same-document" ||
+				(target.type === "internal" &&
+					target.path === page.route &&
+					value.includes("#"));
+			if (sameDocument) {
 				if (target.hash === "") {
 					errors.push(`empty fragment: ${attr} "#"${where}`);
 				} else if (!ids.has(target.hash)) {
@@ -233,22 +255,13 @@ export function checkPages({
 				}
 				continue;
 			}
-			if (requireBaseToken && !value.startsWith("{{BASE}}")) {
-				errors.push(`missing {{BASE}} token: ${value}${where}`);
-			}
-			if (target.path === page.route && target.hash !== "") {
-				if (!ids.has(target.hash)) {
-					errors.push(`missing anchor: #${target.hash}${where}`);
-				}
-				continue;
-			}
-			if (target.path.endsWith("/")) {
+			if (target.type === "internal" && target.path.endsWith("/")) {
 				if (!routes.has(target.path)) {
 					errors.push(`unknown route: ${target.path}${where}`);
 				}
 				continue;
 			}
-			if (!files.has(target.path)) {
+			if (target.type === "internal" && !files.has(target.path)) {
 				errors.push(`unknown asset: ${target.path}${where}`);
 			}
 		}

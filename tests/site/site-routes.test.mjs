@@ -116,6 +116,22 @@ describe("resolveTarget", () => {
 			hash: "core",
 		});
 	});
+
+	it("keeps directory semantics for a bare dot segment", () => {
+		expect(resolveTarget(".", "/api/", "/corelib")).toEqual({
+			type: "internal",
+			path: "/api/",
+			hash: "",
+		});
+	});
+
+	it("keeps directory semantics for a bare dot-dot segment", () => {
+		expect(resolveTarget("..", "/api/", "/corelib")).toEqual({
+			type: "internal",
+			path: "/",
+			hash: "",
+		});
+	});
 });
 
 describe("extractRefs / extractIds", () => {
@@ -200,6 +216,15 @@ describe("checkPages", () => {
 		});
 		expect(errors).toHaveLength(1);
 		expect(errors[0]).toMatch(/missing anchor: #gone/);
+	});
+
+	it("rejects an empty fragment via the {{BASE}} token form", () => {
+		const errors = checkPages({
+			pages: [{ route: "/", html: '<a href="{{BASE}}/#">x</a>' }],
+			...known,
+		});
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toMatch(/empty fragment/);
 	});
 
 	it("requires the {{BASE}} token on internal links in source mode", () => {
