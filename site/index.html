@@ -47,7 +47,7 @@
   </div>
 </header>
 
-<main id="main">
+<main id="main" tabindex="-1">
   <div class="wrap">
     <!-- ================= HERO ================= -->
     <section class="hero">
@@ -174,7 +174,7 @@
               <strong>WS client</strong>
               <p>Alpaca · Yahoo · Finnhub</p>
             </div>
-            <div class="bridge"><span>ThreadsafeFn</span><span class="dashline" aria-hidden="true"></span><span>no block</span></div>
+            <div class="bridge"><span>ThreadsafeFunction</span><span class="dashline" aria-hidden="true"></span><span>no block</span></div>
             <div class="ffi-box">
               <div class="k2">JS runtime</div>
               <strong>EventEmitter</strong>
@@ -194,12 +194,12 @@
         <div class="row">
           <div class="row-text">
             <h3>HTTP that retries itself</h3>
-            <p>Every request gets a correlation id, a timeout floor and full-jitter backoff. 5xx and network failures retry; 4xx stops immediately. You get a discriminated union back, not a thrown error.</p>
+            <p>Every request gets a correlation id, a timeout floor and full-jitter backoff. 5xx, network failures and 429 retry; other 4xx stops immediately. You get a discriminated union back, not a thrown error.</p>
             <div class="mini"><span class="c">// retries: 5 · timeout: 50s · jitter</span>
 <span class="k">const</span> res = <span class="k">await</span> endPoint(<span class="s">"/me"</span>, { retry: { limit: 5 } })</div>
           </div>
           <div class="viz">
-            <div class="viz-head"><span>attempt timeline</span><span>cid 4182</span></div>
+            <div class="viz-head"><span>attempt timeline</span><span aria-hidden="true">cid 4182</span></div>
             <div class="retry" aria-hidden="true">
               <div class="attempt"><span>1.2s</span><div class="track"><div class="fill bad w-38">503 &nbsp;retry</div></div><span>attempt 1</span></div>
               <div class="attempt"><span>2.7s</span><div class="track"><div class="fill bad w-58">503 &nbsp;retry</div></div><span>attempt 2</span></div>
@@ -218,7 +218,7 @@ log.debug(<span class="s">"retry decision"</span>, { status, willRetry })</div>
           </div>
           <div class="viz">
             <div class="viz-head"><span>stdout · trace</span><span>json</span></div>
-            <div class="logs">
+            <div class="logs" aria-hidden="true">
               <span class="ln">{<span class="key">"level"</span>:30,<span class="key">"section"</span>:<span class="str">"retry"</span>,<span class="key">"msg"</span>:<span class="str">"request: 1 url"</span>,<span class="key">"cid"</span>:4182}</span>
               <span class="ln">{<span class="key">"level"</span>:10,<span class="key">"attempt"</span>:1,<span class="key">"status"</span>:503,<span class="key">"willRetry"</span>:<span class="val">true</span>,<span class="key">"elapsedMs"</span>:1204}</span>
               <span class="ln">{<span class="key">"level"</span>:10,<span class="key">"attempt"</span>:2,<span class="key">"status"</span>:503,<span class="key">"willRetry"</span>:<span class="val">true</span>,<span class="key">"elapsedMs"</span>:2731}</span>
@@ -272,20 +272,20 @@ log.debug(<span class="s">"retry decision"</span>, { status, willRetry })</div>
           <p>Add the core package. Markets and cloud are separate, opt-in installs.</p>
           <div class="tabs" role="tablist" aria-label="Runtime for the install command">
             <button class="tab" type="button" role="tab" id="tab-node" data-runtime-tab data-runtime="node" aria-selected="true" aria-controls="install-node">Node</button>
-            <button class="tab" type="button" role="tab" id="tab-bun" data-runtime-tab data-runtime="bun" aria-selected="false" aria-controls="install-bun">Bun</button>
-            <button class="tab" type="button" role="tab" id="tab-deno" data-runtime-tab data-runtime="deno" aria-selected="false" aria-controls="install-deno">Deno</button>
+            <button class="tab" type="button" role="tab" id="tab-bun" data-runtime-tab data-runtime="bun" aria-selected="false" aria-controls="install-bun" tabindex="-1">Bun</button>
+            <button class="tab" type="button" role="tab" id="tab-deno" data-runtime-tab data-runtime="deno" aria-selected="false" aria-controls="install-deno" tabindex="-1">Deno</button>
           </div>
-          <div class="code-block">
-            <pre role="tabpanel" id="install-node" data-runtime-panel aria-labelledby="tab-node" tabindex="0">pnpm add @ckirg/corelib</pre>
-            <button class="copy" type="button" data-copy data-copy-target="install-node">Copy</button>
+          <div class="code-block" role="tabpanel" id="install-node" data-runtime-panel aria-labelledby="tab-node" tabindex="0">
+            <pre id="install-node-code">pnpm add @ckirg/corelib</pre>
+            <button class="copy" type="button" data-copy data-copy-target="install-node-code">Copy</button>
           </div>
-          <div class="code-block">
-            <pre role="tabpanel" id="install-bun" data-runtime-panel aria-labelledby="tab-bun" tabindex="0" hidden>bun add @ckirg/corelib</pre>
-            <button class="copy" type="button" data-copy data-copy-target="install-bun">Copy</button>
+          <div class="code-block" role="tabpanel" id="install-bun" data-runtime-panel aria-labelledby="tab-bun" tabindex="-1" hidden>
+            <pre id="install-bun-code">bun add @ckirg/corelib</pre>
+            <button class="copy" type="button" data-copy data-copy-target="install-bun-code">Copy</button>
           </div>
-          <div class="code-block">
-            <pre role="tabpanel" id="install-deno" data-runtime-panel aria-labelledby="tab-deno" tabindex="0" hidden>deno add npm:@ckirg/corelib</pre>
-            <button class="copy" type="button" data-copy data-copy-target="install-deno">Copy</button>
+          <div class="code-block" role="tabpanel" id="install-deno" data-runtime-panel aria-labelledby="tab-deno" tabindex="-1" hidden>
+            <pre id="install-deno-code">deno add npm:@ckirg/corelib</pre>
+            <button class="copy" type="button" data-copy data-copy-target="install-deno-code">Copy</button>
           </div>
         </div>
         <div class="step">
@@ -328,6 +328,7 @@ stream.on(<span class="s">"pricing"</span>, (tick) =&gt; {
           <a class="btn ghost" href="{{BASE}}/guide/USER_GUIDE.pdf">Guide PDF</a>
           <a class="btn ghost" href="https://github.com/ckir/corelib">GitHub</a>
         </div>
+        <div class="api">Generated from source on every push to main</div>
       </div>
     </section>
   </div>

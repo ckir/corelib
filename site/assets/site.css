@@ -252,9 +252,7 @@ pre { padding: 22px; font-size: 13px; line-height: 1.75; color: #c7d2fe; overflo
 .c { color: #5b6b95; }
 .k { color: #c084fc; }
 .s { color: #86efac; }
-.t { color: #60a5fa; }
 .n { color: #f0abfc; }
-.p { color: #94a3b8; }
 .note {
   position: absolute;
   right: 4px;
@@ -560,8 +558,8 @@ h2 { font-size: 40px; line-height: 1.14; letter-spacing: -.03em; font-weight: 65
 .code-block { position: relative; }
 .code-block > .copy { position: absolute; top: 7px; right: 7px; }
 .code-block > pre { padding-right: 64px; }
-/* A panel's copy control follows its visibility (the panel itself carries hidden). */
-.code-block > pre[hidden] + .copy { display: none; }
+/* A panel's copy control follows its visibility (the panel wrapper carries hidden). */
+.code-block[hidden] .copy { display: none !important; }
 .window-bar .copy { margin-left: 12px; }
 
 /* CTA */
@@ -599,6 +597,7 @@ h2 { font-size: 40px; line-height: 1.14; letter-spacing: -.03em; font-weight: 65
 .cta-panel > * { position: relative; z-index: 1; }
 .cta-panel h2 { margin: 0 auto; max-width: 24ch; }
 .cta-panel p { color: #b6c2e6; margin: 16px auto 30px; max-width: 52ch; font-size: 15px; line-height: 1.6; }
+.cta-panel .api { font: 12px ui-monospace, monospace; color: #8f9dc6; margin-top: 26px; }
 .cube-cta { width: 58px; height: 58px; margin: 0 auto 22px; display: block; }
 .btns { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 .btn {
