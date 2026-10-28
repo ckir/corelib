@@ -176,7 +176,7 @@ jobs:
       - name: Start MongoDB for the real-MongoDB tests (Linux only)
         if: matrix.os == 'ubuntu-latest'
         run: |
-          docker run -d --name mongo-test -p 27017:27017 mongo:8.0.34
+          docker run -d --name mongo-test -p 27017:27017 -e GLIBC_TUNABLES=glibc.pthread.rseq=1 mongo:8.0.34
           # mongosh is not on the host runner: ping from INSIDE the container (60 s at most).
           deadline=$((SECONDS+60))
           while [ "$SECONDS" -lt "$deadline" ]; do
