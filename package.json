@@ -12,7 +12,7 @@
         "del-cli": "^8.0.1",
         "dependency-cruiser": "^18.7.0",
         "msw": "^3.0.3",
-        "nx": "^23.3.0",
+        "nx": "^24.0.1",
         "tsup": "catalog:",
         "tsx": "catalog:",
         "typescript": "catalog:",
