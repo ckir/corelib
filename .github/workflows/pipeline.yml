@@ -103,6 +103,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm test:site
 
+      - name: Production dependency audit
+        if: ${{ !cancelled() }}
+        run: pnpm audit:prod
+
   # ---------------------------------------------------------
   # 2. TEST — Multi-OS Matrix (Ubuntu, macOS, Windows)
   # TS packages MUST be built before testing for correct workspace resolution.

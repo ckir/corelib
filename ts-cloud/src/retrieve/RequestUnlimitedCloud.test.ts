@@ -83,6 +83,30 @@ describe("RequestUnlimitedCloud (kyRouter)", () => {
 			const res = await performPost({ url: "https://example.com/no-content" });
 			expect(res.status).toBe(200);
 		});
+
+		it("should return text and forward safe headers when target returns text/plain", async () => {
+			const mockResult = {
+				status: "success",
+				value: {
+					status: 200,
+					headers: {
+						"content-type": "text/plain",
+						etag: '"abc123etag"',
+						"cache-control": "public, max-age=3600",
+					},
+					body: "hello plain text",
+				},
+			};
+			vi.mocked(endPoint).mockResolvedValueOnce(mockResult as any);
+
+			const res = await performPost({ url: "https://example.com/readme.txt" });
+			const text = await res.text();
+
+			expect(res.status).toBe(200);
+			expect(text).toBe("hello plain text");
+			expect(res.headers.get("etag")).toBe('"abc123etag"');
+			expect(res.headers.get("cache-control")).toBe("public, max-age=3600");
+		});
 	});
 
 	describe("Bulk Endpoints Logic", () => {

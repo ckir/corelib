@@ -26,6 +26,8 @@ overrides:
   "fast-uri": "^3.1.7"
   "ip-address": "^10.3.1"
   "@modelcontextprotocol/sdk": "^1.31.0"
+  "body-parser": "^2.4.0"
+  "zod": ">=4.6.6"
 
 allowBuilds:
   esbuild: true

@@ -154,6 +154,7 @@ export class YahooStreaming extends EventEmitter {
 	 * Cleans up the local state/database.
 	 */
 	clean() {
+		this.health.stop();
 		this.keepAlive.release();
 		this.rust.clean();
 	}

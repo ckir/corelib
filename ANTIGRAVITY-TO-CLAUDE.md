@@ -69,3 +69,41 @@ links 404.
 - Rejected: Alternative A (relative links) because the 404 page needs a deterministic base; B (HTTP-based
   checking) as heavier for a pre-commit gate; C (TypeDoc direct output) because it conflicts with the
   no-TypeDoc-change constraint.
+
+## 2026-10-28 — Full repository code review & quality audit
+
+Mode: Whole-repo five-axis quality gate & architecture review (Correctness, Readability, Architecture, Security, Performance).
+Trigger: User review and fix request.
+
+### 🔴 Blocker / Critical
+
+1. **Unpatched high-severity production dependency advisories (`pnpm audit:prod`).**
+   - **Location:** `pnpm-workspace.yaml:24` / `package.json:11`
+   - **Problem:** `pnpm audit:prod` failed with 2 High-severity CVEs:
+     - `zod` < 4.6.6 (GHSA-mrhx-c7xc-m3w5: Memory exhaustion on constrained collections)
+     - `body-parser` >= 2.0.0 < 2.4.0 (GHSA-27r3-jxmh-p828: DoS via trailing bytes after compressed body)
+     Both were pulled transitively via `ts-markets` -> `@jsr/gadicc__yahoo-finance2` -> `@modelcontextprotocol/sdk`.
+   - **Fix Applied:** Added `"zod": ">=4.6.6"` and `"body-parser": "^2.4.0"` to `overrides` in `pnpm-workspace.yaml`. `pnpm audit:prod` now passes with 0 high/critical vulnerabilities.
+
+### 🟡 Should-fix
+
+2. **Transparent Proxy in `ts-cloud` drops non-JSON content types and headers.**
+   - **Location:** `ts-cloud/src/retrieve/RequestUnlimitedCloud.ts:88` and `ts-cloud/src/markets/nasdaq/ApiNasdaqUnlimitedCloud.ts:96`
+   - **Problem:** Single URL proxy endpoints unconditionally returned `c.json(...)`, stringifying non-JSON formats (HTML, CSV, SVG) and dropping upstream caching/ETag headers.
+   - **Fix Applied:** Inspected `content-type` header. For non-JSON text bodies, return `c.text(...)`; for JSON, return `c.json(...)`. Forward safe caching headers (`etag`, `cache-control`, `last-modified`). Covered with unit test in `RequestUnlimitedCloud.test.ts`.
+
+3. **Missing `pnpm audit:prod` gate in CI pipeline.**
+   - **Location:** `.github/workflows/pipeline.yml:106`
+   - **Problem:** `pnpm-workspace.yaml:23` states that patched overrides are "Gated by `pnpm audit:prod` in CI", but `pipeline.yml` omitted this step from the `validate` job.
+   - **Fix Applied:** Added `Production dependency audit` step (`run: pnpm audit:prod`) to the `validate` job in `pipeline.yml`.
+
+4. **Streaming client cleanup did not stop health tracking.**
+   - **Location:** `ts-markets/src/nasdaq/datafeeds/streaming/yahoo/YahooStreaming.ts:156`, `alpaca/AlpacaStreaming.ts:179`, and `finnhub/FinnhubStreaming.ts:113`
+   - **Problem:** Calling `.clean()` released `keepAlive` and cleaned native storage, but left `this.health` in the active tracking state.
+   - **Fix Applied:** Added `this.health.stop()` inside `clean()` across all three streaming facades.
+
+### 🟢 Nit & Structural Improvements (Generative)
+
+5. **SSRF redirect bypass vector on open redirects:** Consider `{ redirect: "manual" }` or validating redirect location headers via `checkProxyTarget`.
+6. **Rust `corelib-streaming` crate extraction:** Decouple native streaming engine from N-API bindings to accelerate builds and enable headless CLI streamer binaries.
+7. **Streaming download support in `RequestUnlimited`:** Introduce stream-response helper to eliminate buffering large historical archives in memory on edge workers.

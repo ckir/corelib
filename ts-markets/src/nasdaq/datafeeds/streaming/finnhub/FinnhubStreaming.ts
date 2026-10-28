@@ -111,6 +111,7 @@ export class FinnhubStreaming extends EventEmitter {
 		await this.rust.stop();
 	}
 	async clean(): Promise<void> {
+		this.health.stop();
 		this.keepAlive.release();
 		await this.rust.clean();
 	}

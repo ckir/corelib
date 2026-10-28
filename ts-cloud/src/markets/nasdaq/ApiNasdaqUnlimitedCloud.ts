@@ -92,11 +92,14 @@ nasdaqRouter.post("/", async (c: Context<AppEnv>): Promise<Response> => {
 			const result = await endPoint(url, { ...options, headers });
 
 			if (result.status === "success") {
+				const finalStatus = toContentfulStatus(result.value.status);
+				const respHeaders = result.value.headers || {};
+				const safeHeaders: Record<string, string> = {};
+				for (const key of ["etag", "cache-control", "last-modified"]) {
+					if (respHeaders[key]) safeHeaders[key] = respHeaders[key];
+				}
 				// Transparently return the Nasdaq response
-				return c.json(
-					result.value.body,
-					toContentfulStatus(result.value.status),
-				);
+				return c.json(result.value.body, finalStatus, safeHeaders);
 			}
 			// Return the transport error directly
 			return c.json(result, errorStatus(result.reason));

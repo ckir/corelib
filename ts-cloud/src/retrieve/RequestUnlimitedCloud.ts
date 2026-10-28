@@ -13,6 +13,17 @@ import { rejectOversizedBulk } from "../core/limits";
 import type { AppEnv } from "../core/types";
 import { checkProxyTarget } from "../core/url-guard";
 
+function forwardableHeaders(
+	headers?: Record<string, string>,
+): Record<string, string> {
+	if (!headers) return {};
+	const safe: Record<string, string> = {};
+	for (const key of ["etag", "cache-control", "last-modified"]) {
+		if (headers[key]) safe[key] = headers[key];
+	}
+	return safe;
+}
+
 /**
  * Hono router for generic HTTP proxying via RequestUnlimited.
  * Mounted at /api/v1/ky in the main application.
@@ -85,7 +96,17 @@ kyRouter.post("/", async (c: Context<AppEnv>): Promise<Response> => {
 			const result = await endPoint(body.url, body.options || {});
 			if (result.status === "success") {
 				const finalStatus = toContentfulStatus(result.value.status);
-				return c.json(result.value.body, finalStatus);
+				const headers = result.value.headers || {};
+				const safeHeaders = forwardableHeaders(headers);
+				const contentType = headers["content-type"];
+				if (
+					typeof result.value.body === "string" &&
+					contentType &&
+					!contentType.includes("json")
+				) {
+					return c.text(result.value.body, finalStatus, safeHeaders);
+				}
+				return c.json(result.value.body, finalStatus, safeHeaders);
 			}
 			return c.json(result, errorStatus(result.reason));
 		}
