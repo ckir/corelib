@@ -29,8 +29,8 @@
         "@types/node": "catalog:",
         "@types/ws": "catalog:",
         "@vitest/coverage-v8": "catalog:",
-        "bun-types": "^1.4.3",
-        "happy-dom": "^21.0.3",
+        "bun-types": "^1.4.4",
+        "happy-dom": "^21.0.4",
         "msw": "^3.0.3",
         "typedoc": "^0.28.20",
         "vitest": "catalog:"
@@ -38,7 +38,7 @@
     "dependencies": {
         "@ckirg/corelib": "workspace:*",
         "@gadicc/yahoo-finance2": "jsr:^3.15.2",
-        "basic-ftp": "^6.2.3",
+        "basic-ftp": "^6.2.4",
         "ky": "^2.2.0",
         "luxon": "^3.7.2",
         "mongodb": "^7.7.0",

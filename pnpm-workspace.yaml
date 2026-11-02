@@ -7,11 +7,11 @@ packages:
   - rust
 
 catalog:
-  "@biomejs/biome": "^2.5.15"
-  "@types/node": "^26.6.5"
+  "@biomejs/biome": "^2.6.4"
+  "@types/node": "^26.6.6"
   "@types/deno": "^2.7.0"
   "@types/ws": "^8.18.2"
-  "@types/bun": "^1.4.3"
+  "@types/bun": "^1.4.4"
   "tsx": "^4.23.15"
   "typescript": "^6.0.3"
   "vitest": "^4.1.12"
