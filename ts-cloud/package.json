@@ -41,26 +41,26 @@
     "dependencies": {
         "@ckirg/corelib": "workspace:*",
         "@ckirg/corelib-markets": "workspace:*",
-        "@hono/node-server": "^2.1.5",
-        "hono": "^4.13.13",
+        "@hono/node-server": "^2.1.6",
+        "hono": "^4.13.16",
         "ky": "^2.2.0",
-        "serialize-error": "^13.0.2"
+        "serialize-error": "^13.1.0"
     },
     "devDependencies": {
-        "@cloudflare/vite-plugin": "^1.64.0",
+        "@cloudflare/vite-plugin": "^1.67.0",
         "@cloudflare/vitest-pool-workers": "^0.23.0",
-        "@cloudflare/workers-types": "^5.20261019.1",
+        "@cloudflare/workers-types": "^5.20261106.1",
         "@types/aws-lambda": "^8.10.164",
         "@types/deno": "catalog:",
         "@types/node": "catalog:",
-        "bun-types": "^1.4.3",
+        "bun-types": "^1.4.4",
         "miniflare": "^4.20260730.0",
         "tsup": "catalog:",
         "typedoc": "^0.28.20",
         "typescript": "catalog:",
-        "vite": "^8.3.4",
+        "vite": "^8.3.6",
         "@vitest/coverage-v8": "catalog:",
         "vitest": "catalog:",
-        "wrangler": "^4.151.0"
+        "wrangler": "^4.158.0"
     }
 }

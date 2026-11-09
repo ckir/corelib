@@ -10,14 +10,14 @@
         "@types/ws": "catalog:",
         "cross-env": "^10.1.0",
         "del-cli": "^8.0.1",
-        "dependency-cruiser": "^18.7.0",
+        "dependency-cruiser": "^18.7.2",
         "msw": "^3.0.3",
-        "nx": "^24.0.1",
+        "nx": "^24.0.4",
         "tsup": "catalog:",
         "tsx": "catalog:",
         "typescript": "catalog:",
         "vitest": "catalog:",
-        "ws": "^8.22.0"
+        "ws": "^8.22.1"
     },
     "scripts": {
         "build-all": "pnpm -r build",
