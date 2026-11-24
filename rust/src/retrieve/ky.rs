@@ -6,7 +6,8 @@
 // exponential backoff and support for the `Retry-After` header.
 // =============================================
 
-use chrono::Utc;
+use jiff::fmt::rfc2822;
+use jiff::Timestamp;
 use reqwest::{Client, IntoUrl, Method, RequestBuilder, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
 use std::sync::OnceLock;
@@ -59,11 +60,10 @@ const DEFAULT_MAX_RETRY_AFTER: Duration = Duration::from_secs(60);
 fn parse_retry_after(value: &str, max: Option<Duration>) -> Option<Duration> {
     let delay = if let Ok(seconds) = value.parse::<u64>() {
         Duration::from_secs(seconds)
-    } else if let Ok(date) = chrono::DateTime::parse_from_rfc2822(value) {
-        let now = Utc::now();
-        let date = date.with_timezone(&Utc);
+    } else if let Ok(date) = rfc2822::DateTimeParser::new().parse_timestamp(value) {
+        let now = Timestamp::now();
         if date > now {
-            (date - now).to_std().unwrap_or(Duration::ZERO)
+            date.duration_since(now).unsigned_abs()
         } else {
             Duration::ZERO
         }

@@ -149,8 +149,11 @@ async fn main() {
 
     eprintln!("[INFO] Initializing cron scheduler...");
 
-    // Start the background cron thread
-    let _cron_handle = include_exclude_cron::include_exclude_cron(
+    // Start the background cron thread. Handle the Result rather than discarding
+    // it: on Err the handler closure (which owns `tx`) is dropped before the
+    // thread spawns, so `rx.recv()` below would return None at once and the
+    // process would exit 0 after printing "Daemon started successfully."
+    let _cron_handle = match include_exclude_cron::include_exclude_cron(
         args.include_exprs.clone(),
         args.exclude_exprs.clone(),
         move || {
@@ -159,7 +162,13 @@ async fn main() {
                 eprintln!("[WARN] Failed to send cron trigger signal.");
             }
         },
-    );
+    ) {
+        Ok(handle) => handle,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+    };
 
     eprintln!(
         "[INFO] Daemon started successfully. Monitoring {} symbol(s).",
