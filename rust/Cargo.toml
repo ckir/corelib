@@ -16,8 +16,8 @@ unimplemented = "deny"
 [dependencies]
 napi = { version = "3.9.0", features = ["napi9", "tokio_rt"] }
 napi-derive = "3.5.6"
-chrono = { version = "0.4.45", features = ["clock", "serde"] }
-cron = "0.16.0"
+jiff = { version = "1.0.2", default-features = false, features = ["std", "serde"] }
+croner = { version = "5.0.0", default-features = false, features = ["std", "jiff"] }
 thiserror = "2.0.18"
 
 # === YAHOO STREAMING ===

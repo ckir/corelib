@@ -6,9 +6,10 @@
 // mirror of the `ts-core/src/utils/cron.ts` implementation.
 // =============================================
 
-use chrono::{DateTime, Duration, Utc};
-use cron::Schedule;
-use std::str::FromStr;
+use croner::parser::CronParser;
+use croner::Cron;
+use jiff::tz::TimeZone;
+use jiff::Timestamp;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -42,7 +43,12 @@ impl CronJobHandle {
 ///
 /// Features:
 /// - Cron expressions are pre-parsed for performance.
-/// - Supports 7-field cron format (second-level precision).
+/// - Supports 5-, 6- and 7-field patterns (second-level precision), mirroring
+///   `ts-core/src/utils/cron.ts`: a 5-field pattern is read as having seconds `0`.
+/// - Day-of-week uses the POSIX `0`-`7` numbering (`0` and `7` = Sunday), so
+///   weekend rules such as `* * * * * 0,6 *` are accepted.
+/// - Day-of-month and day-of-week combine with OR (Vixie default); prefix the
+///   day-of-week field with `+` to require both.
 /// - Runs in a dedicated native OS thread.
 ///
 /// # Arguments
@@ -67,23 +73,14 @@ where
     // Wrap the handler in an Arc for thread-safe shared access
     let handler = Arc::new(handler);
 
-    // Pre-parse all "include" cron expressions into Schedule objects
-    let include_schedules: Vec<Schedule> = include_exprs
-        .into_iter()
-        .map(|expr| {
-            Schedule::from_str(&expr)
-                .map_err(|e| format!("invalid include cron expression {expr:?}: {e}"))
-        })
-        .collect::<Result<_, _>>()?;
+    // One parser for all expressions. `CronParser::new()` is croner's default
+    // (seconds/year optional), which accepts 5-, 6- and 7-field patterns exactly
+    // like the `ts-core` twin; POSIX day-of-week and Vixie OR for DOM+DOW follow
+    // from the same defaults (`alternative_weekdays: false`, `dom_and_dow: false`).
+    let parser = CronParser::new();
 
-    // Pre-parse all "exclude" cron expressions into Schedule objects
-    let exclude_schedules: Vec<Schedule> = exclude_exprs
-        .into_iter()
-        .map(|expr| {
-            Schedule::from_str(&expr)
-                .map_err(|e| format!("invalid exclude cron expression {expr:?}: {e}"))
-        })
-        .collect::<Result<_, _>>()?;
+    let include_schedules = parse_rules(&include_exprs, "include", &parser)?;
+    let exclude_schedules = parse_rules(&exclude_exprs, "exclude", &parser)?;
 
     // Initialize the thread-safe stop flag
     let stop_flag = Arc::new(AtomicBool::new(false));
@@ -100,18 +97,18 @@ where
                 break;
             }
 
-            let now: DateTime<Utc> = Utc::now();
-            let now_ts = now.timestamp();
+            let now = Timestamp::now();
+            let now_ts = now.as_second();
 
             // Check if we've already processed this exact second
             if now_ts <= last_fire_ts {
                 // Calculate sleep time until the start of the next second
                 let next_sec_ts = last_fire_ts + 1;
-                let next_sec = DateTime::from_timestamp(next_sec_ts, 0).expect("invalid timestamp");
-                let sleep_dur = next_sec - Utc::now();
-                if sleep_dur > Duration::zero() {
+                let next_sec = Timestamp::from_second(next_sec_ts).expect("invalid timestamp");
+                let sleep_dur = next_sec - Timestamp::now();
+                if sleep_dur > jiff::SignedDuration::ZERO {
                     // Sleep for the precise duration until the next second starts
-                    thread::sleep(StdDuration::from_millis(sleep_dur.num_milliseconds() as u64));
+                    thread::sleep(StdDuration::from_millis(sleep_dur.as_millis() as u64));
                 } else {
                     // Fallback to a very short sleep if we missed the target
                     thread::sleep(StdDuration::from_millis(10));
@@ -119,16 +116,14 @@ where
                 continue;
             }
 
-            // Define the reference time for cron matching (the exact start of this second)
-            let test_time = now - Duration::seconds(1);
+            // The reference time for cron matching: the exact start of this second.
+            let test_time = TimeZone::UTC
+                .to_datetime(Timestamp::from_second(now_ts).expect("invalid timestamp"));
 
             // Determine if the current time is "included" by any rule
-            let included = include_schedules.iter().any(|schedule| {
-                let mut upcoming = schedule.after(&test_time);
-                upcoming
-                    .next()
-                    .is_some_and(|next| next.timestamp() == now_ts)
-            });
+            let included = include_schedules
+                .iter()
+                .any(|schedule| schedule.is_time_matching(&test_time).unwrap_or(false));
 
             if !included {
                 // Not a match for inclusion, wait a short while before checking again
@@ -137,12 +132,9 @@ where
             }
 
             // Determine if the current time is "excluded" by any rule
-            let excluded = exclude_schedules.iter().any(|schedule| {
-                let mut upcoming = schedule.after(&test_time);
-                upcoming
-                    .next()
-                    .is_some_and(|next| next.timestamp() == now_ts)
-            });
+            let excluded = exclude_schedules
+                .iter()
+                .any(|schedule| schedule.is_time_matching(&test_time).unwrap_or(false));
 
             // If included and NOT excluded, execute the provided handler
             if !excluded {
@@ -165,6 +157,20 @@ where
     });
 
     Ok(CronJobHandle { stop_flag })
+}
+
+/// Parse every expression up front so an invalid pattern fails at startup instead
+/// of inside the ticking thread. `kind` selects the error wording the caller
+/// reports ("include" / "exclude"), which is what the tests assert on.
+fn parse_rules(exprs: &[String], kind: &str, parser: &CronParser) -> Result<Vec<Cron>, String> {
+    exprs
+        .iter()
+        .map(|expr| {
+            parser
+                .parse(expr)
+                .map_err(|e| format!("invalid {kind} cron expression {expr:?}: {e}"))
+        })
+        .collect()
 }
 
 // =============================================
@@ -321,6 +327,111 @@ mod tests {
             counter.load(Ordering::SeqCst) >= 3,
             "schedule died after the first panic: {}",
             counter.load(Ordering::SeqCst)
+        );
+    }
+
+    // ── Grammar / semantics pinned by the croner migration ──────────────────
+    // These go through `parse_rules`, i.e. the exact parser production uses.
+
+    /// Parse `expr` exactly as production does and test it against a wall-clock instant.
+    fn matches_at(expr: &str, dt: &str) -> bool {
+        let rules = parse_rules(&[expr.to_string()], "include", &CronParser::new())
+            .expect("test expression should parse");
+        let at: jiff::civil::DateTime = dt.parse().expect("test datetime should parse");
+        rules[0].is_time_matching(&at).unwrap_or(false)
+    }
+
+    #[test]
+    fn day_of_week_uses_posix_numbering() {
+        // 2026-11-22 is a Sunday, 11-23 a Monday, 11-24 a Tuesday, 11-28 a Saturday.
+        assert!(
+            matches_at("* * * * * 0 *", "2026-11-22T12:00:00"),
+            "0 = Sunday"
+        );
+        assert!(
+            matches_at("* * * * * 7 *", "2026-11-22T12:00:00"),
+            "7 aliases Sunday"
+        );
+        assert!(
+            matches_at("* * * * * 1 *", "2026-11-23T12:00:00"),
+            "1 = Monday"
+        );
+        assert!(
+            matches_at("* * * * * 6 *", "2026-11-28T12:00:00"),
+            "6 = Saturday"
+        );
+        assert!(
+            !matches_at("* * * * * 0 *", "2026-11-23T12:00:00"),
+            "0 must not match a Monday"
+        );
+    }
+
+    #[test]
+    fn weekend_exclusion_expression_parses_and_matches() {
+        // rust/README.md ships `--exclude "* * * * * 0,6 *"`. `cron` 0.16 rejected
+        // this expression outright, so the documented example never ran.
+        let weekend = "* * * * * 0,6 *";
+        assert!(
+            matches_at(weekend, "2026-11-22T12:00:00"),
+            "Sunday excluded"
+        );
+        assert!(
+            matches_at(weekend, "2026-11-28T12:00:00"),
+            "Saturday excluded"
+        );
+        assert!(
+            !matches_at(weekend, "2026-11-24T12:00:00"),
+            "Tuesday not excluded"
+        );
+    }
+
+    #[test]
+    fn five_field_pattern_defaults_seconds_to_zero() {
+        // 5-field mirrors ts-core (npm croner accepts 5/6/7 fields too).
+        assert!(
+            matches_at("* * * * *", "2026-11-24T12:00:00"),
+            "second 0 matches"
+        );
+        assert!(
+            !matches_at("* * * * *", "2026-11-24T12:00:30"),
+            "seconds default to 0, so :30 must not match"
+        );
+        // 6- and 7-field forms stay accepted alongside it.
+        assert!(matches_at("* * * * * * *", "2026-11-24T12:00:30"));
+        assert!(matches_at("* * * * * 1 *", "2026-11-23T12:00:00"));
+    }
+
+    #[test]
+    fn day_of_month_and_day_of_week_combine_with_or() {
+        // Vixie OR: the 1st of any month OR any Monday (npm croner agrees: 14 hits).
+        assert!(
+            matches_at("0 0 0 1 * MON", "2026-11-02T00:00:00"),
+            "Monday but not the 1st matches under OR"
+        );
+        assert!(
+            matches_at("0 0 0 1 * MON", "2026-12-01T00:00:00"),
+            "the 1st but not a Monday matches under OR"
+        );
+        assert!(
+            !matches_at("0 0 0 1 * MON", "2026-11-24T00:00:00"),
+            "neither the 1st nor a Monday must not match"
+        );
+    }
+
+    #[test]
+    fn plus_prefix_requires_both_day_of_month_and_day_of_week() {
+        // `+` flips DOM+DOW from OR to AND. 2027-02-01 is a Monday that is the 1st.
+        assert!(
+            matches_at("0 0 0 1 * +MON", "2027-02-01T00:00:00"),
+            "the 1st and a Monday matches under AND"
+        );
+        assert!(
+            !matches_at("0 0 0 1 * +MON", "2026-11-02T00:00:00"),
+            "Monday but not the 1st fails under AND"
+        );
+        assert!(
+            !matches_at("0 0 0 1 * +MON", "2026-12-01T00:00:00"),
+            "the 1st but not a Monday fails under AND"
         );
     }
 }

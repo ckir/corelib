@@ -1,5 +1,5 @@
 //! Unified, source-tagged market event schema (internal; mapped to flat FFI payloads by facades).
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 
 /// The kind of provider a driver handles.
 #[allow(dead_code)] // wired up in later tasks
@@ -196,7 +196,7 @@ pub struct YahooQuoteExtras {
 #[derive(Debug, Clone)]
 pub struct Quote {
     pub ticker: String,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     pub price: f64,
     pub extras: QuoteExtras,
     pub raw: Option<String>,
@@ -214,7 +214,7 @@ fn is_zero_i64(v: &i64) -> bool {
 #[derive(Debug, Clone)]
 pub struct Trade {
     pub ticker: String,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     pub price: f64,
     pub extras: TradeExtras,
     pub raw: Option<String>,
@@ -316,13 +316,9 @@ impl serde::Serialize for MarketEvent {
 #[cfg(test)]
 mod schema_expansion_tests {
     use super::*;
-    use chrono::TimeZone;
 
-    fn ts() -> chrono::DateTime<chrono::Utc> {
-        chrono::Utc
-            .timestamp_millis_opt(1_700_000_000_000)
-            .single()
-            .unwrap()
+    fn ts() -> Timestamp {
+        Timestamp::from_millisecond(1_700_000_000_000).unwrap()
     }
 
     #[test]
@@ -382,7 +378,7 @@ mod schema_expansion_tests {
 
     #[test]
     fn timestamp_serializes_as_rfc3339_string_for_finstream_parity() {
-        // The unified event mirrors finstream's wire format (chrono `serde` feature),
+        // The unified event mirrors finstream's wire format (jiff `serde` feature),
         // so `timestamp` is an RFC3339 string, not an epoch int — keeps the uni event a
         // true superset of finstream for cross-provider switching.
         let ev = MarketEvent::Trade {

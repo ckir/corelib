@@ -8,6 +8,10 @@ all-features = false
 # RustSec advisories fail the build; yanked crates too. Add an `ignore` entry (with the RUSTSEC id and a
 # reason) only for an advisory that is confirmed unreachable and has no fixed release.
 yanked = "deny"
+# Pinned explicitly rather than left to cargo-deny's default: the docs advertise `workspace`, the
+# 0.20.2 source actually defaults to `all`, and CI floats the action tag — so state it here.
+# Valid values (lowercase): all | workspace | transitive | none.
+unmaintained = "all"
 ignore = []
 
 [licenses]

@@ -108,6 +108,26 @@ A cron-driven daemon for polling the official Nasdaq API. Supports load-balancin
   --proxy "https://vk2hdy5skibvncgvbqwrnxvlvu0idgat.lambda-url.us-east-1.on.aws/"
 ```
 
+> **Cron semantics (changed with the `cron` → `croner` migration).** Schedules are
+> evaluated in **UTC** and follow the same `croner` rules as `ts-core`'s
+> `includeExcludeCron`:
+>
+> - **Day of week is POSIX-numbered**: `0`/`7` = Sunday, `1` = Monday … `6` = Saturday.
+>   The previous `cron` 0.16 backend used Quartz numbering (`1` = Sunday … `7` = Saturday)
+>   and **rejected `0` outright**, so the `--exclude "* * * * * 0,6 *"` example above never
+>   ran — it exits immediately with a discarded error. It is correct now.
+> - **Day-of-month and day-of-week combine with OR** (Vixie default): `0 0 0 1 * MON`
+>   fires on the 1st *or* on any Monday. Prefix the day-of-week field with `+`
+>   (`0 0 0 1 * +MON`) to require both. The previous backend required both.
+> - **5-, 6- and 7-field patterns are accepted**; a 5-field pattern is read as having
+>   seconds `0`. The previous backend accepted only 6- and 7-field patterns.
+> - **Now rejected** (both were accepted by the previous backend): full weekday names
+>   such as `SUNDAY`/`TUES` — use 3-letter `SUN`/`TUE` — and single-number steps such as
+>   `0/10` — use `*/10` or `0-59/10`.
+>
+> An invalid expression now exits with status **1** and an error on `stderr`, instead of
+> printing `Daemon started successfully.` and exiting 0 without ever polling.
+
 ## Internal Usage (via FFI)
 
 The native functions are typically accessed through the `Core` object in `@ckirg/corelib`:

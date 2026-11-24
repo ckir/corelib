@@ -8,7 +8,7 @@ use crate::markets::nasdaq::datafeeds::streaming::core::schema::{
 use crate::markets::nasdaq::datafeeds::streaming::yahoo::yahoo_streaming_proto_handler::{
     decode_yahoo_message, JsPricingData,
 };
-use chrono::{DateTime, TimeZone, Utc};
+use jiff::Timestamp;
 
 /// Length-only debug note for frames the mapper rejects. Takes ONLY the byte count —
 /// it is structurally impossible to leak the (base64-protobuf) frame contents.
@@ -19,10 +19,8 @@ pub(crate) fn note_undecodable(provider: &str, bytes: usize) {
 /// QuoteType discriminator for option instruments (proto enum `QuoteType::Option`).
 const QUOTE_TYPE_OPTION: i32 = 13;
 
-fn ts_from_millis(ms: i64) -> DateTime<Utc> {
-    Utc.timestamp_millis_opt(ms)
-        .single()
-        .unwrap_or_else(Utc::now)
+fn ts_from_millis(ms: i64) -> Timestamp {
+    Timestamp::from_millisecond(ms).unwrap_or_else(|_| Timestamp::now())
 }
 
 /// Build the option extras iff this is an option instrument.

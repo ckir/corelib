@@ -2,7 +2,7 @@
 use crate::markets::nasdaq::datafeeds::streaming::core::schema::{
     FinnhubTradeExtras, MarketEvent, Trade, TradeExtras,
 };
-use chrono::{TimeZone, Utc};
+use jiff::Timestamp;
 
 /// Parse one Finnhub WS text frame into zero or more Trade events.
 /// Finnhub trade frame: {"type":"trade","data":[{"s":sym,"p":price,"v":vol,"t":ms,"c":[..]}]}
@@ -35,10 +35,7 @@ pub fn parse_finnhub_frame(text: &str, source: &str) -> Vec<MarketEvent> {
         };
         let volume = item["v"].as_f64().unwrap_or(0.0);
         let time_ms = item["t"].as_i64().unwrap_or(0);
-        let timestamp = Utc
-            .timestamp_millis_opt(time_ms)
-            .single()
-            .unwrap_or_else(Utc::now);
+        let timestamp = Timestamp::from_millisecond(time_ms).unwrap_or_else(|_| Timestamp::now());
         let conditions = item["c"]
             .as_array()
             .map(|a| {
