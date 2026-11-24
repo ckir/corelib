@@ -27,7 +27,7 @@ pub fn market_event_to_finnhub_pricing(ev: &MarketEvent) -> Option<FinnhubPricin
                 message_type: "trade".to_string(),
                 price: *price,
                 volume,
-                timestamp: timestamp.timestamp_millis() as f64,
+                timestamp: timestamp.as_millisecond() as f64,
                 conditions: if conditions.is_empty() {
                     None
                 } else {
@@ -45,7 +45,7 @@ mod tests {
     use crate::markets::nasdaq::datafeeds::streaming::core::schema::{
         FinnhubTradeExtras, ProviderKind, ProviderStatus,
     };
-    use chrono::TimeZone;
+    use jiff::Timestamp;
 
     #[test]
     fn maps_trade_to_flat_payload() {
@@ -53,10 +53,7 @@ mod tests {
             source: "finnhub_main".into(),
             data: Trade {
                 ticker: "AAPL".into(),
-                timestamp: chrono::Utc
-                    .timestamp_millis_opt(1_700_000_000_000)
-                    .single()
-                    .unwrap(),
+                timestamp: Timestamp::from_millisecond(1_700_000_000_000).unwrap(),
                 price: 191.5,
                 extras: TradeExtras::Finnhub(FinnhubTradeExtras {
                     volume: 100.0,
@@ -95,10 +92,7 @@ mod tests {
             source: "finnhub_main".into(),
             data: Trade {
                 ticker: "AAPL".into(),
-                timestamp: chrono::Utc
-                    .timestamp_millis_opt(1_700_000_000_000)
-                    .single()
-                    .unwrap(),
+                timestamp: Timestamp::from_millisecond(1_700_000_000_000).unwrap(),
                 price: 191.5,
                 extras: TradeExtras::Finnhub(FinnhubTradeExtras {
                     volume: 100.0,

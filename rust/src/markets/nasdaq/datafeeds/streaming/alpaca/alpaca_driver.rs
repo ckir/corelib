@@ -11,9 +11,9 @@ use crate::markets::nasdaq::datafeeds::streaming::core::schema::{
 use crate::markets::nasdaq::datafeeds::streaming::core::types::{
     AlpacaPricingData, CoreEvent, RawPricing,
 };
-use chrono::{DateTime, Utc};
 use futures_util::future::{BoxFuture, FutureExt};
 use futures_util::{SinkExt, StreamExt};
+use jiff::Timestamp;
 use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -59,12 +59,11 @@ fn conds(o: &serde_json::Value) -> Vec<String> {
         })
         .unwrap_or_default()
 }
-fn parse_ts(o: &serde_json::Value) -> DateTime<Utc> {
+fn parse_ts(o: &serde_json::Value) -> Timestamp {
     o.get("t")
         .and_then(|v| v.as_str())
-        .and_then(|t| DateTime::parse_from_rfc3339(t).ok())
-        .map(|dt| dt.with_timezone(&Utc))
-        .unwrap_or_else(Utc::now)
+        .and_then(|t| t.parse::<Timestamp>().ok())
+        .unwrap_or_else(Timestamp::now)
 }
 
 /// Decode one Alpaca data object into (raw payload, optional unified event). `None` for non-pricing.
