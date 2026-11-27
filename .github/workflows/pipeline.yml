@@ -1,7 +1,7 @@
 # =============================================
 # FILE: .github/workflows/pipeline.yml
 # PURPOSE: Corelib Monorepo CI/CD Pipeline
-# Strictly staged: Validate → Test → Deploy Docs → Release
+# Strictly staged: Validate → Test → Release → Deploy Docs (stable tags only) / Publish to npm
 # =============================================
 
 name: Corelib Pipeline
@@ -217,14 +217,22 @@ jobs:
 
   # ---------------------------------------------------------
   # 3. DEPLOY DOCS — TypeDoc to GitHub Pages
-  # Triggered only on main branch push (not PRs).
+  # Runs only for stable version tags (vX.Y.Z, no '-' pre-release suffix), after the GitHub
+  # Release exists. Pages is ONE site published as a single artifact, so deploying from main
+  # too would overwrite the release docs with unreleased API signatures (while still stamping
+  # the released version). Pre-releases are excluded, as for npm. Not gated on publish-npm, so
+  # docs are not held by its manual approval. Re-run failed jobs to retry a Pages failure.
   # ---------------------------------------------------------
   deploy-docs:
     name: Deploy Docs
-    needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-')
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # The workflow-level group is per ref, so two tag runs would not serialise; this one does.
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
     permissions:
       contents: read
       pages: write
@@ -261,6 +269,9 @@ jobs:
 
       - name: Build static site
         run: pnpm site:build
+
+      - name: Check generated site
+        run: pnpm site:check
 
       - name: Setup Pages
         uses: actions/configure-pages@v6
